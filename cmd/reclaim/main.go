@@ -34,9 +34,13 @@ func main() {
 
 	slog.Info("startup checks passed")
 
+	// api.Server holds all injected deps; .Handler() returns http.Handler.
+	// Swap the HTTP framework inside api package without touching main.
+	handler := api.New(nil, cfg.DisableAuth).Handler()
+
 	srv := &http.Server{
 		Addr:    ":8080",
-		Handler: api.NewRouter(),
+		Handler: handler,
 	}
 
 	go func() {

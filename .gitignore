@@ -1,0 +1,16 @@
+bin/
+.dev/
+.env
+
+# SQLite WAL files
+*.db
+*.db-wal
+*.db-shm
+
+# Frontend build output (embedded into binary at build time)
+web/out/
+web/.next/
+web/node_modules/
+
+# OS
+.DS_Store

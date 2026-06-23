@@ -1,0 +1,109 @@
+package api
+
+import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"net/http"
+	"strings"
+)
+
+// AuthStore is implemented by the settings repo (P1). Tested here against a fake.
+type AuthStore interface {
+	IsSetupComplete() bool
+	ValidateLogin(username, password string) bool
+	SessionSecret() []byte
+}
+
+const sessionCookieName = "reclaim_session"
+
+// AuthMiddleware gates all routes except /healthz, /api/setup, /api/login, /api/logout.
+// Behavior depends on setup state and DISABLE_AUTH.
+func AuthMiddleware(store AuthStore, disableAuth bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if disableAuth {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Always allow: health, auth endpoints themselves
+			if isUnprotected(r.URL.Path) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			if !store.IsSetupComplete() {
+				// Only the setup endpoint is reachable until first-run is done
+				http.Redirect(w, r, "/setup", http.StatusFound)
+				return
+			}
+
+			if !hasValidSession(r, store.SessionSecret()) {
+				if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/ws") {
+					http.Error(w, "unauthorized", http.StatusUnauthorized)
+					return
+				}
+				http.Redirect(w, r, "/login", http.StatusFound)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func isUnprotected(path string) bool {
+	switch path {
+	case "/healthz", "/api/setup", "/api/login", "/api/logout":
+		return true
+	}
+	return false
+}
+
+// IssueSession writes a signed session cookie for the given username.
+func IssueSession(w http.ResponseWriter, username string, secret []byte, secure bool) {
+	sig := sign(username, secret)
+	value := base64.RawURLEncoding.EncodeToString([]byte(username)) + "." + sig
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   secure,
+	})
+}
+
+// ClearSession removes the session cookie.
+func ClearSession(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+	})
+}
+
+func hasValidSession(r *http.Request, secret []byte) bool {
+	c, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return false
+	}
+	parts := strings.SplitN(c.Value, ".", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	userBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return false
+	}
+	return hmac.Equal([]byte(parts[1]), []byte(sign(string(userBytes), secret)))
+}
+
+func sign(payload string, secret []byte) string {
+	h := hmac.New(sha256.New, secret)
+	h.Write([]byte(payload))
+	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+}

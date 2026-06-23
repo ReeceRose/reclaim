@@ -1,4 +1,7 @@
-.PHONY: dev build test test-race clean help
+.PHONY: dev build test test-race clean help migrate-new migrate-up migrate-status
+
+GOOSE := go run github.com/pressly/goose/v3/cmd/goose@v3.26.0
+MIGRATIONS_DIR := internal/store/migrations
 
 # Local dev directories — created on first run, gitignored
 DEV_DIR     := .dev
@@ -37,6 +40,19 @@ test-race:
 ## clean: remove build output and dev dirs
 clean:
 	rm -rf bin/ $(DEV_DIR)
+
+## migrate-new NAME=foo: scaffold a new goose SQL migration
+migrate-new:
+	@test -n "$(NAME)" || (echo "usage: make migrate-new NAME=description" && exit 1)
+	$(GOOSE) -dir $(MIGRATIONS_DIR) create $(NAME) sql
+
+## migrate-up: apply pending migrations to .dev DB (also runs automatically on app boot)
+migrate-up: $(DEV_DIR)
+	$(GOOSE) -dir $(MIGRATIONS_DIR) sqlite3 $(abspath $(DEV_DATA))/reclaim.db up
+
+## migrate-status: show migration status for .dev DB
+migrate-status: $(DEV_DIR)
+	$(GOOSE) -dir $(MIGRATIONS_DIR) sqlite3 $(abspath $(DEV_DATA))/reclaim.db status
 
 ## help: list targets
 help:

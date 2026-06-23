@@ -13,6 +13,7 @@ import (
 	"reclaim/internal/api"
 	"reclaim/internal/config"
 	"reclaim/internal/startup"
+	"reclaim/internal/store"
 )
 
 func main() {
@@ -32,11 +33,28 @@ func main() {
 		os.Exit(1)
 	}
 
+	db, err := store.Open(cfg.DBPath)
+	if err != nil {
+		slog.Error("database init failed", "err", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	if cfg.ResetAuth {
+		if err := db.Settings.ResetAuth(context.Background()); err != nil {
+			slog.Error("auth reset failed", "err", err)
+			os.Exit(1)
+		}
+		slog.Warn("RESET_AUTH: credentials cleared — first-run setup required")
+	}
+
+	if !db.Settings.IsSetupComplete() {
+		slog.Info("first-run setup mode", "hint", "open the app and complete /setup")
+	}
+
 	slog.Info("startup checks passed")
 
-	// api.Server holds all injected deps; .Handler() returns http.Handler.
-	// Swap the HTTP framework inside api package without touching main.
-	handler := api.New(nil, cfg.DisableAuth).Handler()
+	handler := api.New(db.Settings, cfg.DisableAuth).Handler()
 
 	srv := &http.Server{
 		Addr:    ":8080",

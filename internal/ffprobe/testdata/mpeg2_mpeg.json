@@ -1,0 +1,23 @@
+{
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "mpeg2video",
+      "codec_type": "video",
+      "profile": "Main",
+      "width": 720,
+      "height": 480
+    },
+    {
+      "index": 1,
+      "codec_name": "mp2",
+      "codec_type": "audio",
+      "channels": 2
+    }
+  ],
+  "format": {
+    "format_name": "mpeg",
+    "duration": "1800.000000",
+    "bit_rate": "5000000"
+  }
+}

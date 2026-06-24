@@ -12,6 +12,7 @@ import (
 
 	"reclaim/internal/api"
 	"reclaim/internal/config"
+	"reclaim/internal/scanner"
 	"reclaim/internal/startup"
 	"reclaim/internal/store"
 )
@@ -54,6 +55,18 @@ func main() {
 
 	slog.Info("startup checks passed")
 
+	sc, err := scanner.New(db, cfg)
+	if err != nil {
+		slog.Error("scanner init failed", "err", err)
+		os.Exit(1)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Scanner runs the startup scan then drives the watcher + scheduled rescan.
+	go sc.Start(ctx)
+
 	handler := api.New(db.Settings, cfg.DisableAuth).Handler()
 
 	srv := &http.Server{
@@ -73,9 +86,11 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
+	cancel() // stop scanner
+
+	shutCtx, shutCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutCancel()
+	if err := srv.Shutdown(shutCtx); err != nil {
 		slog.Error("shutdown error", "err", err)
 	}
 }

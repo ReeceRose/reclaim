@@ -117,6 +117,69 @@ func (m *Media) ActivePaths(ctx context.Context) (map[string]int64, error) {
 	return out, rows.Err()
 }
 
+// FileSummary is the minimal record the scanner loads at the start of each diff
+// to compare against the filesystem without pulling full probe data.
+type FileSummary struct {
+	ID          int64
+	SizeBytes   int64
+	Mtime       int64
+	Fingerprint string
+}
+
+// ActiveFileSummaries returns a path→FileSummary map for all active files.
+func (m *Media) ActiveFileSummaries(ctx context.Context) (map[string]*FileSummary, error) {
+	rows, err := m.r.QueryContext(ctx,
+		"SELECT id, path, size_bytes, mtime, fingerprint FROM media_files WHERE status = 'active'",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]*FileSummary)
+	for rows.Next() {
+		var path string
+		var s FileSummary
+		if err := rows.Scan(&s.ID, &path, &s.SizeBytes, &s.Mtime, &s.Fingerprint); err != nil {
+			return nil, err
+		}
+		out[path] = &s
+	}
+	return out, rows.Err()
+}
+
+// GetByFingerprintOtherThan returns the first active file with fp whose ID is
+// not excludeID. Used by rename detection to find a newly-inserted row that
+// matches a vanished file without returning the vanished row itself.
+func (m *Media) GetByFingerprintOtherThan(ctx context.Context, fp string, excludeID int64) (*MediaFile, error) {
+	return scanMedia(m.r.QueryRowContext(ctx,
+		mediaQ+" WHERE fingerprint = ? AND status = 'active' AND id != ?", fp, excludeID,
+	))
+}
+
+// RecordMove updates keepID's path to newPath and deletes mergeID in a single
+// transaction. Job history on keepID is preserved; mergeID is the duplicate row
+// the scanner inserted for the renamed destination path.
+func (m *Media) RecordMove(ctx context.Context, keepID, mergeID int64, newPath string) error {
+	tx, err := m.w.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// DELETE the duplicate row first so the UNIQUE(path) constraint doesn't fire
+	// when we update keepID's path to the same value.
+	if _, err := tx.ExecContext(ctx, "DELETE FROM media_files WHERE id = ?", mergeID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE media_files SET path = ?, status = 'active' WHERE id = ?",
+		newPath, keepID,
+	); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 const mediaQ = `
 	SELECT id, path, library_type, size_bytes, mtime, fingerprint,
 		video_codec, video_codec_profile, width, height, duration_seconds,

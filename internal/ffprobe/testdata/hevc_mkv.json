@@ -1,0 +1,23 @@
+{
+  "streams": [
+    {
+      "index": 0,
+      "codec_name": "hevc",
+      "codec_type": "video",
+      "profile": "Main",
+      "width": 3840,
+      "height": 2160
+    },
+    {
+      "index": 1,
+      "codec_name": "dts",
+      "codec_type": "audio",
+      "channels": 6
+    }
+  ],
+  "format": {
+    "format_name": "matroska,webm",
+    "duration": "7200.000000",
+    "bit_rate": "15234567"
+  }
+}

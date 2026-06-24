@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 function DryRunSkeleton() {
   return (
-    <div className="px-7 py-[26px] max-w-[1180px] w-full pb-14">
+    <div className="px-7 py-[26px] w-full pb-14">
       <div className="border border-line rounded-[var(--radius)] p-5 mb-[18px]" style={{ background: 'var(--surface)' }}>
         <Skeleton className="h-3 w-24 mb-4" />
         <div className="flex items-center gap-[10px] flex-wrap">
@@ -64,7 +64,7 @@ function DryRunContent() {
   const selectedProfile = profiles.find((p) => p.id === profileId) ?? profiles.find((p) => p.is_default) ?? profiles[0];
 
   return (
-      <div className="px-7 py-[26px] max-w-[1180px] w-full pb-14">
+      <div className="px-7 py-[26px] w-full pb-14">
         <div className="border border-line rounded-[var(--radius)] p-5 mb-[18px]" style={{ background: 'var(--surface)' }}>
           <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Define a set</div>
           <div className="flex items-center gap-[10px] flex-wrap">

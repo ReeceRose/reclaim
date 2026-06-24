@@ -14,6 +14,21 @@ const (
 	resHeightHD = 2160 // 720 <= height < 2160 → hd; >= 2160 → uhd
 )
 
+// Dimension names in library_stats.
+const (
+	dimTotal      = "total"
+	dimCodec      = "codec"
+	dimResolution = "resolution"
+)
+
+// Resolution band values in library_stats and candidate filters.
+const (
+	resBandSD      = "sd"
+	resBandHD      = "hd"
+	resBandUHD     = "uhd"
+	resBandUnknown = "unknown"
+)
+
 // CodecStat is the per-codec aggregate slice of the library.
 type CodecStat struct {
 	Codec                 string
@@ -50,7 +65,8 @@ func (s *Stats) Overview(ctx context.Context) (*LibraryStats, error) {
 
 	err := s.r.QueryRowContext(ctx, `
 		SELECT file_count, total_bytes, predicted_savings_bytes
-		FROM library_stats WHERE dimension = 'total' AND bucket = ''`,
+		FROM library_stats WHERE dimension = ? AND bucket = ''`,
+		dimTotal,
 	).Scan(&out.TotalFiles, &out.TotalBytes, &out.TotalRecoverableBytes)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, err
@@ -58,8 +74,10 @@ func (s *Stats) Overview(ctx context.Context) (*LibraryStats, error) {
 
 	codecRows, err := s.r.QueryContext(ctx, `
 		SELECT bucket, file_count, total_bytes, predicted_savings_bytes
-		FROM library_stats WHERE dimension = 'codec'
-		ORDER BY total_bytes DESC, bucket`)
+		FROM library_stats WHERE dimension = ?
+		ORDER BY total_bytes DESC, bucket`,
+		dimCodec,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -77,8 +95,10 @@ func (s *Stats) Overview(ctx context.Context) (*LibraryStats, error) {
 
 	resRows, err := s.r.QueryContext(ctx, `
 		SELECT bucket, file_count, total_bytes, predicted_savings_bytes
-		FROM library_stats WHERE dimension = 'resolution'
-		ORDER BY total_bytes DESC, bucket`)
+		FROM library_stats WHERE dimension = ?
+		ORDER BY total_bytes DESC, bucket`,
+		dimResolution,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -161,32 +181,32 @@ type statBucket struct {
 // contributionsFor returns the buckets a single active file adds to. Only
 // active files contribute; a non-active file contributes nothing.
 func contributionsFor(f *MediaFile) []statBucket {
-	if f.Status != "active" {
+	if f.Status != MediaStatusActive {
 		return nil
 	}
-	codec := "unknown"
+	codec := resBandUnknown
 	if f.VideoCodec != nil && *f.VideoCodec != "" {
 		codec = *f.VideoCodec
 	}
 	return []statBucket{
-		{"total", ""},
-		{"codec", codec},
-		{"resolution", resolutionBand(f.Height)},
+		{dimTotal, ""},
+		{dimCodec, codec},
+		{dimResolution, resolutionBand(f.Height)},
 	}
 }
 
 // resolutionBand classifies a height into the same bands the Recompute CASE uses.
 func resolutionBand(height *int) string {
 	if height == nil || *height <= 0 {
-		return "unknown"
+		return resBandUnknown
 	}
 	switch {
 	case *height < resHeightSD:
-		return "sd"
+		return resBandSD
 	case *height < resHeightHD:
-		return "hd"
+		return resBandHD
 	default:
-		return "uhd"
+		return resBandUHD
 	}
 }
 

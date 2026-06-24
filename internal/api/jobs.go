@@ -9,6 +9,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	ijobs "reclaim/internal/jobs"
 	"reclaim/internal/store"
 )
 
@@ -71,7 +72,7 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 		if err != nil {
 			return serverError(c, err)
 		}
-		if f.Status != "active" {
+		if f.Status != store.MediaStatusActive {
 			skipped = append(skipped, skippedItem{fid, "file is not active"})
 			continue
 		}
@@ -91,7 +92,7 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 		jobID, err := s.store.Jobs.Create(ctx, &store.TranscodeJob{
 			MediaFileID:       fid,
 			ProfileID:         profile.ID,
-			Status:            "queued",
+			Status:            string(ijobs.StatusQueued),
 			QueuedAt:          now,
 			OriginalSizeBytes: f.SizeBytes,
 		})
@@ -110,7 +111,7 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"profile": toProfileDTO(profile),
-		"queued":  queued,
+		string(ijobs.StatusQueued):  queued,
 		"skipped": skipped,
 	})
 }
@@ -141,7 +142,7 @@ func (s *Server) handleListJobs(c *echo.Context) error {
 func queuePositions(jobs []store.TranscodeJob) map[int64]int {
 	queued := make([]store.TranscodeJob, 0)
 	for _, j := range jobs {
-		if j.Status == "queued" {
+		if j.Status == string(ijobs.StatusQueued) {
 			queued = append(queued, j)
 		}
 	}
@@ -175,7 +176,7 @@ func (s *Server) handleCancelJob(c *echo.Context) error {
 		return serverError(c, err)
 	}
 	switch job.Status {
-	case "running", "verifying":
+	case string(ijobs.StatusRunning), string(ijobs.StatusVerifying):
 		// Hand off to the worker: it kills the ffmpeg process group, removes the
 		// temp, leaves the original untouched, and flips the state to cancelled.
 		// If the worker isn't actually running it (e.g. across a restart before
@@ -188,7 +189,7 @@ func (s *Server) handleCancelJob(c *echo.Context) error {
 		}
 		s.hub.Broadcast("job_cancelled", map[string]any{"job_id": id})
 		return c.JSON(http.StatusOK, map[string]any{"job_id": id, "status": "cancelled"})
-	case "queued":
+	case string(ijobs.StatusQueued):
 		// A queued job is just dropped. The guarded transition also wins the race
 		// against the worker claiming it at the same moment.
 		if err := s.store.Jobs.MarkCancelled(ctx, id, time.Now().Unix()); err != nil {

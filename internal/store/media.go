@@ -254,8 +254,8 @@ func (m *Media) RecordMove(ctx context.Context, keepID, mergeID int64, newPath s
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}
-	if keep != nil && keep.Status != "active" {
-		keep.Status = "active"
+	if keep != nil && keep.Status != MediaStatusActive {
+		keep.Status = MediaStatusActive
 		if err := applyContribution(ctx, tx, keep, +1); err != nil {
 			return err
 		}
@@ -310,6 +310,27 @@ func (m *Media) ReplaceWithEncoded(ctx context.Context, id, newSize int64, newFi
 		return err
 	}
 	return tx.Commit()
+}
+
+// UpdatePredictedSavingsByCodec rewrites predicted_savings_bytes for every
+// active, non-HEVC file whose video_codec matches codec, using the supplied
+// ratio (output/original). It returns the number of rows updated. The caller
+// is responsible for calling Stats.Recompute after this to keep library_stats
+// in sync, since this bypasses the per-row incremental delta path.
+func (m *Media) UpdatePredictedSavingsByCodec(ctx context.Context, codec string, ratio float64) (int64, error) {
+	res, err := m.w.ExecContext(ctx, `
+		UPDATE media_files
+		SET predicted_savings_bytes = CAST(size_bytes * ? AS INTEGER)
+		WHERE status = 'active'
+		  AND is_already_hevc = 0
+		  AND LOWER(COALESCE(video_codec, '')) = ?`,
+		1.0-ratio, codec,
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return n, err
 }
 
 // loadStatRow loads the stat-relevant fields of a row (used inside write

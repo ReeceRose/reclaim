@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+
+	"reclaim/internal/jobs"
 )
 
 type TranscodeJob struct {
@@ -175,7 +177,7 @@ func (j *Jobs) ClaimNextQueued(ctx context.Context, startedAt int64) (*Transcode
 		return nil, err
 	}
 
-	job.Status = "running"
+	job.Status = string(jobs.StatusRunning)
 	job.StartedAt = &startedAt
 	return job, nil
 }
@@ -329,7 +331,7 @@ func (j *Jobs) ClaimNextForcedQueued(ctx context.Context, startedAt int64) (*Tra
 		return nil, err
 	}
 
-	job.Status = "running"
+	job.Status = string(jobs.StatusRunning)
 	job.StartedAt = &startedAt
 	return job, nil
 }
@@ -387,6 +389,70 @@ const jobWithPathQ = `
 		j.error_message, j.verification_result, j.forced, m.path
 	FROM transcode_jobs j
 	LEFT JOIN media_files m ON m.id = j.media_file_id`
+
+// LearnedRatioMinSamples is the minimum number of completed jobs required for
+// a codec before its observed ratio overrides the seed value. A small sample
+// can swing wildly, so we wait for at least this many data points.
+const LearnedRatioMinSamples = 10
+
+// learnedRatioMin and learnedRatioMax clamp observed ratios to a sane range so
+// a handful of unusual encodes can't produce absurd savings predictions.
+const (
+	learnedRatioMin = 0.30
+	learnedRatioMax = 0.95
+)
+
+// LearnedRatio is the observed output/original size ratio for a source codec,
+// derived from completed jobs on this instance.
+type LearnedRatio struct {
+	Ratio       float64
+	SampleCount int
+}
+
+// LearnedRatios computes the observed mean output/original ratio per source
+// video codec from completed transcode jobs that have both size fields set.
+// Only codecs with at least minSamples jobs are returned. Results are clamped
+// to [learnedRatioMin, learnedRatioMax].
+func (j *Jobs) LearnedRatios(ctx context.Context, minSamples int) (map[string]LearnedRatio, error) {
+	rows, err := j.r.QueryContext(ctx, `
+		SELECT LOWER(COALESCE(m.video_codec, '')),
+		       COUNT(*),
+		       AVG(CAST(tj.output_size_bytes AS REAL) / CAST(tj.original_size_bytes AS REAL))
+		FROM transcode_jobs tj
+		JOIN media_files m ON m.id = tj.media_file_id
+		WHERE tj.status = 'completed'
+		  AND tj.output_size_bytes IS NOT NULL
+		  AND tj.output_size_bytes > 0
+		  AND tj.original_size_bytes > 0
+		  AND m.video_codec IS NOT NULL
+		  AND m.video_codec != ''
+		GROUP BY LOWER(m.video_codec)
+		HAVING COUNT(*) >= ?`,
+		minSamples,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]LearnedRatio)
+	for rows.Next() {
+		var codec string
+		var count int
+		var ratio float64
+		if err := rows.Scan(&codec, &count, &ratio); err != nil {
+			return nil, err
+		}
+		if ratio < learnedRatioMin {
+			ratio = learnedRatioMin
+		}
+		if ratio > learnedRatioMax {
+			ratio = learnedRatioMax
+		}
+		out[codec] = LearnedRatio{Ratio: ratio, SampleCount: count}
+	}
+	return out, rows.Err()
+}
 
 func scanJobWithPath(s rowScanner) (*TranscodeJob, error) {
 	var j TranscodeJob

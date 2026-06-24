@@ -20,6 +20,13 @@ import (
 	"reclaim/internal/store"
 )
 
+// Scan trigger values passed to Scan and recorded in scan_runs.
+const (
+	TriggerStartup   = "startup"
+	TriggerScheduled = "scheduled"
+	TriggerManual    = "manual"
+)
+
 var mediaExtensions = map[string]struct{}{
 	".mkv": {}, ".mp4": {}, ".avi": {}, ".m4v": {},
 	".ts": {}, ".wmv": {}, ".mov": {}, ".flv": {},
@@ -104,8 +111,8 @@ func New(st *store.Store, cfg *config.Config, opts ...Option) (*Scanner, error) 
 	s := &Scanner{
 		store: st,
 		roots: map[string]string{
-			cfg.MoviesPath: "movies",
-			cfg.TVPath:     "tv",
+			cfg.MoviesPath: store.LibraryTypeMovies,
+			cfg.TVPath:     store.LibraryTypeTV,
 		},
 		probeFunc:        ffprobe.Probe,
 		sem:              make(chan struct{}, cfg.ProbeConcurrency),
@@ -268,10 +275,10 @@ func (s *Scanner) Scan(ctx context.Context, trigger string, force bool) (*store.
 		}
 	}
 
-	// A force rescan re-probes everything, so it is the natural moment to
-	// reconcile the incrementally-maintained library_stats against the source
-	// of truth and repair any drift.
-	if force {
+	// Reconcile incrementally-maintained library_stats against the source of
+	// truth after force rescans (which re-probe everything) and after scheduled
+	// rescans (drift guard: incremental deltas can accumulate errors over time).
+	if force || trigger == TriggerScheduled {
 		if err := s.store.Stats.Recompute(ctx); err != nil {
 			slog.Error("scanner: stats recompute", "err", err)
 			atomic.AddInt64(&errs, 1)
@@ -348,7 +355,7 @@ func (s *Scanner) probeAndStore(
 		Mtime:         mtime,
 		Fingerprint:   fp,
 		ProbeError:    probeErr,
-		Status:        "active",
+		Status:        store.MediaStatusActive,
 	}
 
 	if result != nil {
@@ -406,7 +413,7 @@ func (s *Scanner) Start(ctx context.Context) {
 
 	// Initial scan on startup.
 	go func() {
-		if _, err := s.Scan(ctx, "startup", false); err != nil {
+		if _, err := s.Scan(ctx, TriggerStartup, false); err != nil {
 			slog.Error("scanner: startup scan failed", "err", err)
 		}
 	}()
@@ -428,7 +435,7 @@ func (s *Scanner) Start(ctx context.Context) {
 			slog.Warn("scanner: watcher error", "err", err)
 		case <-timer.C:
 			go func() {
-				if _, err := s.Scan(ctx, "scheduled", false); err != nil {
+				if _, err := s.Scan(ctx, TriggerScheduled, false); err != nil {
 					slog.Error("scanner: scheduled scan failed", "err", err)
 				}
 			}()
@@ -522,7 +529,7 @@ func (s *Scanner) checkVanishedFile(ctx context.Context, path string) {
 	if err != nil {
 		return // not in DB
 	}
-	if f.Status != "active" {
+	if f.Status != store.MediaStatusActive {
 		return
 	}
 	if f.Fingerprint == "" {

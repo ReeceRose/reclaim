@@ -39,7 +39,7 @@ var orderClauses = map[CandidateSort]string{
 
 // CandidateFilter narrows the candidate list. Zero values mean "no filter".
 type CandidateFilter struct {
-	LibraryType    string // "movie" | "tv"
+	LibraryType    string // "movies" | "tv"
 	VideoCodec     string // exact source codec, e.g. "h264"
 	ResolutionBand string // "sd" | "hd" | "uhd"
 	Search         string // case-insensitive substring match against path

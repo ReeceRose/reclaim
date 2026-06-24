@@ -9,23 +9,37 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"reclaim/internal/media"
+	"reclaim/internal/scanner"
 	"reclaim/internal/store"
 )
 
 func (s *Server) handleStats(c *echo.Context) error {
-	ov, err := s.store.Stats.Overview(c.Request().Context())
+	ctx := c.Request().Context()
+	ov, err := s.store.Stats.Overview(ctx)
+	if err != nil {
+		return serverError(c, err)
+	}
+
+	learnedMap, err := s.store.Jobs.LearnedRatios(ctx, store.LearnedRatioMinSamples)
 	if err != nil {
 		return serverError(c, err)
 	}
 
 	codecs := make([]map[string]any, 0, len(ov.ByCodec))
 	for _, cs := range ov.ByCodec {
-		codecs = append(codecs, map[string]any{
+		entry := map[string]any{
 			"codec":                   cs.Codec,
 			"file_count":              cs.FileCount,
 			"total_bytes":             cs.TotalBytes,
 			"predicted_savings_bytes": cs.PredictedSavingsBytes,
-		})
+			"ratio_source":            string(media.RatioSeed),
+		}
+		if lr, ok := learnedMap[cs.Codec]; ok {
+			entry["ratio_source"] = string(media.RatioLearned)
+			entry["learned_sample_count"] = lr.SampleCount
+		}
+		codecs = append(codecs, entry)
 	}
 	res := make([]map[string]any, 0, len(ov.ByResolution))
 	for _, rs := range ov.ByResolution {
@@ -100,8 +114,9 @@ func (s *Server) handleCandidates(c *echo.Context) error {
 	}
 
 	resp := map[string]any{"items": items}
-	// Provide the next keyset cursor when the default sort filled the page.
-	if q.Sort == store.SortSavingsDesc && len(files) > 0 {
+	// Provide the next keyset cursor only when the default sort returned a full
+	// page. A partial (or empty) page means we've reached the end of the list.
+	if q.Sort == store.SortSavingsDesc && q.Limit > 0 && len(files) == q.Limit {
 		last := files[len(files)-1]
 		resp["next_cursor"] = map[string]any{
 			"after_savings": last.PredictedSavingsBytes,
@@ -147,7 +162,7 @@ func (s *Server) triggerScan(c *echo.Context, force bool) error {
 	}
 	s.hub.Broadcast("scan_started", map[string]any{"kind": kind})
 	go func() {
-		run, err := s.scanner.Scan(context.Background(), "manual", force)
+		run, err := s.scanner.Scan(context.Background(), scanner.TriggerManual, force)
 		if err != nil {
 			s.hub.Broadcast("scan_failed", map[string]any{"error": err.Error()})
 			return

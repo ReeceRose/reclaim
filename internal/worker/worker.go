@@ -396,11 +396,45 @@ func (w *Worker) replace(ctx context.Context, job *store.TranscodeJob, file *sto
 		slog.Error("worker: mark completed", "job", job.ID, "err", err)
 	}
 
+	// After completing a job, check whether this codec now has enough samples
+	// to override its seed savings estimate with observed data.
+	if file.VideoCodec != nil {
+		if err := w.refineRatioIfReady(ctx, *file.VideoCodec); err != nil {
+			slog.Warn("worker: savings refinement", "codec", *file.VideoCodec, "err", err)
+		}
+	}
+
 	w.hub.Broadcast("job_completed", map[string]any{
 		"job_id":            job.ID,
 		"media_file_id":     file.ID,
 		"output_size_bytes": newSize,
 	})
+	return nil
+}
+
+// refineRatioIfReady checks whether the given source codec has accumulated
+// enough completed jobs to replace its seed savings ratio with an observed one.
+// If so, it batch-updates predicted_savings_bytes for all active files with
+// that codec and reconciles library_stats.
+func (w *Worker) refineRatioIfReady(ctx context.Context, codec string) error {
+	learned, err := w.store.Jobs.LearnedRatios(ctx, store.LearnedRatioMinSamples)
+	if err != nil {
+		return err
+	}
+	lr, ok := learned[strings.ToLower(codec)]
+	if !ok {
+		return nil
+	}
+	n, err := w.store.Media.UpdatePredictedSavingsByCodec(ctx, strings.ToLower(codec), lr.Ratio)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		slog.Info("worker: refined savings model",
+			"codec", codec, "ratio", lr.Ratio,
+			"samples", lr.SampleCount, "files_updated", n)
+		return w.store.Stats.Recompute(ctx)
+	}
 	return nil
 }
 

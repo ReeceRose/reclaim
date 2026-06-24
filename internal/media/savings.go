@@ -58,6 +58,18 @@ func RatioFor(videoCodec *string) (ratio float64, source RatioSource) {
 	return defaultHEVCRatio, RatioSeed
 }
 
+// RatioForWithLearned is like RatioFor but checks the learned map first. If
+// the codec has a learned ratio (from completed jobs on this instance), that
+// is returned with RatioLearned; otherwise falls back to RatioFor.
+func RatioForWithLearned(videoCodec *string, learned map[string]float64) (float64, RatioSource) {
+	if videoCodec != nil && learned != nil {
+		if r, ok := learned[strings.ToLower(*videoCodec)]; ok {
+			return r, RatioLearned
+		}
+	}
+	return RatioFor(videoCodec)
+}
+
 // PredictedSavingsBytes estimates how many bytes a re-encode to HEVC would
 // reclaim: size_bytes * (1 - expected_hevc_ratio[codec]). Files already in HEVC
 // have nothing to gain and return 0. The result is clamped to be non-negative.

@@ -1,0 +1,28 @@
+services:
+  reclaim:
+    build: .
+    image: reclaim:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - /mnt/movies:/movies:rw
+      - /mnt/tv:/tv:rw
+      - reclaim-data:/data
+    environment:
+      MOVIES_PATH: /movies
+      TV_PATH: /tv
+      DB_PATH: /data/reclaim.db
+      # Encode window — worker only pulls jobs between these times (HH:MM local)
+      ENCODE_WINDOW_START: "00:00"
+      ENCODE_WINDOW_END: "06:00"
+      # Set TZ to match your local timezone so the window fires at the right time
+      TZ: America/New_York
+      SCAN_INTERVAL: 24h
+      PROBE_CONCURRENCY: "4"
+      # Auth escape hatches — uncomment only when needed, never leave enabled
+      # DISABLE_AUTH: "true"
+      # RESET_AUTH: "true"
+    restart: unless-stopped
+
+volumes:
+  reclaim-data:

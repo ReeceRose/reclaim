@@ -47,7 +47,7 @@ function VerifyChecks({ json }: { json: string | null }) {
 
 function QueueSkeleton() {
   return (
-    <div className="px-7 py-[26px] max-w-[1180px] w-full pb-14">
+    <div className="px-7 py-[26px] w-full pb-14">
       <div className="border border-line rounded-[var(--radius)] p-5 mb-[18px]" style={{ background: 'var(--surface)' }}>
         <Skeleton className="h-4 w-24 mb-3" />
         <Skeleton className="h-5 w-64 mb-1" />
@@ -142,7 +142,7 @@ function QueueContent() {
         </div>
       </div>
 
-      <div className="px-7 py-[26px] max-w-[1180px] w-full pb-14">
+      <div className="px-7 py-[26px] w-full pb-14">
         {runningJob && (
           <div
             className="border border-brand-line rounded-[var(--radius)] p-5 mb-[18px]"

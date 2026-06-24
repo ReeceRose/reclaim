@@ -12,6 +12,21 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// MediaStatusActive and MediaStatusMissing are the two lifecycle states of a
+// media_files row. Active means the file exists on disk; missing means it was
+// not seen on the last scan (soft-delete — row is kept for history).
+const (
+	MediaStatusActive  = "active"
+	MediaStatusMissing = "missing"
+)
+
+// LibraryTypeMovies and LibraryTypeTV are the two values for media_files.library_type,
+// determined at scan time by which root the file is under.
+const (
+	LibraryTypeMovies = "movies"
+	LibraryTypeTV     = "tv"
+)
+
 // Store is the single top-level handle to the database.
 // Callers access domain state through the typed sub-stores;
 // the underlying connection pools are not exposed.

@@ -62,6 +62,8 @@ export interface CodecStat {
   file_count: number;
   total_bytes: number;
   predicted_savings_bytes: number;
+  ratio_source: 'seed' | 'learned';
+  learned_sample_count?: number;
 }
 
 export interface ResolutionStat {

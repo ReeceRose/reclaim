@@ -103,7 +103,7 @@ function ProfileDialog({
 
 function SettingsSkeleton() {
   return (
-    <div className="px-7 py-[26px] max-w-[1180px] w-full pb-14">
+    <div className="px-7 py-[26px] w-full pb-14">
       <div className="grid grid-cols-2 gap-[18px] mb-[18px] max-sm:grid-cols-1">
         {[0, 1].map((i) => (
           <div key={i} className="border border-line rounded-[var(--radius)] p-5" style={{ background: 'var(--surface)' }}>
@@ -214,7 +214,7 @@ function SettingsContent() {
         </div>
       </div>
 
-      <div className="px-7 py-[26px] max-w-[1180px] w-full pb-14">
+      <div className="px-7 py-[26px] w-full pb-14">
         <div className="grid grid-cols-2 gap-[18px] mb-[18px] max-sm:grid-cols-1">
           <div className="border border-line rounded-[var(--radius)] p-5" style={{ background: 'var(--surface)' }}>
             <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Encoding</div>

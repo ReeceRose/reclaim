@@ -91,7 +91,7 @@ func (s *Server) groupCandidates(files []store.MediaFile) ([]seriesGroup, []medi
 
 	for i := range files {
 		f := &files[i]
-		if f.LibraryType != "tv" {
+		if f.LibraryType != store.LibraryTypeTV {
 			movies = append(movies, toMediaFileDTO(f))
 			continue
 		}

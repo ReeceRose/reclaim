@@ -1,0 +1,19 @@
+# Build artifacts
+bin/
+.dev/
+web/out/
+web/node_modules/
+web/.next/
+
+# Dev / local state
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.*
+
+# Docs and repo metadata
+docs/
+*.md
+.git/
+.gitignore

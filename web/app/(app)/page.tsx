@@ -33,7 +33,7 @@ function codecClass(codec: string): string {
 
 function DashboardSkeleton() {
   return (
-    <div className="px-7 py-[26px] max-w-[1180px] w-full pb-14">
+    <div className="px-7 py-[26px] w-full pb-14">
       <div className="rounded-[18px] border border-line px-7 py-[26px] mb-[18px]" style={{ background: 'var(--surface)' }}>
         <Skeleton className="h-16 w-44 mb-3" />
         <Skeleton className="h-4 w-72 mb-6" />
@@ -94,7 +94,7 @@ function DashboardContent() {
   const maxResFiles = Math.max(...stats.by_resolution.map((r) => r.file_count), 1);
 
   return (
-    <div className="px-7 py-[26px] max-w-[1180px] w-full pb-14">
+    <div className="px-7 py-[26px] w-full pb-14">
       <div
         className="rounded-[18px] border border-line px-7 py-[26px] mb-[18px] relative overflow-hidden"
         style={{ background: 'radial-gradient(120% 150% at 100% 0%, var(--brand-soft), transparent 55%), var(--surface)' }}
@@ -149,13 +149,21 @@ function DashboardContent() {
           <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Codec breakdown</div>
           {stats.by_codec.map((c) => (
             <div key={c.codec} className="flex items-center gap-3 mb-3.5 last:mb-0 text-[0.84rem]">
-              <div className="w-[78px] font-semibold flex items-center gap-2">
+              <div className="min-w-[78px] font-semibold flex items-center gap-1.5 flex-wrap">
                 <Badge
                   className={`font-mono text-[0.7rem] rounded-[7px] font-semibold ${codecClass(c.codec)}`}
                   style={{ borderColor: `color-mix(in srgb, ${codecColor(c.codec)} 30%, transparent)`, background: `color-mix(in srgb, ${codecColor(c.codec)} 10%, transparent)` }}
                 >
                   {c.codec}
                 </Badge>
+                {c.ratio_source === 'learned' && (
+                  <Badge
+                    className="text-[0.6rem] font-bold tracking-wide rounded-[5px] uppercase px-1 py-0 text-green border-green/30 bg-green/10"
+                    title={`Savings ratio learned from ${c.learned_sample_count} completed jobs — more accurate than the seed estimate`}
+                  >
+                    learned
+                  </Badge>
+                )}
               </div>
               <div className="flex-1 h-[10px] bg-surface-2 rounded-[6px] overflow-hidden">
                 <div className="h-full rounded-[6px]" style={{ width: `${Math.round((c.file_count / maxCodecFiles) * 100)}%`, background: codecColor(c.codec) }} />

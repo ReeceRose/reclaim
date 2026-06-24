@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // embed IANA timezone database for distroless/scratch images
 
 	"reclaim/internal/api"
 	"reclaim/internal/config"

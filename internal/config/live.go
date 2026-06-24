@@ -17,6 +17,7 @@ type Live struct {
 	encodeWindowStart time.Duration
 	encodeWindowEnd   time.Duration
 	scanInterval      time.Duration
+	scanAnchor        string
 	probeConcurrency  int
 }
 
@@ -26,6 +27,7 @@ func NewLive(c *Config) *Live {
 		encodeWindowStart: c.EncodeWindowStart,
 		encodeWindowEnd:   c.EncodeWindowEnd,
 		scanInterval:      c.ScanInterval,
+		scanAnchor:        c.ScanAnchor,
 		probeConcurrency:  c.ProbeConcurrency,
 	}
 }
@@ -48,6 +50,12 @@ func (l *Live) ScanInterval() time.Duration {
 	return l.scanInterval
 }
 
+func (l *Live) ScanAnchor() string {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.scanAnchor
+}
+
 func (l *Live) ProbeConcurrency() int {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
@@ -57,13 +65,14 @@ func (l *Live) ProbeConcurrency() int {
 // Update applies validated settings. Any field left nil is unchanged. It
 // validates the whole set before mutating, so a bad value never leaves the
 // holder half-updated.
-func (l *Live) Update(encodeStart, encodeEnd *string, scanInterval *string, probeConcurrency *int) error {
+func (l *Live) Update(encodeStart, encodeEnd, scanInterval, scanAnchor *string, probeConcurrency *int) error {
 	var (
-		start = l.EncodeWindowStart()
-		end   = l.EncodeWindowEnd()
-		intvl = l.ScanInterval()
-		conc  = l.ProbeConcurrency()
-		err   error
+		start  = l.EncodeWindowStart()
+		end    = l.EncodeWindowEnd()
+		intvl  = l.ScanInterval()
+		anchor = l.ScanAnchor()
+		conc   = l.ProbeConcurrency()
+		err    error
 	)
 
 	if encodeStart != nil {
@@ -84,6 +93,12 @@ func (l *Live) Update(encodeStart, encodeEnd *string, scanInterval *string, prob
 			return fmt.Errorf("scan_interval must be positive")
 		}
 	}
+	if scanAnchor != nil {
+		if _, err = parseHHMMValue(*scanAnchor); err != nil {
+			return fmt.Errorf("scan_anchor: %w", err)
+		}
+		anchor = *scanAnchor
+	}
 	if probeConcurrency != nil {
 		if *probeConcurrency < 1 {
 			return fmt.Errorf("probe_concurrency must be a positive integer")
@@ -95,6 +110,7 @@ func (l *Live) Update(encodeStart, encodeEnd *string, scanInterval *string, prob
 	l.encodeWindowStart = start
 	l.encodeWindowEnd = end
 	l.scanInterval = intvl
+	l.scanAnchor = anchor
 	l.probeConcurrency = conc
 	l.mu.Unlock()
 	return nil

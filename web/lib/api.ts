@@ -179,6 +179,7 @@ export interface Settings {
   encode_window_start: string;
   encode_window_end: string;
   scan_interval: string;
+  scan_anchor: string;
   probe_concurrency: number;
   movies_path: string;
   tv_path: string;
@@ -209,6 +210,15 @@ export interface VerificationResult {
   resolution_match?: boolean;
   passed?: boolean;
   [k: string]: unknown;
+}
+
+export interface AppEvent {
+  id: number;
+  type: 'job_completed' | 'job_failed' | 'job_cancelled' | 'scan_completed' | 'orphan_restored';
+  severity: 'info' | 'warn' | 'error';
+  message: string;
+  metadata: Record<string, unknown> | null;
+  created_at: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -286,9 +296,13 @@ export const api = {
   forceJob: (id: number) =>
     request<{ job_id: number; forced: boolean }>("POST", `/api/jobs/${id}/force`),
 
+  // Events
+  events: (params?: { after_id?: number; limit?: number; severity?: string; type?: string }) =>
+    request<{ items: AppEvent[]; next_cursor?: number }>("GET", `/api/events${buildQuery(params ?? {})}`),
+
   // Settings
   settings: () => request<Settings>("GET", "/api/settings"),
-  updateSettings: (s: Partial<Pick<Settings, "encode_window_start" | "encode_window_end" | "scan_interval" | "probe_concurrency">>) =>
+  updateSettings: (s: Partial<Pick<Settings, "encode_window_start" | "encode_window_end" | "scan_interval" | "scan_anchor" | "probe_concurrency">>) =>
     request<Settings>("PUT", "/api/settings", s),
 };
 

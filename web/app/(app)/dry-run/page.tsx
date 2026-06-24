@@ -8,7 +8,19 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
+import { FilterSelect } from '@/components/filter-select';
+
+const CODEC_OPTIONS = [
+  { value: 'h264', label: 'H.264' },
+  { value: 'mpeg2', label: 'MPEG-2' },
+  { value: 'vc1', label: 'VC-1' },
+];
+
+const LIBRARY_OPTIONS = [
+  { value: 'movies', label: 'Movies' },
+  { value: 'tv', label: 'TV' },
+];
 
 function DryRunSkeleton() {
   return (
@@ -66,41 +78,24 @@ function DryRunContent() {
   return (
       <div className="px-7 py-[26px] w-full pb-14">
         <div className="border border-line rounded-[var(--radius)] p-5 mb-[18px]" style={{ background: 'var(--surface)' }}>
-          <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Define a set</div>
+          <div className="text-xs uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Filter a set</div>
           <div className="flex items-center gap-[10px] flex-wrap">
-            <Select value={codec || 'all'} onValueChange={(v) => setCodec(v === 'all' ? '' : v)}>
-              <SelectTrigger className="rounded-[11px] text-[0.84rem] h-auto py-[9px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All codecs</SelectItem>
-                <SelectItem value="h264">h264 only</SelectItem>
-                <SelectItem value="mpeg2">mpeg2 only</SelectItem>
-                <SelectItem value="vc1">vc1 only</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={library || 'all'} onValueChange={(v) => setLibrary(v === 'all' ? '' : v)}>
-              <SelectTrigger className="rounded-[11px] text-[0.84rem] h-auto py-[9px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All libraries</SelectItem>
-                <SelectItem value="movies">Movies only</SelectItem>
-                <SelectItem value="tv">TV only</SelectItem>
-              </SelectContent>
-            </Select>
+            <FilterSelect label="Codec" value={codec} options={CODEC_OPTIONS} onChange={setCodec} />
+            <FilterSelect label="Library" value={library} options={LIBRARY_OPTIONS} onChange={setLibrary} />
             {profiles.length > 0 && (
               <Select
                 value={String(profileId ?? profiles[0]?.id ?? '')}
                 onValueChange={(v) => setProfileId(v ? Number(v) : null)}
               >
-                <SelectTrigger className="rounded-[11px] text-[0.84rem] h-auto py-[9px]">
-                  <SelectValue />
+                <SelectTrigger className="rounded-[11px] text-[0.84rem] h-auto py-[9px] gap-1 transition-colors border-[color-mix(in_srgb,var(--brand)_45%,transparent)] bg-[color-mix(in_srgb,var(--brand)_7%,transparent)]">
+                  <span className="text-[0.78rem] flex-shrink-0 text-brand/60">Profile</span>
+                  <span className="text-muted-dim mx-px">·</span>
+                  <span className="font-medium text-brand">{selectedProfile?.name}</span>
                 </SelectTrigger>
                 <SelectContent>
                   {profiles.map((p) => (
                     <SelectItem key={p.id} value={String(p.id)}>
-                      Profile: {p.name}{p.is_default ? ' (default)' : ''}
+                      {p.name}{p.is_default ? ' (default)' : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -117,7 +112,26 @@ function DryRunContent() {
           </div>
         </div>
 
-        {result && (
+        {result && result.file_count === 0 && (
+          <div className="flex flex-col items-center gap-3 py-14 text-center">
+            <div
+              className="w-12 h-12 rounded-[14px] border border-line grid place-items-center text-muted-dim"
+              style={{ background: 'var(--surface-2)' }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-text">No candidates match</div>
+              <div className="text-xs text-muted-dim mt-1 max-w-[280px]">
+                No files match the current filters. Try a different codec or library selection.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {result && result.file_count > 0 && (
           <>
             <div
               className="rounded-[18px] border border-line px-7 py-[26px] relative overflow-hidden"
@@ -190,8 +204,21 @@ function DryRunContent() {
         )}
 
         {queryFilters === null && (
-          <div className="text-center text-muted-dim text-sm py-12">
-            Select a set and click Recalculate to see projections.
+          <div className="flex flex-col items-center gap-3 py-14 text-center">
+            <div
+              className="w-12 h-12 rounded-[14px] border border-line grid place-items-center text-muted-dim"
+              style={{ background: 'var(--surface-2)' }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
+                <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+              </svg>
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-text">Project your savings</div>
+              <div className="text-xs text-muted-dim mt-1 max-w-[280px]">
+                Choose a codec and library filter above, then click Recalculate. Nothing is queued or touched.
+              </div>
+            </div>
           </div>
         )}
       </div>

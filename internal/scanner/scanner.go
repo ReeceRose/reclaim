@@ -3,6 +3,8 @@ package scanner
 import (
 	"bufio"
 	"context"
+	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -19,6 +21,12 @@ import (
 	"reclaim/internal/media"
 	"reclaim/internal/store"
 )
+
+// Broadcaster is the WS hub slice the scanner pushes scan events to. Satisfied
+// by api.Hub; an interface so the scanner is testable without a real hub.
+type Broadcaster interface {
+	Broadcast(event string, data any)
+}
 
 // Scan trigger values passed to Scan and recorded in scan_runs.
 const (
@@ -47,14 +55,17 @@ type ProbeFunc func(ctx context.Context, path string) (*ffprobe.Result, error)
 type Scanner struct {
 	store *store.Store
 	roots map[string]string // mountPath -> libraryType
+	hub   Broadcaster       // nil-safe; set via WithBroadcaster
 
 	probeFunc    ProbeFunc
 	scanInterval time.Duration
+	scanAnchor   string
 
-	// scanIntervalFn returns the current scheduled-rescan interval. It defaults
-	// to the boot value but can be backed by the live config so a settings
-	// change reschedules without a restart.
+	// scanIntervalFn / scanAnchorFn return the current scheduled-rescan interval
+	// and anchor time. They default to the boot values but can be backed by the
+	// live config so a settings change reschedules without a restart.
 	scanIntervalFn func() time.Duration
+	scanAnchorFn   func() string
 
 	// sem bounds concurrent ffprobe subprocesses across every probe entry point
 	// (walk, fsnotify watcher, scheduled/manual/overlapping scans). Its capacity
@@ -79,6 +90,16 @@ func WithProbeFunc(fn ProbeFunc) Option {
 	return func(s *Scanner) { s.probeFunc = fn }
 }
 
+// WithBroadcaster wires the WS hub so the scanner can push event_created
+// broadcasts after scan completions that found changes.
+func WithBroadcaster(b Broadcaster) Option {
+	return func(s *Scanner) { s.hub = b }
+}
+
+// SetBroadcaster wires the hub after construction. Used in main.go where the
+// API server (and its hub) is created after the scanner.
+func (s *Scanner) SetBroadcaster(b Broadcaster) { s.hub = b }
+
 // WithDebounceDur overrides the debounce window (use in tests to avoid 30s waits).
 // The remove debounce is set to dur+5s so creates settle before vanished checks run.
 func WithDebounceDur(dur time.Duration) Option {
@@ -92,14 +113,34 @@ func WithDebounceDur(dur time.Duration) Option {
 // rather than importing config.Live directly so the option stays test-friendly.
 type liveScanInterval interface {
 	ScanInterval() time.Duration
+	ScanAnchor() string
 }
 
-// WithLiveConfig backs the scheduled-rescan interval with the live config so a
-// PUT /api/settings reschedules the next rescan without a restart.
+// WithLiveConfig backs the scheduled-rescan interval and anchor with the live
+// config so a PUT /api/settings reschedules the next rescan without a restart.
 func WithLiveConfig(live liveScanInterval) Option {
 	return func(s *Scanner) {
 		s.scanIntervalFn = live.ScanInterval
+		s.scanAnchorFn = live.ScanAnchor
 	}
+}
+
+// durationUntilNext returns the wait time until the next clock-aligned scan.
+// The interval is anchored to anchorHHMM (e.g. "00:00") so scans recur at
+// predictable wall-clock times regardless of when the container started.
+func durationUntilNext(now time.Time, interval time.Duration, anchorHHMM string) time.Duration {
+	var h, m int
+	fmt.Sscanf(anchorHHMM, "%d:%d", &h, &m) //nolint:errcheck — validated on write
+	anchorToday := time.Date(now.Year(), now.Month(), now.Day(), h, m, 0, 0, now.Location())
+	elapsed := now.Sub(anchorToday) % interval
+	if elapsed < 0 {
+		elapsed += interval
+	}
+	remaining := interval - elapsed
+	if remaining == 0 {
+		remaining = interval
+	}
+	return remaining
 }
 
 // New creates a Scanner. Call Start to activate the watcher and scheduled rescan.
@@ -114,20 +155,24 @@ func New(st *store.Store, cfg *config.Config, opts ...Option) (*Scanner, error) 
 			cfg.MoviesPath: store.LibraryTypeMovies,
 			cfg.TVPath:     store.LibraryTypeTV,
 		},
-		probeFunc:        ffprobe.Probe,
-		sem:              make(chan struct{}, cfg.ProbeConcurrency),
-		scanInterval:     cfg.ScanInterval,
-		watcher:          w,
-		debounceDur:      30 * time.Second,
-		debounceRemDur:   35 * time.Second,
-		probeTimers:      make(map[string]*time.Timer),
-		removeTimers:     make(map[string]*time.Timer),
+		probeFunc:      ffprobe.Probe,
+		sem:            make(chan struct{}, cfg.ProbeConcurrency),
+		scanInterval:   cfg.ScanInterval,
+		scanAnchor:     cfg.ScanAnchor,
+		watcher:        w,
+		debounceDur:    30 * time.Second,
+		debounceRemDur: 35 * time.Second,
+		probeTimers:    make(map[string]*time.Timer),
+		removeTimers:   make(map[string]*time.Timer),
 	}
 	for _, o := range opts {
 		o(s)
 	}
 	if s.scanIntervalFn == nil {
 		s.scanIntervalFn = func() time.Duration { return s.scanInterval }
+	}
+	if s.scanAnchorFn == nil {
+		s.scanAnchorFn = func() string { return s.scanAnchor }
 	}
 	return s, nil
 }
@@ -302,6 +347,28 @@ func (s *Scanner) Scan(ctx context.Context, trigger string, force bool) (*store.
 		slog.Error("scanner: complete scan_run", "id", runID, "err", err)
 	}
 
+	// Log a durable event only when the scan found changes (not routine no-op scans).
+	totalChanges := run.FilesAdded + run.FilesUpdated + run.FilesMoved + run.FilesRemoved
+	if totalChanges > 0 {
+		scanMsg := fmt.Sprintf("Scan: %d added, %d updated, %d moved, %d removed",
+			run.FilesAdded, run.FilesUpdated, run.FilesMoved, run.FilesRemoved)
+		scanMeta := scanJsonMeta(map[string]any{
+			"scan_run_id":   run.ID,
+			"files_scanned": run.FilesScanned,
+			"files_added":   run.FilesAdded,
+			"files_updated": run.FilesUpdated,
+			"files_moved":   run.FilesMoved,
+			"files_removed": run.FilesRemoved,
+			"trigger":       run.Trigger,
+		})
+		eventID, err := s.store.Events.Insert(ctx, store.EventScanCompleted, store.SeverityInfo, scanMsg, scanMeta)
+		if err != nil {
+			slog.Error("scanner: scan event", "err", err)
+		} else if s.hub != nil {
+			s.hub.Broadcast("event_created", scanEventBroadcast(eventID, scanMsg, scanMeta))
+		}
+	}
+
 	slog.Info("scan complete",
 		"trigger", trigger,
 		"scanned", run.FilesScanned,
@@ -408,7 +475,7 @@ func (s *Scanner) Start(ctx context.Context) {
 
 	// A resettable timer (rather than a fixed ticker) lets each scheduled rescan
 	// pick up a live SCAN_INTERVAL change applied via PUT /api/settings.
-	timer := time.NewTimer(s.scanIntervalFn())
+	timer := time.NewTimer(durationUntilNext(time.Now(), s.scanIntervalFn(), s.scanAnchorFn()))
 	defer timer.Stop()
 
 	// Initial scan on startup.
@@ -439,7 +506,7 @@ func (s *Scanner) Start(ctx context.Context) {
 					slog.Error("scanner: scheduled scan failed", "err", err)
 				}
 			}()
-			timer.Reset(s.scanIntervalFn())
+			timer.Reset(durationUntilNext(time.Now(), s.scanIntervalFn(), s.scanAnchorFn()))
 		}
 	}
 }
@@ -606,4 +673,29 @@ func (s *Scanner) logNetworkMountWarning() {
 			}
 		}
 	}
+}
+
+// scanJsonMeta serializes v to a JSON string for events.metadata.
+func scanJsonMeta(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+// scanEventBroadcast builds the WS payload for an event_created scan event.
+func scanEventBroadcast(id int64, message, meta string) map[string]any {
+	m := map[string]any{
+		"id":         id,
+		"type":       store.EventScanCompleted,
+		"severity":   store.SeverityInfo,
+		"message":    message,
+		"created_at": time.Now().Unix(),
+		"metadata":   nil,
+	}
+	if meta != "" {
+		var v any
+		if err := json.Unmarshal([]byte(meta), &v); err == nil {
+			m["metadata"] = v
+		}
+	}
+	return m
 }

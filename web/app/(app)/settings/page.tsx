@@ -11,6 +11,43 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
+function TimeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const parts = value.split(':');
+  const h24 = parseInt(parts[0] ?? '0', 10);
+  const mins = parts[1] ?? '00';
+  const isPM = h24 >= 12;
+  const h12 = h24 % 12 || 12;
+
+  function update(newH12: number, newIsPM: boolean) {
+    const newH24 = newIsPM ? (newH12 % 12) + 12 : newH12 % 12;
+    onChange(`${String(newH24).padStart(2, '0')}:${mins}`);
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <Select value={String(h12)} onValueChange={(v) => update(Number(v), isPM)}>
+        <SelectTrigger className="w-[90px] rounded-[10px] text-sm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((h) => (
+            <SelectItem key={h} value={String(h)}>{h}:00</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select value={isPM ? 'PM' : 'AM'} onValueChange={(v) => update(h12, v === 'PM')}>
+        <SelectTrigger className="w-[72px] rounded-[10px] text-sm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="AM">AM</SelectItem>
+          <SelectItem value="PM">PM</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 function ProfileDialog({
   open,
   onClose,
@@ -142,15 +179,19 @@ function SettingsContent() {
   const qc = useQueryClient();
 
   const { data: settings } = useSuspenseQuery({ queryKey: ['settings'], queryFn: api.settings });
+  const { data: session } = useSuspenseQuery({ queryKey: ['session'], queryFn: api.session });
   const { data: profilesData } = useSuspenseQuery({ queryKey: ['profiles'], queryFn: api.profiles, staleTime: 30_000 });
   const profiles = profilesData.items ?? [];
 
   const [windowStart, setWindowStart] = useState(settings.encode_window_start);
   const [windowEnd, setWindowEnd] = useState(settings.encode_window_end);
-  const [scanInterval, setScanInterval] = useState(settings.scan_interval);
+  const [scanIntervalHours, setScanIntervalHours] = useState(() => {
+    const m = settings.scan_interval.match(/^(\d+)h/);
+    return m ? parseInt(m[1], 10) : 24;
+  });
+  const [scanAnchor, setScanAnchor] = useState(settings.scan_anchor ?? '00:00');
   const [probeConcurrency, setProbeConcurrency] = useState(settings.probe_concurrency);
 
-  const [credUsername, setCredUsername] = useState('');
   const [credPassword, setCredPassword] = useState('');
   const [credConfirm, setCredConfirm] = useState('');
 
@@ -159,7 +200,8 @@ function SettingsContent() {
       api.updateSettings({
         encode_window_start: windowStart,
         encode_window_end: windowEnd,
-        scan_interval: scanInterval,
+        scan_interval: `${scanIntervalHours}h0m0s`,
+        scan_anchor: scanAnchor,
         probe_concurrency: probeConcurrency,
       }),
     onSuccess: () => {
@@ -170,10 +212,9 @@ function SettingsContent() {
   });
 
   const credMutation = useMutation({
-    mutationFn: () => api.changeCredentials(credUsername, credPassword),
+    mutationFn: () => api.changeCredentials(session.username ?? '', credPassword),
     onSuccess: () => {
       toast.success('Credentials updated');
-      setCredUsername('');
       setCredPassword('');
       setCredConfirm('');
     },
@@ -223,19 +264,9 @@ function SettingsContent() {
                 Encode window <span className="text-muted-dim font-normal">· when jobs may run</span>
               </Label>
               <div className="flex items-center gap-3">
-                <Input
-                  type="time"
-                  value={windowStart}
-                  onChange={(e) => setWindowStart(e.target.value)}
-                  className="w-auto rounded-[10px]"
-                />
+                <TimeSelect value={windowStart} onChange={setWindowStart} />
                 <span className="text-muted-fg">to</span>
-                <Input
-                  type="time"
-                  value={windowEnd}
-                  onChange={(e) => setWindowEnd(e.target.value)}
-                  className="w-auto rounded-[10px]"
-                />
+                <TimeSelect value={windowEnd} onChange={setWindowEnd} />
               </div>
               <p className="text-[0.75rem] text-muted-dim mt-1.5">A running job finishes even if the window closes — only new pulls stop.</p>
             </div>
@@ -252,14 +283,27 @@ function SettingsContent() {
             </div>
             <div className="mb-4">
               <Label className="text-[0.8rem] font-semibold mb-1.5 block">Scan interval</Label>
-              <Input value={scanInterval} onChange={(e) => setScanInterval(e.target.value)} />
-              <p className="text-[0.75rem] text-muted-dim mt-1.5">Scheduled safety-net rescan, independent of the window.</p>
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={168}
+                    value={scanIntervalHours}
+                    onChange={(e) => setScanIntervalHours(Number(e.target.value))}
+                    className="w-24"
+                  />
+                  <span className="text-[0.85rem] text-muted-fg">hours · at</span>
+                </div>
+                <TimeSelect value={scanAnchor} onChange={setScanAnchor} />
+              </div>
+              <p className="text-[0.75rem] text-muted-dim mt-1.5">Rescans repeat every N hours, aligned to the chosen time.</p>
             </div>
             <Button
-              variant="outline"
               onClick={() => settingsMutation.mutate()}
               disabled={settingsMutation.isPending}
               className="rounded-[11px]"
+              style={{ background: 'linear-gradient(145deg, var(--brand), var(--brand-2))' }}
             >
               {settingsMutation.isPending ? 'Saving…' : 'Save settings'}
             </Button>
@@ -269,7 +313,7 @@ function SettingsContent() {
             <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Account</div>
             <div className="mb-4">
               <Label className="text-[0.8rem] font-semibold mb-1.5 block">Username</Label>
-              <Input value={credUsername} onChange={(e) => setCredUsername(e.target.value)} autoComplete="username" />
+              <Input value={session.username ?? ''} disabled autoComplete="username" />
             </div>
             <div className="mb-4">
               <Label className="text-[0.8rem] font-semibold mb-1.5 block">New password</Label>
@@ -281,7 +325,7 @@ function SettingsContent() {
             </div>
             <Button
               onClick={handleCredSave}
-              disabled={credMutation.isPending || !credUsername || !credPassword}
+              disabled={credMutation.isPending || !credPassword}
               className="rounded-[11px]"
               style={{ background: 'linear-gradient(145deg, var(--brand), var(--brand-2))' }}
             >

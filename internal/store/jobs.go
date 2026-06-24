@@ -246,6 +246,30 @@ func (j *Jobs) MarkCancelled(ctx context.Context, id, completedAt int64) error {
 	)
 }
 
+// MarkCompletedTx is like MarkCompleted but operates inside the caller's tx.
+func (j *Jobs) MarkCompletedTx(ctx context.Context, tx *sql.Tx, id, outputSize, completedAt int64) error {
+	return terminalTx(ctx, tx, id, "completed", []string{"verifying"},
+		"output_size_bytes = ?, completed_at = ?, progress_percent = 100",
+		outputSize, completedAt,
+	)
+}
+
+// MarkFailedTx is like MarkFailed but operates inside the caller's tx.
+func (j *Jobs) MarkFailedTx(ctx context.Context, tx *sql.Tx, id int64, msg string, completedAt int64) error {
+	return terminalTx(ctx, tx, id, "failed", []string{"running", "verifying"},
+		"error_message = ?, completed_at = ?",
+		msg, completedAt,
+	)
+}
+
+// MarkCancelledTx is like MarkCancelled but operates inside the caller's tx.
+func (j *Jobs) MarkCancelledTx(ctx context.Context, tx *sql.Tx, id, completedAt int64) error {
+	return terminalTx(ctx, tx, id, "cancelled", []string{"queued", "running", "verifying"},
+		"completed_at = ?",
+		completedAt,
+	)
+}
+
 // terminal performs a guarded terminal-state UPDATE: status flips to `to` only
 // if the row is currently in one of `from`, with extra column assignments
 // applied in the same statement. Returns ErrIllegalTransition if no row matched.
@@ -260,6 +284,31 @@ func (j *Jobs) terminal(ctx context.Context, id int64, to string, from []string,
 	q := "UPDATE transcode_jobs SET status = '" + to + "', " + setClause +
 		" WHERE id = ? AND status IN (" + strings.Join(placeholders, ",") + ")"
 	res, err := j.w.ExecContext(ctx, q, sqlArgs...)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrIllegalTransition
+	}
+	return nil
+}
+
+// terminalTx is like terminal but executes inside the caller's transaction.
+func terminalTx(ctx context.Context, tx *sql.Tx, id int64, to string, from []string, setClause string, args ...any) error {
+	placeholders := make([]string, len(from))
+	sqlArgs := append([]any{}, args...)
+	sqlArgs = append(sqlArgs, id)
+	for i, s := range from {
+		placeholders[i] = "?"
+		sqlArgs = append(sqlArgs, s)
+	}
+	q := "UPDATE transcode_jobs SET status = '" + to + "', " + setClause +
+		" WHERE id = ? AND status IN (" + strings.Join(placeholders, ",") + ")"
+	res, err := tx.ExecContext(ctx, q, sqlArgs...)
 	if err != nil {
 		return err
 	}

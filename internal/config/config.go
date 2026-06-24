@@ -14,6 +14,7 @@ type Config struct {
 	EncodeWindowStart time.Duration // minutes since midnight
 	EncodeWindowEnd   time.Duration
 	ScanInterval     time.Duration
+	ScanAnchor       string
 	ProbeConcurrency int
 	DisableAuth      bool
 	ResetAuth        bool
@@ -31,6 +32,7 @@ func Load() (*Config, error) {
 	c.EncodeWindowEnd = parseHHMM("ENCODE_WINDOW_END", "06:00", &errs)
 
 	c.ScanInterval = parseDuration("SCAN_INTERVAL", "24h", &errs)
+	c.ScanAnchor = parseHHMMString("SCAN_ANCHOR", "00:00", &errs)
 	c.ProbeConcurrency = parseInt("PROBE_CONCURRENCY", "4", &errs)
 
 	c.DisableAuth = os.Getenv("DISABLE_AUTH") == "true"
@@ -46,6 +48,18 @@ func requireEnv(key string, errs *[]error) string {
 	v := os.Getenv(key)
 	if v == "" {
 		*errs = append(*errs, fmt.Errorf("%s must not be empty", key))
+	}
+	return v
+}
+
+func parseHHMMString(key, def string, errs *[]error) string {
+	v := os.Getenv(key)
+	if v == "" {
+		v = def
+	}
+	if _, err := parseHHMMValue(v); err != nil {
+		*errs = append(*errs, fmt.Errorf("%s %w", key, err))
+		return def
 	}
 	return v
 }

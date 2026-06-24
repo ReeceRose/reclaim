@@ -392,8 +392,20 @@ func (w *Worker) replace(ctx context.Context, job *store.TranscodeJob, file *sto
 	if err := w.store.Media.ReplaceWithEncoded(ctx, file.ID, newSize, fp, now); err != nil {
 		return err
 	}
-	if err := w.store.Jobs.MarkCompleted(ctx, job.ID, newSize, now); err != nil {
-		slog.Error("worker: mark completed", "job", job.ID, "err", err)
+
+	// Bundle MarkCompleted + event insert in one transaction.
+	completedMsg := "Encoded " + filepath.Base(file.Path)
+	completedMeta := jsonMeta(map[string]any{
+		"job_id":              job.ID,
+		"file_id":             file.ID,
+		"output_size_bytes":   newSize,
+		"original_size_bytes": file.SizeBytes,
+	})
+	eventID, err := w.store.CompleteJob(ctx, job.ID, newSize, now, completedMsg, completedMeta)
+	if err != nil {
+		slog.Error("worker: complete job", "job", job.ID, "err", err)
+	} else {
+		w.hub.Broadcast("event_created", eventBroadcast(eventID, store.EventJobCompleted, store.SeverityInfo, completedMsg, completedMeta, now))
 	}
 
 	// After completing a job, check whether this codec now has enough samples
@@ -442,9 +454,14 @@ func (w *Worker) refineRatioIfReady(ctx context.Context, codec string) error {
 // original is untouched, and the job goes to cancelled.
 func (w *Worker) cancelJob(jobID int64, tmpPath string) {
 	removeIfExists(tmpPath)
+	now := w.clock().Unix()
+	meta := jsonMeta(map[string]any{"job_id": jobID})
 	// Use a detached context so a worker shutdown doesn't abort the bookkeeping.
-	if err := w.store.Jobs.MarkCancelled(context.Background(), jobID, w.clock().Unix()); err != nil {
-		slog.Error("worker: mark cancelled", "job", jobID, "err", err)
+	eventID, err := w.store.CancelJob(context.Background(), jobID, now, meta)
+	if err != nil {
+		slog.Error("worker: cancel job", "job", jobID, "err", err)
+	} else {
+		w.hub.Broadcast("event_created", eventBroadcast(eventID, store.EventJobCancelled, store.SeverityInfo, "Job cancelled", meta, now))
 	}
 	w.hub.Broadcast("job_cancelled", map[string]any{"job_id": jobID})
 }
@@ -453,8 +470,17 @@ func (w *Worker) cancelJob(jobID int64, tmpPath string) {
 // verification detail.
 func (w *Worker) failJob(ctx context.Context, jobID int64, msg string, verification *string) {
 	bg := context.WithoutCancel(ctx)
-	if err := w.store.Jobs.MarkFailed(bg, jobID, msg, w.clock().Unix()); err != nil {
-		slog.Error("worker: mark failed", "job", jobID, "err", err)
+	now := w.clock().Unix()
+	metaData := map[string]any{"job_id": jobID, "error": msg}
+	if verification != nil {
+		metaData["verification_result"] = *verification
+	}
+	meta := jsonMeta(metaData)
+	eventID, err := w.store.FailJob(bg, jobID, msg, now, meta)
+	if err != nil {
+		slog.Error("worker: fail job", "job", jobID, "err", err)
+	} else {
+		w.hub.Broadcast("event_created", eventBroadcast(eventID, store.EventJobFailed, store.SeverityError, "Encode failed: "+msg, meta, now))
 	}
 	data := map[string]any{"job_id": jobID, "error": msg}
 	if verification != nil {
@@ -475,11 +501,18 @@ func (w *Worker) reconcileInterrupted(ctx context.Context) {
 		if j.OutputPath != nil {
 			removeIfExists(*j.OutputPath)
 		}
-		if err := w.store.Jobs.MarkFailed(ctx, j.ID, "interrupted by shutdown", w.clock().Unix()); err != nil {
+		const reconcileMsg = "Job interrupted by shutdown"
+		meta := jsonMeta(map[string]any{"job_id": j.ID})
+		if err := w.store.Jobs.MarkFailed(ctx, j.ID, reconcileMsg, w.clock().Unix()); err != nil {
 			slog.Error("worker: reconcile job", "job", j.ID, "err", err)
 			continue
 		}
 		slog.Warn("worker: reconciled interrupted job to failed", "job", j.ID)
+		// Event insert is separate (no tx) — reconcile runs at startup before
+		// any WS clients are connected so no broadcast is needed.
+		if _, err := w.store.Events.Insert(ctx, store.EventJobFailed, store.SeverityWarn, reconcileMsg, meta); err != nil {
+			slog.Error("worker: reconcile event", "job", j.ID, "err", err)
+		}
 	}
 }
 
@@ -525,6 +558,15 @@ func (w *Worker) sweepOrphans(ctx context.Context) {
 						slog.Error("worker: restore backup", "backup", path, "orig", orig, "err", err)
 					} else {
 						slog.Warn("worker: restored backup over missing original", "orig", orig)
+						bg := context.Background()
+						restoreMsg := "Restored backup over missing original: " + filepath.Base(orig)
+						restoreMeta := jsonMeta(map[string]any{"original": orig, "backup": path})
+						eventID, err := w.store.Events.Insert(bg, store.EventOrphanRestored, store.SeverityWarn, restoreMsg, restoreMeta)
+						if err != nil {
+							slog.Error("worker: orphan restored event", "err", err)
+						} else {
+							w.hub.Broadcast("event_created", eventBroadcast(eventID, store.EventOrphanRestored, store.SeverityWarn, restoreMsg, restoreMeta, time.Now().Unix()))
+						}
 					}
 				}
 			}
@@ -559,3 +601,29 @@ func removeIfExists(path string) {
 }
 
 func strptr(s string) *string { return &s }
+
+// jsonMeta serializes v to a compact JSON string for storage in events.metadata.
+func jsonMeta(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+// eventBroadcast builds the WS payload for an event_created broadcast so the
+// frontend can prepend it to the notifications list without a round-trip.
+func eventBroadcast(id int64, eventType, severity, message, meta string, createdAt int64) map[string]any {
+	m := map[string]any{
+		"id":         id,
+		"type":       eventType,
+		"severity":   severity,
+		"message":    message,
+		"created_at": createdAt,
+		"metadata":   nil,
+	}
+	if meta != "" {
+		var v any
+		if err := json.Unmarshal([]byte(meta), &v); err == nil {
+			m["metadata"] = v
+		}
+	}
+	return m
+}

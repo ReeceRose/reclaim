@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -7,6 +8,54 @@ import { api } from '@/lib/api';
 import { useWS } from '@/hooks/use-ws';
 import { windowInfo } from '@/lib/format';
 import { toast } from 'sonner';
+import { NotificationPanel, useUnreadCount } from '@/components/notification-panel';
+
+// ---------------------------------------------------------------------------
+// WindowArc — 24-hour clock face showing the encode window period
+// ---------------------------------------------------------------------------
+
+function WindowArc({ start, end, isOpen }: { start: string; end: string; isOpen: boolean }) {
+  const SIZE = 44;
+  const CX = SIZE / 2;
+  const CY = SIZE / 2;
+  const R = 16;
+  const SW = 3;
+
+  function toRad(hhmm: string): number {
+    const [h, m] = hhmm.split(':').map(Number);
+    return ((h * 60 + (m ?? 0)) / 1440) * 2 * Math.PI - Math.PI / 2;
+  }
+
+  const now = new Date();
+  const nowRad = ((now.getHours() * 60 + now.getMinutes()) / 1440) * 2 * Math.PI - Math.PI / 2;
+
+  const a1 = toRad(start);
+  let a2 = toRad(end);
+  if (a2 <= a1) a2 += 2 * Math.PI;
+
+  const largeArc = a2 - a1 > Math.PI ? 1 : 0;
+  const x1 = (CX + R * Math.cos(a1)).toFixed(2);
+  const y1 = (CY + R * Math.sin(a1)).toFixed(2);
+  const x2 = (CX + R * Math.cos(a2)).toFixed(2);
+  const y2 = (CY + R * Math.sin(a2)).toFixed(2);
+  const nx = (CX + R * Math.cos(nowRad)).toFixed(2);
+  const ny = (CY + R * Math.sin(nowRad)).toFixed(2);
+
+  return (
+    <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} className="flex-shrink-0">
+      <circle cx={CX} cy={CY} r={R} fill="none" stroke="var(--line)" strokeWidth={SW} />
+      <path
+        d={`M ${x1} ${y1} A ${R} ${R} 0 ${largeArc} 1 ${x2} ${y2}`}
+        fill="none"
+        stroke={isOpen ? 'var(--green)' : 'var(--surface-3)'}
+        strokeWidth={SW}
+        strokeLinecap="round"
+        style={isOpen ? { filter: 'drop-shadow(0 0 3px var(--green))' } : undefined}
+      />
+      <circle cx={nx} cy={ny} r={2.2} fill="var(--brand)" />
+    </svg>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Nav config
@@ -74,7 +123,9 @@ const NAV_ITEMS = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   useWS();
+  const { data: isScanning } = useQuery<boolean>({ queryKey: ['scanning'], initialData: false });
 
+  const [notifOpen, setNotifOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const qc = useQueryClient();
@@ -87,6 +138,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     queryFn: () => api.jobs(),
     refetchInterval: 5000,
   });
+  const { data: eventsData } = useQuery({
+    queryKey: ['events'],
+    queryFn: () => api.events({ limit: 50 }),
+    staleTime: 30_000,
+  });
+
+  const unreadCount = useUnreadCount(eventsData?.items ?? []);
 
   const candidateCount = stats
     ? stats.by_codec.filter((c) => c.codec !== 'hevc').reduce((s, c) => s + c.file_count, 0)
@@ -150,10 +208,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="absolute inset-x-[7px] top-[7px] h-1 rounded-sm" style={{ background: 'var(--bg)', opacity: 0.6, boxShadow: '0 6px 0 var(--bg)' }} />
             <span className="absolute right-1.5 bottom-1.5 w-[5px] h-[5px] rounded-full" style={{ background: 'var(--bg)', opacity: 0.6 }} />
           </div>
-          <span className="font-extrabold tracking-tight text-[1.22rem]">
+          <span className="font-extrabold tracking-tight text-[1.22rem] flex-1">
             Re<span className="text-brand">claim</span>
           </span>
+          {/* Bell */}
+          <button
+            onClick={() => setNotifOpen(true)}
+            className="relative w-7 h-7 flex items-center justify-center rounded-[8px] text-muted-fg hover:text-text hover:bg-surface-2 transition-colors"
+            aria-label="Events"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[15px] h-[15px]">
+              <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>
+            </svg>
+            {unreadCount > 0 && (
+              <span
+                className="absolute -top-0.5 -right-0.5 w-[14px] h-[14px] rounded-full text-[0.58rem] font-bold grid place-items-center"
+                style={{ background: 'var(--brand)', color: 'var(--on-brand)' }}
+              >
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
         </div>
+
+        {isScanning && (
+          <div className="flex items-center gap-2 px-5 py-[9px] text-[0.75rem] font-medium text-brand border-b border-brand-line" style={{ background: 'var(--brand-soft)' }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 flex-shrink-0 animate-spin" style={{ animationDuration: '1.1s' }}>
+              <path d="M21 12a9 9 0 11-6.219-8.56" strokeLinecap="round"/>
+            </svg>
+            Scanning library…
+          </div>
+        )}
 
         {/* Nav */}
         <nav className="flex flex-col gap-[3px] px-3 py-[14px] flex-1">
@@ -193,13 +278,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Footer */}
         <div className="border-t border-line-soft px-4 py-[14px]">
-          {win && (
-            <div className="flex items-center gap-[9px] text-[0.78rem] text-muted-fg bg-surface-2 border border-line rounded-[11px] px-[11px] py-[9px] mb-3">
-              <span
-                className={`w-[7px] h-[7px] rounded-full flex-shrink-0 ${win.open ? 'bg-green' : 'bg-muted-dim'}`}
-                style={win.open ? { boxShadow: '0 0 0 3px var(--green-soft)' } : undefined}
+          {win && settings && (
+            <div className="flex items-center gap-3 mb-3">
+              <WindowArc
+                start={settings.encode_window_start}
+                end={settings.encode_window_end}
+                isOpen={win.open}
               />
-              Window {win.label} · {win.detail}
+              <div className="min-w-0">
+                <div className="text-[0.76rem] font-semibold text-text leading-tight">{win.label}</div>
+                <div className={`text-[0.7rem] leading-tight mt-[2px] ${win.open ? 'text-green' : 'text-muted-dim'}`}>
+                  {win.detail}
+                </div>
+              </div>
             </div>
           )}
           <div className="flex items-center gap-[10px] text-[0.84rem]">
@@ -221,6 +312,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main className="flex flex-col min-w-0 max-sm:pb-20">
         {children}
       </main>
+
+      <NotificationPanel open={notifOpen} onOpenChange={setNotifOpen} />
 
       {/* Mobile bottom tab bar */}
       <nav

@@ -184,18 +184,22 @@ func (s *Server) handleCancelJob(c *echo.Context) error {
 		if s.canceller != nil && s.canceller.Cancel(id) {
 			return c.JSON(http.StatusOK, map[string]any{"job_id": id, "status": "cancelling"})
 		}
-		if err := s.store.Jobs.MarkCancelled(ctx, id, time.Now().Unix()); err != nil {
+		eventID, err := s.store.CancelJob(ctx, id, time.Now().Unix(), `{"job_id":`+strconv.FormatInt(id, 10)+`}`)
+		if err != nil {
 			return serverError(c, err)
 		}
 		s.hub.Broadcast("job_cancelled", map[string]any{"job_id": id})
+		s.hub.Broadcast("event_created", apiEventPayload(eventID, store.EventJobCancelled, store.SeverityInfo, "Job cancelled", id))
 		return c.JSON(http.StatusOK, map[string]any{"job_id": id, "status": "cancelled"})
 	case string(ijobs.StatusQueued):
 		// A queued job is just dropped. The guarded transition also wins the race
 		// against the worker claiming it at the same moment.
-		if err := s.store.Jobs.MarkCancelled(ctx, id, time.Now().Unix()); err != nil {
+		eventID, err := s.store.CancelJob(ctx, id, time.Now().Unix(), `{"job_id":`+strconv.FormatInt(id, 10)+`}`)
+		if err != nil {
 			return serverError(c, err)
 		}
 		s.hub.Broadcast("job_cancelled", map[string]any{"job_id": id})
+		s.hub.Broadcast("event_created", apiEventPayload(eventID, store.EventJobCancelled, store.SeverityInfo, "Job cancelled", id))
 		return c.JSON(http.StatusOK, map[string]any{"job_id": id, "status": "cancelled"})
 	default:
 		return c.JSON(http.StatusConflict, errorBody("job is not cancellable in its current state"))

@@ -37,6 +37,7 @@ type Store struct {
 	Scans    *Scans
 	Settings *Settings
 	Stats    *Stats
+	Events   *Events
 
 	w *sql.DB
 	r *sql.DB
@@ -71,6 +72,7 @@ func Open(path string) (*Store, error) {
 		Scans:    &Scans{r: r, w: w},
 		Settings: &Settings{r: r, w: w},
 		Stats:    &Stats{r: r, w: w},
+		Events:   &Events{r: r, w: w},
 	}
 
 	if err := runMigrations(w); err != nil {
@@ -93,9 +95,70 @@ func (s *Store) Close() error {
 	return errors.Join(s.w.Close(), s.r.Close())
 }
 
+// Tx opens a write transaction. Callers must defer tx.Rollback() and call
+// tx.Commit() on success. Used to bundle a job state change + event insert
+// atomically without exposing the raw write pool.
+func (s *Store) Tx(ctx context.Context) (*sql.Tx, error) {
+	return s.w.BeginTx(ctx, nil)
+}
+
 // Version returns the highest applied migration version.
 func (s *Store) Version() (int64, error) {
 	return migrationVersion(s.r)
+}
+
+// CompleteJob atomically marks a job completed and inserts a job_completed
+// event in the same transaction. Returns the new event ID for broadcasting.
+func (s *Store) CompleteJob(ctx context.Context, jobID, outputSize, completedAt int64, message, meta string) (int64, error) {
+	tx, err := s.w.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if err := s.Jobs.MarkCompletedTx(ctx, tx, jobID, outputSize, completedAt); err != nil {
+		return 0, err
+	}
+	id, err := s.Events.InsertTx(ctx, tx, EventJobCompleted, SeverityInfo, message, meta)
+	if err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
+}
+
+// FailJob atomically marks a job failed and inserts a job_failed event.
+// Returns the new event ID for broadcasting.
+func (s *Store) FailJob(ctx context.Context, jobID int64, errMsg string, failedAt int64, meta string) (int64, error) {
+	tx, err := s.w.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if err := s.Jobs.MarkFailedTx(ctx, tx, jobID, errMsg, failedAt); err != nil {
+		return 0, err
+	}
+	id, err := s.Events.InsertTx(ctx, tx, EventJobFailed, SeverityError, errMsg, meta)
+	if err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
+}
+
+// CancelJob atomically marks a job cancelled and inserts a job_cancelled event.
+// Returns the new event ID for broadcasting.
+func (s *Store) CancelJob(ctx context.Context, jobID, cancelledAt int64, meta string) (int64, error) {
+	tx, err := s.w.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if err := s.Jobs.MarkCancelledTx(ctx, tx, jobID, cancelledAt); err != nil {
+		return 0, err
+	}
+	id, err := s.Events.InsertTx(ctx, tx, EventJobCancelled, SeverityInfo, "Job cancelled", meta)
+	if err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
 }
 
 // buildDSN embeds SQLite PRAGMAs as URI query parameters so they are applied

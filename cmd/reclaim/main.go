@@ -71,9 +71,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Scanner runs the startup scan then drives the watcher + scheduled rescan.
-	go sc.Start(ctx)
-
 	apiSrv := api.New(api.Deps{
 		Store:       db,
 		Scanner:     sc,
@@ -84,10 +81,16 @@ func main() {
 		StaticFS:    web.FS(),
 	})
 
+	// Wire the WS hub into the scanner so scan_completed events are broadcast.
+	sc.SetBroadcaster(apiSrv.Hub())
+
 	// Worker executes encodes within the window and pushes progress over the
 	// server's WS hub; the API drives it to cancel running jobs.
 	wk := worker.New(db, live, apiSrv.Hub(), []string{cfg.MoviesPath, cfg.TVPath})
 	apiSrv.SetCanceller(wk)
+
+	// Start scanner and worker after all wiring is complete.
+	go sc.Start(ctx)
 	go wk.Run(ctx)
 
 	handler := apiSrv.Handler()

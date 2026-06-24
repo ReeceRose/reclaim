@@ -388,6 +388,7 @@ func TestSettingsLiveUpdate(t *testing.T) {
 
 	w := doReq(h, http.MethodPut, "/api/settings", map[string]any{
 		"scan_interval":     "12h",
+		"scan_anchor":       "02:30",
 		"probe_concurrency": 8,
 	}, cookie)
 	if w.Code != http.StatusOK {
@@ -396,6 +397,9 @@ func TestSettingsLiveUpdate(t *testing.T) {
 	if srv.live.ScanInterval() != 12*time.Hour {
 		t.Errorf("scan interval not applied: %v", srv.live.ScanInterval())
 	}
+	if srv.live.ScanAnchor() != "02:30" {
+		t.Errorf("scan anchor not applied: %v", srv.live.ScanAnchor())
+	}
 	if srv.live.ProbeConcurrency() != 8 {
 		t.Errorf("probe concurrency not applied: %d", srv.live.ProbeConcurrency())
 	}
@@ -403,6 +407,9 @@ func TestSettingsLiveUpdate(t *testing.T) {
 	body := decodeBody(t, w)
 	if body["scan_interval"] != "12h0m0s" {
 		t.Errorf("scan_interval echoed = %v", body["scan_interval"])
+	}
+	if body["scan_anchor"] != "02:30" {
+		t.Errorf("scan_anchor echoed = %v", body["scan_anchor"])
 	}
 	if body["movies_path"] != "/media/movies" {
 		t.Errorf("movies_path = %v, want read-only /media/movies", body["movies_path"])

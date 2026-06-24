@@ -2,7 +2,8 @@
 
 import { useQuery, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, type Job, type VerificationResult } from '@/lib/api';
-import { formatBytes, baseName, dirName, windowInfo } from '@/lib/format';
+import { formatBytes, baseName, dirName, windowInfo, relativeTime } from '@/lib/format';
+import Link from 'next/link';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -218,7 +219,7 @@ function QueueContent() {
 
         {history.length > 0 && (
           <>
-            <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-3 mt-6">
+            <div className="text-xs uppercase tracking-[0.11em] text-muted-fg font-bold mb-3 mt-6">
               History
             </div>
             {history.map((job) => {
@@ -231,16 +232,21 @@ function QueueContent() {
                   style={{ borderColor: failed ? 'color-mix(in srgb, var(--red) 35%, transparent)' : 'var(--line)' }}
                 >
                   <div className="flex-1 min-w-[60%]">
-                    <div className="font-semibold text-[0.88rem]">{jobName(job)}</div>
-                    <div className="text-[0.74rem] text-muted-dim font-mono mt-0.5">
-                      {failed
-                        ? 'verification failed — original untouched'
-                        : `${formatBytes(job.original_size_bytes)} → ${formatBytes(job.output_size_bytes ?? 0)} · saved ${formatBytes(saved)}`}
+                    <div className="font-semibold text-sm">{jobName(job)}</div>
+                    <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">
+                      <span className="text-xs text-muted-dim font-mono">
+                        {failed
+                          ? 'verification failed — original untouched'
+                          : `${formatBytes(job.original_size_bytes)} → ${formatBytes(job.output_size_bytes ?? 0)}`}
+                      </span>
+                      {!failed && saved > 0 && (
+                        <span className="text-xs text-green font-semibold">-{formatBytes(saved)}</span>
+                      )}
                     </div>
                     <VerifyChecks json={job.verification_result} />
                     {failed && job.output_path && (
                       <div
-                        className="text-[0.76rem] text-red mt-2 rounded-[9px] px-[11px] py-2 border"
+                        className="text-xs text-red mt-2 rounded-[9px] px-[11px] py-2 border"
                         style={{ background: 'var(--red-soft)', borderColor: 'color-mix(in srgb, var(--red) 28%, transparent)' }}
                       >
                         Temp output kept for inspection:<br />
@@ -248,9 +254,14 @@ function QueueContent() {
                       </div>
                     )}
                   </div>
-                  <Badge className={`ml-auto text-[0.72rem] rounded-[20px] border-transparent ${failed ? 'text-red bg-red-soft' : 'text-green bg-green-soft'}`}>
-                    {failed ? 'failed' : 'completed'}
-                  </Badge>
+                  <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+                    {job.completed_at && (
+                      <span className="text-xs text-muted-dim">{relativeTime(job.completed_at)}</span>
+                    )}
+                    <Badge className={`text-xs rounded-[20px] border-transparent ${failed ? 'text-red bg-red-soft' : 'text-green bg-green-soft'}`}>
+                      {failed ? 'failed' : 'completed'}
+                    </Badge>
+                  </div>
                 </div>
               );
             })}
@@ -258,8 +269,23 @@ function QueueContent() {
         )}
 
         {all.length === 0 && (
-          <div className="text-center text-muted-dim text-sm py-20">
-            No jobs yet. Select candidates and queue them to get started.
+          <div className="flex flex-col items-center gap-4 py-20 text-center">
+            <div
+              className="w-12 h-12 rounded-[14px] border border-line grid place-items-center text-muted-dim"
+              style={{ background: 'var(--surface-2)' }}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+            </div>
+            <div>
+              <div className="text-[0.9rem] font-semibold text-text">Queue is empty</div>
+              <div className="text-[0.78rem] text-muted-dim mt-1 max-w-[260px]">
+                Jobs run inside your encode window.{' '}
+                <Link href="/candidates" className="text-brand hover:underline">Browse candidates</Link>
+                {' '}to select files.
+              </div>
+            </div>
           </div>
         )}
       </div>

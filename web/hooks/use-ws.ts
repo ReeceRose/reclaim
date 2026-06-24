@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { wsURL } from '@/lib/api';
+import { wsURL, type AppEvent } from '@/lib/api';
 import { toast } from 'sonner';
 
 const SCAN_EVENTS = new Set(['scan_started', 'scan_completed', 'scan_failed']);
@@ -41,6 +41,7 @@ export function useWS() {
         const { event, data } = msg;
 
         if (SCAN_EVENTS.has(event)) {
+          qc.setQueryData(['scanning'], event === 'scan_started');
           qc.invalidateQueries({ queryKey: ['stats'] });
           qc.invalidateQueries({ queryKey: ['candidates'] });
           if (event === 'scan_completed') {
@@ -69,6 +70,11 @@ export function useWS() {
             ...(prev ?? {}),
             [job_id]: percent,
           }));
+        } else if (event === 'event_created') {
+          const newEvent = data as AppEvent;
+          qc.setQueryData<{ items: AppEvent[] }>(['events'], (prev) => ({
+            items: [newEvent, ...(prev?.items ?? [])].slice(0, 200),
+          }));
         }
       };
 
@@ -89,4 +95,5 @@ export function useWS() {
       ws?.close();
     };
   }, [qc]);
+
 }

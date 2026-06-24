@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { FilterSelect } from '@/components/filter-select';
 
 const PAGE_SIZE = 100;
 
@@ -45,51 +46,6 @@ const LIBRARY_OPTIONS = [
   { value: 'tv', label: 'TV' },
 ];
 
-function FilterSelect({
-  label,
-  value,
-  options,
-  onChange,
-  className,
-}: {
-  label: string;
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (v: string) => void;
-  className?: string;
-}) {
-  const active = value !== '';
-  const selectedLabel = options.find((o) => o.value === value)?.label;
-  return (
-    <Select value={value || '_all'} onValueChange={(v) => onChange(v === '_all' ? '' : v)}>
-      <SelectTrigger
-        className={cn(
-          'rounded-[11px] text-[0.84rem] h-auto py-[9px] gap-1 transition-colors',
-          active
-            ? 'border-[color-mix(in_srgb,var(--brand)_45%,transparent)] bg-[color-mix(in_srgb,var(--brand)_7%,transparent)]'
-            : 'bg-surface',
-          className,
-        )}
-      >
-        <span className={cn('text-[0.78rem] flex-shrink-0', active ? 'text-brand/60' : 'text-muted-dim')}>{label}</span>
-        {active ? (
-          <>
-            <span className="text-muted-dim mx-px">·</span>
-            <span className={cn('font-medium', active && 'text-brand')}>{selectedLabel}</span>
-          </>
-        ) : (
-          <span className="text-muted-fg">All</span>
-        )}
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="_all">All</SelectItem>
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
 
 const CODEC_COLORS: Record<string, string> = {
   h264: 'text-gold',
@@ -602,58 +558,56 @@ export default function Page() {
         )}
       </div>
 
-      <div className="flex items-center gap-[10px] px-7 py-3 flex-wrap border-b border-line-soft flex-shrink-0" style={{ background: 'var(--bg)' }}>
-        <div className="flex-1 min-w-[200px] relative">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[15px] h-[15px] absolute left-[11px] top-1/2 -translate-y-1/2 text-muted-dim pointer-events-none">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Filter by title or path…"
-            className="rounded-[11px] pl-[34px] text-[0.86rem]"
-          />
-        </div>
-
-        <div className="h-5 w-px bg-line flex-shrink-0" />
-
-        <Select value={sort} onValueChange={(v) => startTransition(() => setSort(v as SortKey))}>
-          <SelectTrigger className="rounded-[11px] bg-surface text-[0.84rem] h-auto py-[9px] gap-1 min-w-[195px]">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[13px] h-[13px] text-muted-dim flex-shrink-0">
-              <path d="M3 8h18M6 12h12M10 16h4"/>
+      {/* Filter strip: search on its own line, controls on second line */}
+      <div className="border-b border-line-soft flex-shrink-0" style={{ background: 'var(--bg)' }}>
+        <div className="flex items-center gap-2 px-7 py-3">
+          <div className="flex-1 relative">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[14px] h-[14px] absolute left-[11px] top-1/2 -translate-y-1/2 text-muted-dim pointer-events-none">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
-            <span className="text-[0.78rem] text-muted-dim flex-shrink-0">Sort</span>
-            <span className="text-muted-dim mx-px">·</span>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SORT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-          </SelectContent>
-        </Select>
-
-        <FilterSelect label="Codec" value={codec} options={CODEC_OPTIONS} onChange={(v) => startTransition(() => setCodec(v))} className="min-w-[120px]" />
-        <FilterSelect label="Res" value={resolution} options={RESOLUTION_OPTIONS} onChange={(v) => startTransition(() => setResolution(v))} className="min-w-[100px]" />
-        <FilterSelect label="Library" value={library} options={LIBRARY_OPTIONS} onChange={(v) => startTransition(() => setLibrary(v))} className="min-w-[130px]" />
-
-        <div className="h-5 w-px bg-line flex-shrink-0" />
-
-        <div className="inline-flex bg-surface border border-line rounded-[11px] p-[3px] gap-[2px]">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setView('flat')}
-            className={cn('rounded-[8px] text-[0.82rem] font-semibold h-auto py-[7px] px-[13px]', view === 'flat' ? 'bg-brand-soft text-brand hover:bg-brand-soft hover:text-brand' : 'text-muted-fg')}
-          >
-            Flat
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setView('grouped')}
-            className={cn('rounded-[8px] text-[0.82rem] font-semibold h-auto py-[7px] px-[13px]', view === 'grouped' ? 'bg-brand-soft text-brand hover:bg-brand-soft hover:text-brand' : 'text-muted-fg')}
-          >
-            By series
-          </Button>
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by title or path…"
+              className="rounded-[11px] pl-[34px] text-sm"
+            />
+          </div>
+          <div className="inline-flex bg-surface border border-line rounded-[11px] p-[3px] gap-[2px] flex-shrink-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setView('flat')}
+              className={cn('rounded-[8px] text-xs font-semibold h-auto py-[7px] px-[13px]', view === 'flat' ? 'bg-brand-soft text-brand hover:bg-brand-soft hover:text-brand' : 'text-muted-fg')}
+            >
+              Flat
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setView('grouped')}
+              className={cn('rounded-[8px] text-xs font-semibold h-auto py-[7px] px-[13px]', view === 'grouped' ? 'bg-brand-soft text-brand hover:bg-brand-soft hover:text-brand' : 'text-muted-fg')}
+            >
+              By series
+            </Button>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 px-7 pb-3 flex-wrap">
+          <Select value={sort} onValueChange={(v) => startTransition(() => setSort(v as SortKey))}>
+            <SelectTrigger className="rounded-[11px] bg-surface text-sm h-auto py-[7px] gap-1 min-w-[185px]">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[13px] h-[13px] text-muted-dim flex-shrink-0">
+                <path d="M3 8h18M6 12h12M10 16h4"/>
+              </svg>
+              <span className="text-xs text-muted-dim flex-shrink-0">Sort</span>
+              <span className="text-muted-dim mx-px">·</span>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <FilterSelect label="Codec" value={codec} options={CODEC_OPTIONS} onChange={(v) => startTransition(() => setCodec(v))} className="min-w-[120px]" />
+          <FilterSelect label="Res" value={resolution} options={RESOLUTION_OPTIONS} onChange={(v) => startTransition(() => setResolution(v))} className="min-w-[100px]" />
+          <FilterSelect label="Library" value={library} options={LIBRARY_OPTIONS} onChange={(v) => startTransition(() => setLibrary(v))} className="min-w-[130px]" />
         </div>
       </div>
 
@@ -692,6 +646,23 @@ export default function Page() {
                     <Skeleton className="w-[110px] h-4 flex-shrink-0 mr-4" />
                   </div>
                 ))}
+              </div>
+            ) : data !== undefined && allItems.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 py-20 text-center">
+                <div
+                  className="w-12 h-12 rounded-[14px] border border-line grid place-items-center text-muted-dim"
+                  style={{ background: 'var(--surface-2)' }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                </div>
+                <div>
+                  <div className="text-[0.9rem] font-semibold text-text">No candidates match</div>
+                  <div className="text-[0.78rem] text-muted-dim mt-1 max-w-[260px]">
+                    Try adjusting your filters or trigger a scan to index new files.
+                  </div>
+                </div>
               </div>
             ) : (
             <div ref={parentRef} className="flex-1 overflow-auto">

@@ -154,6 +154,64 @@ func (m *Media) Candidates(ctx context.Context, q CandidateQuery) ([]MediaFile, 
 	return out, rows.Err()
 }
 
+// DryRunResult is the projected outcome of re-encoding a candidate set (§11):
+// pure decision support, queues nothing.
+type DryRunResult struct {
+	FileCount             int64
+	TotalBytes            int64
+	PredictedSavingsBytes int64
+}
+
+// DryRunSavings sums the projected savings over candidate-eligible files, scoped
+// either to an explicit set of ids, a filter, or both. With neither set it spans
+// the whole candidate list. The same exclusions as Candidates apply, so a dry
+// run never counts a file the user can't actually queue.
+func (m *Media) DryRunSavings(ctx context.Context, ids []int64, filter CandidateFilter) (*DryRunResult, error) {
+	where := []string{
+		"status = 'active'",
+		"is_already_hevc = 0",
+		"probe_error IS NULL",
+		"video_codec IS NOT NULL",
+		jobExclusionSQL,
+	}
+	var args []any
+
+	if len(ids) > 0 {
+		placeholders := make([]string, len(ids))
+		for i, id := range ids {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		where = append(where, "id IN ("+strings.Join(placeholders, ",")+")")
+	}
+	if filter.LibraryType != "" {
+		where = append(where, "library_type = ?")
+		args = append(args, filter.LibraryType)
+	}
+	if filter.VideoCodec != "" {
+		where = append(where, "video_codec = ?")
+		args = append(args, filter.VideoCodec)
+	}
+	if filter.ResolutionBand != "" {
+		clause, err := resolutionBandClause(filter.ResolutionBand)
+		if err != nil {
+			return nil, err
+		}
+		where = append(where, clause)
+	}
+
+	query := `SELECT COUNT(*), COALESCE(SUM(size_bytes), 0), COALESCE(SUM(predicted_savings_bytes), 0)
+		FROM media_files WHERE ` + strings.Join(where, " AND ")
+
+	var res DryRunResult
+	if err := m.r.QueryRowContext(ctx, query, args...).Scan(
+		&res.FileCount, &res.TotalBytes, &res.PredictedSavingsBytes,
+	); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 // resolutionBandClause returns the height predicate for a band, mirroring the
 // bands in resolutionBand / Stats.Recompute.
 func resolutionBandClause(band string) (string, error) {

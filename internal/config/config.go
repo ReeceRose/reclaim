@@ -55,12 +55,12 @@ func parseHHMM(key, def string, errs *[]error) time.Duration {
 	if v == "" {
 		v = def
 	}
-	var h, m int
-	if _, err := fmt.Sscanf(v, "%d:%d", &h, &m); err != nil || h < 0 || h > 23 || m < 0 || m > 59 {
-		*errs = append(*errs, fmt.Errorf("%s must be HH:MM (got %q)", key, v))
+	d, err := parseHHMMValue(v)
+	if err != nil {
+		*errs = append(*errs, fmt.Errorf("%s %w", key, err))
 		return 0
 	}
-	return time.Duration(h)*time.Hour + time.Duration(m)*time.Minute
+	return d
 }
 
 func parseDuration(key, def string, errs *[]error) time.Duration {

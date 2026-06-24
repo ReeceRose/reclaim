@@ -55,7 +55,7 @@ func AuthMiddleware(store AuthStore, disableAuth bool) func(http.Handler) http.H
 
 func isUnprotected(path string) bool {
 	switch path {
-	case "/healthz", "/api/setup", "/api/login", "/api/logout":
+	case "/healthz", "/api/setup", "/api/login", "/api/logout", "/api/session":
 		return true
 	}
 	return false
@@ -87,19 +87,39 @@ func ClearSession(w http.ResponseWriter) {
 }
 
 func hasValidSession(r *http.Request, secret []byte) bool {
+	_, ok := sessionUsername(r, secret)
+	return ok
+}
+
+// sessionUsername validates the session cookie and returns the username it
+// carries. ok is false for a missing, malformed, or badly-signed cookie.
+func sessionUsername(r *http.Request, secret []byte) (string, bool) {
 	c, err := r.Cookie(sessionCookieName)
 	if err != nil {
-		return false
+		return "", false
 	}
 	parts := strings.SplitN(c.Value, ".", 2)
 	if len(parts) != 2 {
-		return false
+		return "", false
 	}
 	userBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return false
+		return "", false
 	}
-	return hmac.Equal([]byte(parts[1]), []byte(sign(string(userBytes), secret)))
+	if !hmac.Equal([]byte(parts[1]), []byte(sign(string(userBytes), secret))) {
+		return "", false
+	}
+	return string(userBytes), true
+}
+
+// isSecureRequest reports whether the connection is HTTPS, so the session cookie
+// only gets the Secure flag when it can actually be honored. On a plain-HTTP LAN
+// the flag is omitted (documented tradeoff, §4.2).
+func isSecureRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return r.Header.Get("X-Forwarded-Proto") == "https"
 }
 
 func sign(payload string, secret []byte) string {

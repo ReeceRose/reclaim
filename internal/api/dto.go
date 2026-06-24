@@ -1,0 +1,125 @@
+package api
+
+import (
+	"log/slog"
+	"net/http"
+
+	"github.com/labstack/echo/v4"
+
+	"reclaim/internal/store"
+)
+
+func errorBody(msg string) map[string]string { return map[string]string{"error": msg} }
+
+func badRequest(c echo.Context, msg string) error {
+	return c.JSON(http.StatusBadRequest, errorBody(msg))
+}
+
+func serverError(c echo.Context, err error) error {
+	slog.Error("api: internal error", "path", c.Path(), "err", err)
+	return c.JSON(http.StatusInternalServerError, errorBody("internal error"))
+}
+
+// mediaFileDTO is the wire shape of a media file. Pointers map to JSON null.
+type mediaFileDTO struct {
+	ID                    int64    `json:"id"`
+	Path                  string   `json:"path"`
+	LibraryType           string   `json:"library_type"`
+	SizeBytes             int64    `json:"size_bytes"`
+	Mtime                 int64    `json:"mtime"`
+	VideoCodec            *string  `json:"video_codec"`
+	VideoCodecProfile     *string  `json:"video_codec_profile"`
+	Width                 *int     `json:"width"`
+	Height                *int     `json:"height"`
+	DurationSeconds       *float64 `json:"duration_seconds"`
+	BitrateKbps           *int     `json:"bitrate_kbps"`
+	AudioCodec            *string  `json:"audio_codec"`
+	AudioChannels         *int     `json:"audio_channels"`
+	ContainerFormat       *string  `json:"container_format"`
+	IsAlreadyHEVC         bool     `json:"is_already_hevc"`
+	PredictedSavingsBytes int64    `json:"predicted_savings_bytes"`
+	LastProbedAt          *int64   `json:"last_probed_at"`
+	ProbeError            *string  `json:"probe_error"`
+	Status                string   `json:"status"`
+}
+
+func toMediaFileDTO(f *store.MediaFile) mediaFileDTO {
+	return mediaFileDTO{
+		ID:                    f.ID,
+		Path:                  f.Path,
+		LibraryType:           f.LibraryType,
+		SizeBytes:             f.SizeBytes,
+		Mtime:                 f.Mtime,
+		VideoCodec:            f.VideoCodec,
+		VideoCodecProfile:     f.VideoCodecProfile,
+		Width:                 f.Width,
+		Height:                f.Height,
+		DurationSeconds:       f.DurationSeconds,
+		BitrateKbps:           f.BitrateKbps,
+		AudioCodec:            f.AudioCodec,
+		AudioChannels:         f.AudioChannels,
+		ContainerFormat:       f.ContainerFormat,
+		IsAlreadyHEVC:         f.IsAlreadyHEVC,
+		PredictedSavingsBytes: f.PredictedSavingsBytes,
+		LastProbedAt:          f.LastProbedAt,
+		ProbeError:            f.ProbeError,
+		Status:                f.Status,
+	}
+}
+
+type profileDTO struct {
+	ID        int64   `json:"id"`
+	Name      string  `json:"name"`
+	CRF       int     `json:"crf"`
+	Preset    string  `json:"preset"`
+	ExtraArgs *string `json:"extra_args"`
+	IsDefault bool    `json:"is_default"`
+}
+
+func toProfileDTO(p *store.TranscodeProfile) profileDTO {
+	return profileDTO{
+		ID:        p.ID,
+		Name:      p.Name,
+		CRF:       p.CRF,
+		Preset:    p.Preset,
+		ExtraArgs: p.ExtraArgs,
+		IsDefault: p.IsDefault,
+	}
+}
+
+type jobDTO struct {
+	ID                 int64   `json:"id"`
+	MediaFileID        int64   `json:"media_file_id"`
+	ProfileID          int64   `json:"profile_id"`
+	Status             string  `json:"status"`
+	QueuedAt           int64   `json:"queued_at"`
+	StartedAt          *int64  `json:"started_at"`
+	CompletedAt        *int64  `json:"completed_at"`
+	OriginalSizeBytes  int64   `json:"original_size_bytes"`
+	OutputSizeBytes    *int64  `json:"output_size_bytes"`
+	ProgressPercent    float64 `json:"progress_percent"`
+	OutputPath         *string `json:"output_path"`
+	ErrorMessage       *string `json:"error_message"`
+	VerificationResult *string `json:"verification_result"`
+	// QueuePosition is 1-based for queued jobs, 0 otherwise.
+	QueuePosition int `json:"queue_position"`
+}
+
+func toJobDTO(j *store.TranscodeJob, position int) jobDTO {
+	return jobDTO{
+		ID:                 j.ID,
+		MediaFileID:        j.MediaFileID,
+		ProfileID:          j.ProfileID,
+		Status:             j.Status,
+		QueuedAt:           j.QueuedAt,
+		StartedAt:          j.StartedAt,
+		CompletedAt:        j.CompletedAt,
+		OriginalSizeBytes:  j.OriginalSizeBytes,
+		OutputSizeBytes:    j.OutputSizeBytes,
+		ProgressPercent:    j.ProgressPercent,
+		OutputPath:         j.OutputPath,
+		ErrorMessage:       j.ErrorMessage,
+		VerificationResult: j.VerificationResult,
+		QueuePosition:      position,
+	}
+}

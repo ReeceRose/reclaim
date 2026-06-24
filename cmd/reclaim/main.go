@@ -55,7 +55,11 @@ func main() {
 
 	slog.Info("startup checks passed")
 
-	sc, err := scanner.New(db, cfg)
+	// Live holds the runtime-mutable settings (encode window, probe concurrency,
+	// scan interval) so PUT /api/settings takes effect without a restart.
+	live := config.NewLive(cfg)
+
+	sc, err := scanner.New(db, cfg, scanner.WithLiveConfig(live))
 	if err != nil {
 		slog.Error("scanner init failed", "err", err)
 		os.Exit(1)
@@ -67,7 +71,14 @@ func main() {
 	// Scanner runs the startup scan then drives the watcher + scheduled rescan.
 	go sc.Start(ctx)
 
-	handler := api.New(db.Settings, cfg.DisableAuth).Handler()
+	handler := api.New(api.Deps{
+		Store:       db,
+		Scanner:     sc,
+		Live:        live,
+		MoviesPath:  cfg.MoviesPath,
+		TVPath:      cfg.TVPath,
+		DisableAuth: cfg.DisableAuth,
+	}).Handler()
 
 	srv := &http.Server{
 		Addr:    ":8080",

@@ -60,6 +60,43 @@ func (j *Jobs) ListByStatus(ctx context.Context, status string) ([]TranscodeJob,
 	return out, rows.Err()
 }
 
+// ListAll returns every job, newest first. Used by GET /api/jobs to render the
+// combined queue + history view.
+func (j *Jobs) ListAll(ctx context.Context) ([]TranscodeJob, error) {
+	rows, err := j.r.QueryContext(ctx, jobQ+" ORDER BY queued_at DESC, id DESC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []TranscodeJob
+	for rows.Next() {
+		job, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *job)
+	}
+	return out, rows.Err()
+}
+
+// HasBlockingJob reports whether a media file already has a job that should keep
+// it out of new queueing — anything queued/running/verifying/completed. A
+// failed or cancelled job does not block a re-queue (mirrors jobExclusionSQL).
+func (j *Jobs) HasBlockingJob(ctx context.Context, mediaFileID int64) (bool, error) {
+	var n int
+	err := j.r.QueryRowContext(ctx, `
+		SELECT COUNT(1) FROM transcode_jobs
+		WHERE media_file_id = ?
+		  AND status IN ('queued', 'running', 'verifying', 'completed')`,
+		mediaFileID,
+	).Scan(&n)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 func (j *Jobs) UpdateStatus(ctx context.Context, id int64, status string) error {
 	_, err := j.w.ExecContext(ctx,
 		"UPDATE transcode_jobs SET status = ? WHERE id = ?", status, id,

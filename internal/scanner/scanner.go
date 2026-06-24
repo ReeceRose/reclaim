@@ -44,6 +44,11 @@ type Scanner struct {
 	probeFunc    ProbeFunc
 	scanInterval time.Duration
 
+	// scanIntervalFn returns the current scheduled-rescan interval. It defaults
+	// to the boot value but can be backed by the live config so a settings
+	// change reschedules without a restart (§P5 live config thread).
+	scanIntervalFn func() time.Duration
+
 	// sem bounds concurrent ffprobe subprocesses across every probe entry point
 	// (walk, fsnotify watcher, scheduled/manual/overlapping scans). Its capacity
 	// is PROBE_CONCURRENCY. The limit exists to spare the NAS/storage, not Go —
@@ -76,6 +81,20 @@ func WithDebounceDur(dur time.Duration) Option {
 	}
 }
 
+// liveScanInterval is the subset of config.Live the scanner reads. Declared here
+// rather than importing config.Live directly so the option stays test-friendly.
+type liveScanInterval interface {
+	ScanInterval() time.Duration
+}
+
+// WithLiveConfig backs the scheduled-rescan interval with the live config so a
+// PUT /api/settings reschedules the next rescan without a restart.
+func WithLiveConfig(live liveScanInterval) Option {
+	return func(s *Scanner) {
+		s.scanIntervalFn = live.ScanInterval
+	}
+}
+
 // New creates a Scanner. Call Start to activate the watcher and scheduled rescan.
 func New(st *store.Store, cfg *config.Config, opts ...Option) (*Scanner, error) {
 	w, err := fsnotify.NewWatcher()
@@ -99,6 +118,9 @@ func New(st *store.Store, cfg *config.Config, opts ...Option) (*Scanner, error) 
 	}
 	for _, o := range opts {
 		o(s)
+	}
+	if s.scanIntervalFn == nil {
+		s.scanIntervalFn = func() time.Duration { return s.scanInterval }
 	}
 	return s, nil
 }
@@ -377,8 +399,10 @@ func (s *Scanner) Start(ctx context.Context) {
 		}
 	}
 
-	ticker := time.NewTicker(s.scanInterval)
-	defer ticker.Stop()
+	// A resettable timer (rather than a fixed ticker) lets each scheduled rescan
+	// pick up a live SCAN_INTERVAL change applied via PUT /api/settings.
+	timer := time.NewTimer(s.scanIntervalFn())
+	defer timer.Stop()
 
 	// Initial scan on startup.
 	go func() {
@@ -402,12 +426,13 @@ func (s *Scanner) Start(ctx context.Context) {
 				return
 			}
 			slog.Warn("scanner: watcher error", "err", err)
-		case <-ticker.C:
+		case <-timer.C:
 			go func() {
 				if _, err := s.Scan(ctx, "scheduled", false); err != nil {
 					slog.Error("scanner: scheduled scan failed", "err", err)
 				}
 			}()
+			timer.Reset(s.scanIntervalFn())
 		}
 	}
 }

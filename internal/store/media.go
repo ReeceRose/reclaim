@@ -46,7 +46,13 @@ func (m *Media) GetByFingerprint(ctx context.Context, fp string) (*MediaFile, er
 }
 
 func (m *Media) Insert(ctx context.Context, f *MediaFile) (int64, error) {
-	res, err := m.w.ExecContext(ctx, `
+	tx, err := m.w.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx, `
 		INSERT INTO media_files (
 			path, library_type, size_bytes, mtime, fingerprint,
 			video_codec, video_codec_profile, width, height, duration_seconds,
@@ -61,11 +67,41 @@ func (m *Media) Insert(ctx context.Context, f *MediaFile) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	f.ID = id
+	if err := applyContribution(ctx, tx, f, +1); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return id, nil
 }
 
 func (m *Media) UpdateProbe(ctx context.Context, f *MediaFile) error {
-	_, err := m.w.ExecContext(ctx, `
+	tx, err := m.w.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Subtract the row's current contribution before overwriting it, then add
+	// the new one — the stat table tracks the row's state, not its history.
+	old, err := loadStatRow(ctx, tx, f.ID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	if old != nil {
+		if err := applyContribution(ctx, tx, old, -1); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
 		UPDATE media_files SET
 			size_bytes = ?, mtime = ?, fingerprint = ?,
 			video_codec = ?, video_codec_profile = ?, width = ?, height = ?,
@@ -78,8 +114,14 @@ func (m *Media) UpdateProbe(ctx context.Context, f *MediaFile) error {
 		f.DurationSeconds, f.BitrateKbps, f.AudioCodec, f.AudioChannels,
 		f.ContainerFormat, btoi(f.IsAlreadyHEVC), f.PredictedSavingsBytes,
 		f.LastProbedAt, f.ProbeError, f.Status, f.ID,
-	)
-	return err
+	); err != nil {
+		return err
+	}
+
+	if err := applyContribution(ctx, tx, f, +1); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (m *Media) UpdatePath(ctx context.Context, id int64, newPath string) error {
@@ -90,10 +132,30 @@ func (m *Media) UpdatePath(ctx context.Context, id int64, newPath string) error 
 }
 
 func (m *Media) MarkMissing(ctx context.Context, id int64) error {
-	_, err := m.w.ExecContext(ctx,
+	tx, err := m.w.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// A row going missing leaves the library totals (applyContribution is a
+	// no-op if the row was already inactive, keeping this idempotent).
+	old, err := loadStatRow(ctx, tx, id)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	if old != nil {
+		if err := applyContribution(ctx, tx, old, -1); err != nil {
+			return err
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx,
 		"UPDATE media_files SET status = 'missing' WHERE id = ?", id,
-	)
-	return err
+	); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ActivePaths returns a path→id map of all active media files. Used by the
@@ -166,11 +228,39 @@ func (m *Media) RecordMove(ctx context.Context, keepID, mergeID int64, newPath s
 		return err
 	}
 	defer tx.Rollback()
+
+	// The merge row was just inserted for the destination path, so its
+	// contribution is double-counting the same physical file as keepID. Remove
+	// it before deleting the row.
+	merge, err := loadStatRow(ctx, tx, mergeID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	if merge != nil {
+		if err := applyContribution(ctx, tx, merge, -1); err != nil {
+			return err
+		}
+	}
+
 	// DELETE the duplicate row first so the UNIQUE(path) constraint doesn't fire
 	// when we update keepID's path to the same value.
 	if _, err := tx.ExecContext(ctx, "DELETE FROM media_files WHERE id = ?", mergeID); err != nil {
 		return err
 	}
+
+	// If keepID was inactive (e.g. previously marked missing), reactivating it
+	// adds its contribution back. If it was already active it keeps counting.
+	keep, err := loadStatRow(ctx, tx, keepID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return err
+	}
+	if keep != nil && keep.Status != "active" {
+		keep.Status = "active"
+		if err := applyContribution(ctx, tx, keep, +1); err != nil {
+			return err
+		}
+	}
+
 	if _, err := tx.ExecContext(ctx,
 		"UPDATE media_files SET path = ?, status = 'active' WHERE id = ?",
 		newPath, keepID,
@@ -178,6 +268,23 @@ func (m *Media) RecordMove(ctx context.Context, keepID, mergeID int64, newPath s
 		return err
 	}
 	return tx.Commit()
+}
+
+// loadStatRow loads the stat-relevant fields of a row (used inside write
+// transactions to compute deltas). q is *sql.Tx or *sql.DB.
+func loadStatRow(ctx context.Context, q ctxRowQuerier, id int64) (*MediaFile, error) {
+	f := &MediaFile{ID: id}
+	err := q.QueryRowContext(ctx,
+		"SELECT size_bytes, predicted_savings_bytes, video_codec, height, status FROM media_files WHERE id = ?",
+		id,
+	).Scan(&f.SizeBytes, &f.PredictedSavingsBytes, &f.VideoCodec, &f.Height, &f.Status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
 }
 
 const mediaQ = `

@@ -21,6 +21,7 @@ type Store struct {
 	Profiles *Profiles
 	Scans    *Scans
 	Settings *Settings
+	Stats    *Stats
 
 	w *sql.DB
 	r *sql.DB
@@ -54,6 +55,7 @@ func Open(path string) (*Store, error) {
 		Profiles: &Profiles{r: r, w: w},
 		Scans:    &Scans{r: r, w: w},
 		Settings: &Settings{r: r, w: w},
+		Stats:    &Stats{r: r, w: w},
 	}
 
 	if err := runMigrations(w); err != nil {
@@ -63,6 +65,10 @@ func Open(path string) (*Store, error) {
 	if err := s.Settings.ensureSecret(context.Background()); err != nil {
 		s.Close()
 		return nil, fmt.Errorf("ensure session secret: %w", err)
+	}
+	if err := s.bootstrapIfNeeded(context.Background()); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("bootstrap: %w", err)
 	}
 
 	return s, nil
@@ -94,6 +100,12 @@ func buildDSN(path string) string {
 // scan function handle both single-row queries and iteration loops.
 type rowScanner interface {
 	Scan(dest ...any) error
+}
+
+// ctxRowQuerier is satisfied by both *sql.DB and *sql.Tx, letting helpers run a
+// single-row query against either a pool or an open transaction.
+type ctxRowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 // btoi converts a bool to the 0/1 integer SQLite expects for boolean columns.

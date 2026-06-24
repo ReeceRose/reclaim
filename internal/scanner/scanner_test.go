@@ -339,6 +339,51 @@ func TestProbeConcurrencyCap(t *testing.T) {
 	}
 }
 
+// TestScanComputesSavingsAndStats verifies the P4 wiring: a scan computes a
+// predicted-savings estimate at probe time and the incrementally-maintained
+// library stats reflect what was indexed.
+func TestScanComputesSavingsAndStats(t *testing.T) {
+	root := t.TempDir()
+	sc, st := newTestScanner(t, root, root)
+	ctx := context.Background()
+
+	path := filepath.Join(root, "movie.mkv")
+	writeFile(t, path)
+
+	if _, err := sc.Scan(ctx, "manual", false); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	f, err := st.Media.GetByPath(ctx, path)
+	if err != nil {
+		t.Fatalf("get by path: %v", err)
+	}
+	// mockProbe reports h264 (non-HEVC), so savings must be computed and positive.
+	if f.PredictedSavingsBytes <= 0 {
+		t.Errorf("PredictedSavingsBytes = %d, want > 0 for an h264 file", f.PredictedSavingsBytes)
+	}
+
+	ov, err := st.Stats.Overview(ctx)
+	if err != nil {
+		t.Fatalf("overview: %v", err)
+	}
+	if ov.TotalFiles != 1 {
+		t.Errorf("stats TotalFiles = %d, want 1", ov.TotalFiles)
+	}
+	if ov.TotalRecoverableBytes != f.PredictedSavingsBytes {
+		t.Errorf("stats recoverable = %d, want %d", ov.TotalRecoverableBytes, f.PredictedSavingsBytes)
+	}
+
+	// The file should surface as a candidate.
+	cands, err := st.Media.Candidates(ctx, store.CandidateQuery{})
+	if err != nil {
+		t.Fatalf("candidates: %v", err)
+	}
+	if len(cands) != 1 || cands[0].ID != f.ID {
+		t.Errorf("candidates = %+v, want exactly the indexed file", cands)
+	}
+}
+
 // TestWatcherProbeNewFile exercises the debounced probe path that fires when
 // the watcher sees a new file.
 func TestWatcherProbeNewFile(t *testing.T) {

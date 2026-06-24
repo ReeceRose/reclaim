@@ -246,6 +246,16 @@ func (s *Scanner) Scan(ctx context.Context, trigger string, force bool) (*store.
 		}
 	}
 
+	// A force rescan re-probes everything, so it is the natural moment to
+	// reconcile the incrementally-maintained library_stats against the source
+	// of truth and repair any drift (§12; the P9 drift guard extends this).
+	if force {
+		if err := s.store.Stats.Recompute(ctx); err != nil {
+			slog.Error("scanner: stats recompute", "err", err)
+			atomic.AddInt64(&errs, 1)
+		}
+	}
+
 	now := time.Now().Unix()
 	run := &store.ScanRun{
 		ID:           runID,
@@ -332,6 +342,11 @@ func (s *Scanner) probeAndStore(
 		f.ContainerFormat = result.ContainerFormat
 		f.IsAlreadyHEVC = result.IsAlreadyHEVC
 		f.LastProbedAt = &now
+		// Compute the savings estimate at probe time and store it (§10.2) so the
+		// candidate ranking and dashboard never have to recompute it per query.
+		f.PredictedSavingsBytes = media.PredictedSavingsBytes(
+			result.VideoCodec, result.IsAlreadyHEVC, size,
+		)
 	}
 
 	if existing == nil {

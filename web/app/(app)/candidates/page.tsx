@@ -464,6 +464,7 @@ export default function Page() {
     allItems.forEach((item) => fileMapRef.current.set(item.id, item));
   }, [allItems]);
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual returns non-memoizable functions; React Compiler intentionally skips this hook.
   const virtualizer = useVirtualizer({
     count: hasNextPage ? allItems.length + 1 : allItems.length,
     getScrollElement: () => parentRef.current,

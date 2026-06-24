@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, type AppEvent } from '@/lib/api';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -96,7 +96,7 @@ export function NotificationPanel({ open, onOpenChange }: Props) {
     staleTime: 30_000,
   });
 
-  const events = data?.items ?? [];
+  const events = useMemo(() => data?.items ?? [], [data]);
 
   // Update watermark when panel opens
   useEffect(() => {
@@ -131,14 +131,18 @@ export function NotificationPanel({ open, onOpenChange }: Props) {
   );
 }
 
+function subscribeWatermark(callback: () => void): () => void {
+  window.addEventListener('storage', callback);
+  return () => window.removeEventListener('storage', callback);
+}
+
+function readWatermark(): number {
+  const stored = parseInt(localStorage.getItem(WATERMARK_KEY) ?? '0', 10);
+  return isNaN(stored) ? 0 : stored;
+}
+
 /** Returns the number of events with id > the stored watermark. */
 export function useUnreadCount(events: AppEvent[]): number {
-  const [watermark, setWatermark] = useState(0);
-
-  useEffect(() => {
-    const stored = parseInt(localStorage.getItem(WATERMARK_KEY) ?? '0', 10);
-    setWatermark(isNaN(stored) ? 0 : stored);
-  }, []);
-
+  const watermark = useSyncExternalStore(subscribeWatermark, readWatermark, () => 0);
   return events.filter((e) => e.id > watermark).length;
 }

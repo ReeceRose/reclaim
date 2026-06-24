@@ -13,6 +13,7 @@ web/out/*
 !web/out/index.html
 web/.next/
 web/node_modules/
+web/*.tsbuildinfo
 
 # OS
 .DS_Store

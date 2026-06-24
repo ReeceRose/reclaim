@@ -18,9 +18,9 @@ const (
 	SortSizeAsc     CandidateSort = "size_asc"
 	SortCodec       CandidateSort = "codec"
 	SortResolution  CandidateSort = "resolution"
-	SortMtimeDesc    CandidateSort = "mtime_desc"
-	SortMtimeAsc     CandidateSort = "mtime_asc"
-	SortLibraryType  CandidateSort = "library_type"
+	SortMtimeDesc   CandidateSort = "mtime_desc"
+	SortMtimeAsc    CandidateSort = "mtime_asc"
+	SortLibraryType CandidateSort = "library_type"
 )
 
 // orderClauses maps each sort to its ORDER BY. id is always the final tiebreak
@@ -32,9 +32,9 @@ var orderClauses = map[CandidateSort]string{
 	SortSizeAsc:     "size_bytes ASC, id ASC",
 	SortCodec:       "video_codec ASC, predicted_savings_bytes DESC, id ASC",
 	SortResolution:  "height DESC, predicted_savings_bytes DESC, id ASC",
-	SortMtimeDesc:    "mtime DESC, id ASC",
-	SortMtimeAsc:     "mtime ASC, id ASC",
-	SortLibraryType:  "library_type ASC, predicted_savings_bytes DESC, id ASC",
+	SortMtimeDesc:   "mtime DESC, id ASC",
+	SortMtimeAsc:    "mtime ASC, id ASC",
+	SortLibraryType: "library_type ASC, predicted_savings_bytes DESC, id ASC",
 }
 
 // CandidateFilter narrows the candidate list. Zero values mean "no filter".

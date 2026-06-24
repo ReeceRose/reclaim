@@ -13,9 +13,9 @@ type fakeStore struct {
 	secret    []byte
 }
 
-func (f *fakeStore) IsSetupComplete() bool                     { return f.setupDone }
-func (f *fakeStore) ValidateLogin(u, p string) bool            { return u == f.validUser && p == f.validPass }
-func (f *fakeStore) SessionSecret() []byte                     { return f.secret }
+func (f *fakeStore) IsSetupComplete() bool          { return f.setupDone }
+func (f *fakeStore) ValidateLogin(u, p string) bool { return u == f.validUser && p == f.validPass }
+func (f *fakeStore) SessionSecret() []byte          { return f.secret }
 
 var testSecret = []byte("test-secret-32-bytes-long-enough!")
 

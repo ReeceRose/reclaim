@@ -88,10 +88,10 @@ func (m *Media) BackfillPredictedSavings(ctx context.Context) (int, error) {
 	defer rows.Close()
 
 	type row struct {
-		id      int64
-		codec   string
-		hevc    bool
-		size    int64
+		id    int64
+		codec string
+		hevc  bool
+		size  int64
 	}
 	var pending []row
 

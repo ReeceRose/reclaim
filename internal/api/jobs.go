@@ -110,9 +110,9 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
-		"profile": toProfileDTO(profile),
-		string(ijobs.StatusQueued):  queued,
-		"skipped": skipped,
+		"profile":                  toProfileDTO(profile),
+		string(ijobs.StatusQueued): queued,
+		"skipped":                  skipped,
 	})
 }
 

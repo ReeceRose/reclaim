@@ -15,13 +15,13 @@ func setEnv(t *testing.T, kv map[string]string) {
 
 func validEnv() map[string]string {
 	return map[string]string{
-		"MOVIES_PATH":          "/media/movies",
-		"TV_PATH":              "/media/tv",
-		"DB_PATH":              "/data/reclaim.db",
-		"ENCODE_WINDOW_START":  "00:00",
-		"ENCODE_WINDOW_END":    "06:00",
-		"SCAN_INTERVAL":        "24h",
-		"PROBE_CONCURRENCY":    "4",
+		"MOVIES_PATH":         "/media/movies",
+		"TV_PATH":             "/media/tv",
+		"DB_PATH":             "/data/reclaim.db",
+		"ENCODE_WINDOW_START": "00:00",
+		"ENCODE_WINDOW_END":   "06:00",
+		"SCAN_INTERVAL":       "24h",
+		"PROBE_CONCURRENCY":   "4",
 	}
 }
 

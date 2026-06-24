@@ -8,16 +8,16 @@ import (
 )
 
 type Config struct {
-	MoviesPath       string
-	TVPath           string
-	DBPath           string
+	MoviesPath        string
+	TVPath            string
+	DBPath            string
 	EncodeWindowStart time.Duration // minutes since midnight
 	EncodeWindowEnd   time.Duration
-	ScanInterval     time.Duration
-	ScanAnchor       string
-	ProbeConcurrency int
-	DisableAuth      bool
-	ResetAuth        bool
+	ScanInterval      time.Duration
+	ScanAnchor        string
+	ProbeConcurrency  int
+	DisableAuth       bool
+	ResetAuth         bool
 }
 
 func Load() (*Config, error) {

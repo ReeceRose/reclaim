@@ -94,6 +94,10 @@ func (s *Server) Handler() http.Handler {
 	e := echo.New()
 
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		Skipper: func(c *echo.Context) bool {
+			// Skip noisy static asset requests from the embedded Next.js frontend.
+			return strings.HasPrefix(c.Request().URL.Path, "/_next/")
+		},
 		LogStatus:   true,
 		LogMethod:   true,
 		LogURI:      true,

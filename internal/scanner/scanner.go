@@ -203,7 +203,10 @@ func (s *Scanner) Scan(ctx context.Context, trigger string, force bool) (*store.
 
 	// newlyInserted maps fingerprint -> {id, path} for files inserted this scan;
 	// written by probe goroutines → protected by newMu.
-	type newInsert struct{ id int64; path string }
+	type newInsert struct {
+		id   int64
+		path string
+	}
 	newlyInserted := make(map[string]newInsert)
 	var newMu sync.Mutex
 
@@ -416,13 +419,13 @@ func (s *Scanner) probeAndStore(
 	}
 
 	f := &store.MediaFile{
-		Path:          path,
-		LibraryType:   libraryType,
-		SizeBytes:     size,
-		Mtime:         mtime,
-		Fingerprint:   fp,
-		ProbeError:    probeErr,
-		Status:        store.MediaStatusActive,
+		Path:        path,
+		LibraryType: libraryType,
+		SizeBytes:   size,
+		Mtime:       mtime,
+		Fingerprint: fp,
+		ProbeError:  probeErr,
+		Status:      store.MediaStatusActive,
 	}
 
 	if result != nil {

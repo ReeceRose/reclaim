@@ -127,6 +127,22 @@ func (w *Worker) Run(ctx context.Context) {
 	defer orphan.Stop()
 
 	for {
+		// Always drain forced jobs regardless of the encode window.
+		for {
+			job, err := w.store.Jobs.ClaimNextForcedQueued(ctx, w.clock().Unix())
+			if errors.Is(err, store.ErrNotFound) {
+				break
+			}
+			if err != nil {
+				slog.Error("worker: claim forced job", "err", err)
+				break
+			}
+			w.processJob(ctx, job)
+			if ctx.Err() != nil {
+				return
+			}
+		}
+
 		// Drain the queue while inside the window, one job at a time.
 		for w.withinWindow() {
 			job, err := w.store.Jobs.ClaimNextQueued(ctx, w.clock().Unix())

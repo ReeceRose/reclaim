@@ -12,7 +12,7 @@ DEV_DATA    := $(DEV_DIR)/data
 $(DEV_DIR):
 	mkdir -p $(DEV_MOVIES) $(DEV_TV) $(DEV_DATA)
 
-## dev: run locally against .dev/ dirs (requires ffmpeg/ffprobe in PATH)
+## dev: run Go backend + Next.js dev server concurrently
 dev: $(DEV_DIR)
 	MOVIES_PATH=$(abspath $(DEV_MOVIES)) \
 	TV_PATH=$(abspath $(DEV_TV)) \
@@ -21,8 +21,9 @@ dev: $(DEV_DIR)
 	ENCODE_WINDOW_END=06:00 \
 	SCAN_INTERVAL=24h \
 	PROBE_CONCURRENCY=4 \
-	DISABLE_AUTH=true \
-	go run ./cmd/reclaim
+	go run ./cmd/reclaim & \
+	cd web && npm run dev & \
+	wait
 
 ## build: compile binary to bin/reclaim
 build:

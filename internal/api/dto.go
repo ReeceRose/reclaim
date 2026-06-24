@@ -101,8 +101,12 @@ type jobDTO struct {
 	OutputPath         *string `json:"output_path"`
 	ErrorMessage       *string `json:"error_message"`
 	VerificationResult *string `json:"verification_result"`
+	// SourcePath is the original media file path, used by the UI to show the
+	// file name. Nil if the media row was deleted after the job ran.
+	SourcePath *string `json:"source_path"`
 	// QueuePosition is 1-based for queued jobs, 0 otherwise.
-	QueuePosition int `json:"queue_position"`
+	QueuePosition int  `json:"queue_position"`
+	Forced        bool `json:"forced"`
 }
 
 func toJobDTO(j *store.TranscodeJob, position int) jobDTO {
@@ -120,6 +124,8 @@ func toJobDTO(j *store.TranscodeJob, position int) jobDTO {
 		OutputPath:         j.OutputPath,
 		ErrorMessage:       j.ErrorMessage,
 		VerificationResult: j.VerificationResult,
+		SourcePath:         j.SourcePath,
 		QueuePosition:      position,
+		Forced:             j.Forced,
 	}
 }

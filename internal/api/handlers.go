@@ -55,6 +55,7 @@ func (s *Server) handleCandidates(c *echo.Context) error {
 			LibraryType:    c.QueryParam("library_type"),
 			VideoCodec:     c.QueryParam("video_codec"),
 			ResolutionBand: c.QueryParam("resolution_band"),
+			Search:         c.QueryParam("search"),
 		},
 	}
 
@@ -174,6 +175,7 @@ func (s *Server) handleDryRun(c *echo.Context) error {
 		LibraryType:    c.QueryParam("library_type"),
 		VideoCodec:     c.QueryParam("video_codec"),
 		ResolutionBand: c.QueryParam("resolution_band"),
+		Search:         c.QueryParam("search"),
 	}
 	res, err := s.store.Media.DryRunSavings(c.Request().Context(), ids, filter)
 	if err != nil {

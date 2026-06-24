@@ -21,6 +21,11 @@ type TranscodeJob struct {
 	OutputPath         *string
 	ErrorMessage       *string
 	VerificationResult *string
+	Forced             bool
+	// SourcePath is the original media file path, populated only by the
+	// path-joining list query (ListAllWithPath). It is nil elsewhere because
+	// the file row may have been deleted after the job ran.
+	SourcePath *string
 }
 
 type Jobs struct {
@@ -73,6 +78,28 @@ func (j *Jobs) ListAll(ctx context.Context) ([]TranscodeJob, error) {
 	var out []TranscodeJob
 	for rows.Next() {
 		job, err := scanJob(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *job)
+	}
+	return out, rows.Err()
+}
+
+// ListAllWithPath returns every job, newest first, with the originating media
+// file's path joined in (SourcePath). Used by GET /api/jobs so the UI can show
+// the file name instead of a bare media_file_id. The LEFT JOIN keeps jobs whose
+// media row was later deleted (SourcePath is nil in that case).
+func (j *Jobs) ListAllWithPath(ctx context.Context) ([]TranscodeJob, error) {
+	rows, err := j.r.QueryContext(ctx, jobWithPathQ+" ORDER BY j.queued_at DESC, j.id DESC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []TranscodeJob
+	for rows.Next() {
+		job, err := scanJobWithPath(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -244,6 +271,69 @@ func (j *Jobs) terminal(ctx context.Context, id int64, to string, from []string,
 	return nil
 }
 
+// Force marks a queued job as forced, allowing the worker to run it outside the
+// encode window. Returns ErrNotFound if the job does not exist, ErrIllegalTransition
+// if it is not in the queued state.
+func (j *Jobs) Force(ctx context.Context, id int64) error {
+	res, err := j.w.ExecContext(ctx,
+		"UPDATE transcode_jobs SET forced = 1 WHERE id = ? AND status = 'queued'", id,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		// Distinguish "not found at all" from "wrong state".
+		var count int
+		if serr := j.r.QueryRowContext(ctx, "SELECT COUNT(1) FROM transcode_jobs WHERE id = ?", id).Scan(&count); serr == nil && count == 0 {
+			return ErrNotFound
+		}
+		return ErrIllegalTransition
+	}
+	return nil
+}
+
+// ClaimNextForcedQueued is like ClaimNextQueued but only considers jobs with
+// forced = 1. Used by the worker to drain forced jobs outside the encode window.
+func (j *Jobs) ClaimNextForcedQueued(ctx context.Context, startedAt int64) (*TranscodeJob, error) {
+	tx, err := j.w.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	job, err := scanJob(tx.QueryRowContext(ctx,
+		jobQ+" WHERE status = 'queued' AND forced = 1 ORDER BY queued_at, id LIMIT 1"))
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := tx.ExecContext(ctx,
+		"UPDATE transcode_jobs SET status = 'running', started_at = ? WHERE id = ? AND status = 'queued'",
+		startedAt, job.ID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, ErrNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	job.Status = "running"
+	job.StartedAt = &startedAt
+	return job, nil
+}
+
 // ListInterrupted returns jobs left in running/verifying — i.e. jobs that were
 // in flight when the process died. Crash recovery reconciles these.
 func (j *Jobs) ListInterrupted(ctx context.Context) ([]TranscodeJob, error) {
@@ -268,7 +358,7 @@ func (j *Jobs) ListInterrupted(ctx context.Context) ([]TranscodeJob, error) {
 const jobQ = `
 	SELECT id, media_file_id, profile_id, status, queued_at, started_at, completed_at,
 		original_size_bytes, output_size_bytes, progress_percent, output_path,
-		error_message, verification_result
+		error_message, verification_result, forced
 	FROM transcode_jobs`
 
 func scanJob(s rowScanner) (*TranscodeJob, error) {
@@ -277,6 +367,34 @@ func scanJob(s rowScanner) (*TranscodeJob, error) {
 		&j.ID, &j.MediaFileID, &j.ProfileID, &j.Status, &j.QueuedAt,
 		&j.StartedAt, &j.CompletedAt, &j.OriginalSizeBytes, &j.OutputSizeBytes,
 		&j.ProgressPercent, &j.OutputPath, &j.ErrorMessage, &j.VerificationResult,
+		&j.Forced,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &j, nil
+}
+
+// jobWithPathQ is jobQ plus the originating media file's path via LEFT JOIN.
+// Columns shared between the two tables (id, status) are qualified to avoid
+// ambiguity.
+const jobWithPathQ = `
+	SELECT j.id, j.media_file_id, j.profile_id, j.status, j.queued_at, j.started_at, j.completed_at,
+		j.original_size_bytes, j.output_size_bytes, j.progress_percent, j.output_path,
+		j.error_message, j.verification_result, j.forced, m.path
+	FROM transcode_jobs j
+	LEFT JOIN media_files m ON m.id = j.media_file_id`
+
+func scanJobWithPath(s rowScanner) (*TranscodeJob, error) {
+	var j TranscodeJob
+	err := s.Scan(
+		&j.ID, &j.MediaFileID, &j.ProfileID, &j.Status, &j.QueuedAt,
+		&j.StartedAt, &j.CompletedAt, &j.OriginalSizeBytes, &j.OutputSizeBytes,
+		&j.ProgressPercent, &j.OutputPath, &j.ErrorMessage, &j.VerificationResult,
+		&j.Forced, &j.SourcePath,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound

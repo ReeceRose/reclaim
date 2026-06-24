@@ -1,0 +1,166 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+  Reclaim uses a single dark palette derived from IBM Carbon (see the design
+  mock's [data-theme="carbon"]). Tokens come in two layers:
+
+  1. shadcn semantic tokens (--background, --primary, --border, …) so the
+     shadcn/ui components render correctly.
+  2. brand tokens (--surface, --line, --brand, --muted-dim, …) that mirror the
+     mock's bespoke surfaces and let us write utilities like `bg-surface`.
+*/
+
+:root {
+  --radius: 0.75rem;
+
+  /* --- Carbon palette --- */
+  --bg: #161616;
+  --surface: #1e1e1e;
+  --surface-2: #262626;
+  --surface-3: #333333;
+  --line: #393939;
+  --line-soft: #262626;
+  --text: #f4f4f4;
+  --muted: #a8a8a8;
+  --muted-dim: #6f6f6f;
+  --brand: #4589ff;
+  --brand-2: #2e6ce0;
+  --on-brand: #ffffff;
+  --brand-soft: color-mix(in srgb, var(--brand) 15%, transparent);
+  --brand-line: color-mix(in srgb, var(--brand) 42%, transparent);
+  --green: #42be65;
+  --green-soft: color-mix(in srgb, var(--green) 15%, transparent);
+  --red: #fa4d56;
+  --red-soft: color-mix(in srgb, var(--red) 15%, transparent);
+  --violet: #be95ff;
+  --sky: #33b1ff;
+  --gold: #f1c21b;
+  --rose: #ff7eb6;
+  --slate: #6f6f6f;
+
+  /* --- shadcn semantic tokens mapped onto Carbon --- */
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  --primary: var(--brand);
+  --primary-foreground: var(--on-brand);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--text);
+  --muted-bg: var(--surface-2);
+  --muted-foreground: var(--muted);
+  --accent: var(--surface-3);
+  --accent-foreground: var(--text);
+  --destructive: var(--red);
+  --destructive-foreground: #ffffff;
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--brand);
+
+  --chart-1: var(--brand);
+  --chart-2: var(--green);
+  --chart-3: var(--gold);
+  --chart-4: var(--violet);
+  --chart-5: var(--rose);
+
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--text);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: var(--on-brand);
+  --sidebar-accent: var(--surface-2);
+  --sidebar-accent-foreground: var(--text);
+  --sidebar-border: var(--line-soft);
+  --sidebar-ring: var(--brand);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-archivo), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+
+  /* shadcn semantic colors */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted-bg);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* brand tokens (mirror the mock's bespoke surfaces) */
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-text: var(--text);
+  --color-muted-fg: var(--muted);
+  --color-muted-dim: var(--muted-dim);
+  --color-brand: var(--brand);
+  --color-brand-2: var(--brand-2);
+  --color-on-brand: var(--on-brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-line: var(--brand-line);
+  --color-green: var(--green);
+  --color-green-soft: var(--green-soft);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+  --color-violet: var(--violet);
+  --color-sky: var(--sky);
+  --color-gold: var(--gold);
+  --color-rose: var(--rose);
+  --color-slate: var(--slate);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    color-scheme: dark;
+  }
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  /* Tabular numerals for sizes/savings everywhere it matters. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}

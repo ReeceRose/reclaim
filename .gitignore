@@ -6,10 +6,11 @@ bin/
 *.db
 *.db-wal
 *.db-shm
-reclaim
 
-# Frontend build output (embedded into binary at build time)
-web/out/
+# Frontend build output (embedded into binary at build time).
+# The placeholder index.html is committed so `go build` works before a build.
+web/out/*
+!web/out/index.html
 web/.next/
 web/node_modules/
 

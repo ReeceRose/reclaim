@@ -42,6 +42,33 @@ type CandidateFilter struct {
 	LibraryType    string // "movie" | "tv"
 	VideoCodec     string // exact source codec, e.g. "h264"
 	ResolutionBand string // "sd" | "hd" | "uhd"
+	Search         string // case-insensitive substring match against path
+}
+
+// appendFilter adds the shared candidate filter predicates to a WHERE slice.
+// Used by Candidates, AllCandidates, and DryRunSavings so the three stay in
+// lockstep on what "matches the filter" means.
+func appendFilter(where []string, args []any, f CandidateFilter) ([]string, []any, error) {
+	if f.LibraryType != "" {
+		where = append(where, "library_type = ?")
+		args = append(args, f.LibraryType)
+	}
+	if f.VideoCodec != "" {
+		where = append(where, "video_codec = ?")
+		args = append(args, f.VideoCodec)
+	}
+	if f.ResolutionBand != "" {
+		clause, err := resolutionBandClause(f.ResolutionBand)
+		if err != nil {
+			return nil, nil, err
+		}
+		where = append(where, clause)
+	}
+	if s := strings.TrimSpace(f.Search); s != "" {
+		where = append(where, "LOWER(path) LIKE '%' || LOWER(?) || '%'")
+		args = append(args, s)
+	}
+	return where, args, nil
 }
 
 // CandidateQuery is one page request against the candidate list.
@@ -103,20 +130,10 @@ func (m *Media) Candidates(ctx context.Context, q CandidateQuery) ([]MediaFile, 
 		args []any
 	)
 
-	if q.Filter.LibraryType != "" {
-		where = append(where, "library_type = ?")
-		args = append(args, q.Filter.LibraryType)
-	}
-	if q.Filter.VideoCodec != "" {
-		where = append(where, "video_codec = ?")
-		args = append(args, q.Filter.VideoCodec)
-	}
-	if band := q.Filter.ResolutionBand; band != "" {
-		clause, err := resolutionBandClause(band)
-		if err != nil {
-			return nil, err
-		}
-		where = append(where, clause)
+	var err error
+	where, args, err = appendFilter(where, args, q.Filter)
+	if err != nil {
+		return nil, err
 	}
 
 	// Keyset cursor (default sort only): rows ordered after the given anchor.
@@ -136,6 +153,44 @@ func (m *Media) Candidates(ctx context.Context, q CandidateQuery) ([]MediaFile, 
 		query += " LIMIT ? OFFSET ?"
 		args = append(args, limit, q.Offset)
 	}
+
+	rows, err := m.r.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []MediaFile
+	for rows.Next() {
+		f, err := scanMedia(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *f)
+	}
+	return out, rows.Err()
+}
+
+// AllCandidates returns every candidate matching the filter, ranked by
+// predicted savings (desc). Unlike Candidates it is not paginated — it backs the
+// grouped/by-series view, which aggregates the whole set in one pass. The same
+// exclusions as Candidates apply.
+func (m *Media) AllCandidates(ctx context.Context, filter CandidateFilter) ([]MediaFile, error) {
+	where := []string{
+		"status = 'active'",
+		"is_already_hevc = 0",
+		"probe_error IS NULL",
+		"video_codec IS NOT NULL",
+		jobExclusionSQL,
+	}
+	var args []any
+	where, args, err := appendFilter(where, args, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	query := mediaQ + " WHERE " + strings.Join(where, " AND ") +
+		" ORDER BY predicted_savings_bytes DESC, id ASC"
 
 	rows, err := m.r.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -184,20 +239,9 @@ func (m *Media) DryRunSavings(ctx context.Context, ids []int64, filter Candidate
 		}
 		where = append(where, "id IN ("+strings.Join(placeholders, ",")+")")
 	}
-	if filter.LibraryType != "" {
-		where = append(where, "library_type = ?")
-		args = append(args, filter.LibraryType)
-	}
-	if filter.VideoCodec != "" {
-		where = append(where, "video_codec = ?")
-		args = append(args, filter.VideoCodec)
-	}
-	if filter.ResolutionBand != "" {
-		clause, err := resolutionBandClause(filter.ResolutionBand)
-		if err != nil {
-			return nil, err
-		}
-		where = append(where, clause)
+	where, args, err := appendFilter(where, args, filter)
+	if err != nil {
+		return nil, err
 	}
 
 	query := `SELECT COUNT(*), COALESCE(SUM(size_bytes), 0), COALESCE(SUM(predicted_savings_bytes), 0)

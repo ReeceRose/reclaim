@@ -119,7 +119,7 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 // status, with a 1-based queue position attached to queued jobs.
 func (s *Server) handleListJobs(c *echo.Context) error {
 	ctx := c.Request().Context()
-	jobs, err := s.store.Jobs.ListAll(ctx)
+	jobs, err := s.store.Jobs.ListAllWithPath(ctx)
 	if err != nil {
 		return serverError(c, err)
 	}
@@ -199,6 +199,24 @@ func (s *Server) handleCancelJob(c *echo.Context) error {
 	default:
 		return c.JSON(http.StatusConflict, errorBody("job is not cancellable in its current state"))
 	}
+}
+
+// handleForceJob marks a queued job as forced so the worker runs it immediately,
+// bypassing the encode window.
+func (s *Server) handleForceJob(c *echo.Context) error {
+	ctx := c.Request().Context()
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		return badRequest(c, "invalid job id")
+	}
+	if err := s.store.Jobs.Force(ctx, id); errors.Is(err, store.ErrNotFound) {
+		return c.JSON(http.StatusNotFound, errorBody("job not found"))
+	} else if errors.Is(err, store.ErrIllegalTransition) {
+		return c.JSON(http.StatusConflict, errorBody("job is not in the queued state"))
+	} else if err != nil {
+		return serverError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"job_id": id, "forced": true})
 }
 
 func dedupeIDs(ids []int64) []int64 {

@@ -2,8 +2,12 @@ package api
 
 import (
 	"context"
+	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
+	"path"
+	"strings"
 
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
@@ -35,6 +39,10 @@ type Deps struct {
 	MoviesPath  string
 	TVPath      string
 	DisableAuth bool
+
+	// StaticFS is the embedded frontend (Next.js static export). When nil, no
+	// static routes are mounted — handy for API-only tests.
+	StaticFS fs.FS
 }
 
 // Server holds injected dependencies and wires routes. Calling Handler()
@@ -48,6 +56,7 @@ type Server struct {
 	moviesPath  string
 	tvPath      string
 	disableAuth bool
+	staticFS    fs.FS
 
 	hub          *Hub
 	loginLimiter *rateLimiter
@@ -62,6 +71,7 @@ func New(d Deps) *Server {
 		moviesPath:   d.MoviesPath,
 		tvPath:       d.TVPath,
 		disableAuth:  d.DisableAuth,
+		staticFS:     d.StaticFS,
 		hub:          NewHub(),
 		loginLimiter: newRateLimiter(),
 	}
@@ -123,6 +133,7 @@ func (s *Server) Handler() http.Handler {
 	// Read side.
 	api.GET("/stats", s.handleStats)
 	api.GET("/candidates", s.handleCandidates)
+	api.GET("/candidates/grouped", s.handleGroupedCandidates)
 	api.GET("/files/:id", s.handleFileDetail)
 	api.GET("/dry-run", s.handleDryRun)
 
@@ -140,6 +151,7 @@ func (s *Server) Handler() http.Handler {
 	api.POST("/jobs", s.handleCreateJobs)
 	api.GET("/jobs", s.handleListJobs)
 	api.POST("/jobs/:id/cancel", s.handleCancelJob)
+	api.POST("/jobs/:id/force", s.handleForceJob)
 
 	// Settings.
 	api.GET("/settings", s.handleGetSettings)
@@ -149,7 +161,59 @@ func (s *Server) Handler() http.Handler {
 	// Live progress.
 	api.GET("/ws", s.handleWS)
 
+	// Static SPA (embedded Next.js export). Registered last as a catch-all so
+	// it never shadows the API/health routes. Unknown paths fall back to the
+	// shell so client-side routes resolve.
+	if s.staticFS != nil {
+		e.GET("/*", echo.WrapHandler(newStaticHandler(s.staticFS)))
+	}
+
 	return e
+}
+
+// newStaticHandler serves embedded static files, falling back to index.html for
+// any path that doesn't resolve to a file (SPA client-side routing).
+func newStaticHandler(fsys fs.FS) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upath := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if upath == "" {
+			upath = "index.html"
+		}
+		if f, err := fsys.Open(upath); err == nil {
+			defer f.Close()
+			if info, err := f.Stat(); err == nil && !info.IsDir() {
+				serveFSFile(w, r, info, f)
+				return
+			}
+		}
+		serveIndexHTML(w, r, fsys)
+	})
+}
+
+func serveIndexHTML(w http.ResponseWriter, r *http.Request, fsys fs.FS) {
+	f, err := fsys.Open("index.html")
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	serveFSFile(w, r, info, f)
+}
+
+func serveFSFile(w http.ResponseWriter, r *http.Request, info fs.FileInfo, f fs.File) {
+	if rs, ok := f.(io.ReadSeeker); ok {
+		http.ServeContent(w, r, info.Name(), info.ModTime(), rs)
+		return
+	}
+	if strings.HasSuffix(info.Name(), ".html") {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	}
+	_, _ = io.Copy(w, f)
 }
 
 func (s *Server) healthz(c *echo.Context) error {

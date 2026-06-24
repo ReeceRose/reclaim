@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"net/http"
+	"path"
 	"strings"
 )
 
@@ -27,8 +28,10 @@ func AuthMiddleware(store AuthStore, disableAuth bool) func(http.Handler) http.H
 				return
 			}
 
-			// Always allow: health, auth endpoints themselves
-			if isUnprotected(r.URL.Path) {
+			// Always allow: health, auth endpoints, and the static SPA shell +
+			// its assets (so the login/setup pages can actually render — they
+			// fetch /api/session to decide what to show).
+			if isUnprotected(r.URL.Path) || isPublicSPA(r.URL.Path) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -53,9 +56,29 @@ func AuthMiddleware(store AuthStore, disableAuth bool) func(http.Handler) http.H
 	}
 }
 
-func isUnprotected(path string) bool {
-	switch path {
+func isUnprotected(p string) bool {
+	switch p {
 	case "/healthz", "/api/setup", "/api/login", "/api/logout", "/api/session":
+		return true
+	}
+	return false
+}
+
+// isPublicSPA reports whether a path is the SPA shell entry (login/setup) or a
+// static asset that must load unauthenticated so the shell can render. The app
+// is a single-page client that decides setup-vs-login-vs-app from /api/session,
+// so these must serve the shell rather than redirect (which would loop).
+func isPublicSPA(p string) bool {
+	switch p {
+	case "/login", "/setup":
+		return true
+	}
+	if strings.HasPrefix(p, "/_next/") {
+		return true
+	}
+	// Top-level static files (favicon.ico, manifest, etc.). API routes and
+	// extension-less app routes are excluded so they still gate as before.
+	if p != "/" && !strings.HasPrefix(p, "/api/") && path.Ext(p) != "" {
 		return true
 	}
 	return false

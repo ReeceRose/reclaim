@@ -16,6 +16,7 @@ import (
 	"reclaim/internal/startup"
 	"reclaim/internal/store"
 	"reclaim/internal/worker"
+	"reclaim/web"
 )
 
 func main() {
@@ -79,6 +80,7 @@ func main() {
 		MoviesPath:  cfg.MoviesPath,
 		TVPath:      cfg.TVPath,
 		DisableAuth: cfg.DisableAuth,
+		StaticFS:    web.FS(),
 	})
 
 	// Worker executes encodes within the window and pushes progress over the

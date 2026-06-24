@@ -40,8 +40,8 @@ func TestMigrate_idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("version: %v", err)
 	}
-	if version != 2 {
-		t.Fatalf("want version 2, got %d", version)
+	if version != 3 {
+		t.Fatalf("want version 3, got %d", version)
 	}
 }
 

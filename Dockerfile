@@ -9,13 +9,11 @@ COPY web/ ./
 RUN npm run build
 # Output lands in /build/out — copied into the Go source tree before compile.
 
-# ── Stage 2: Static ffmpeg/ffprobe binaries ───────────────────────────────────
-# Pin by tag; bump deliberately when upgrading ffmpeg.
-FROM mwader/static-ffmpeg:7.1 AS ffmpeg-bins
-
-# ── Stage 3: Build the Go binary ─────────────────────────────────────────────
+# ── Stage 2: Build the Go binary ─────────────────────────────────────────────
 FROM golang:1.26-alpine AS go-build
 WORKDIR /src
+
+RUN apk add --no-cache upx
 
 # Fetch deps first so this layer is cached until go.mod/go.sum change.
 COPY go.mod go.sum ./
@@ -30,17 +28,17 @@ RUN CGO_ENABLED=0 GOOS=linux \
       -ldflags="-s -w" \
       -trimpath \
       -o /reclaim \
-      ./cmd/reclaim
+      ./cmd/reclaim && \
+    upx --best /reclaim
 
-# ── Stage 4: Minimal final image ─────────────────────────────────────────────
-# distroless/static has no shell and no package manager — attack surface is
-# just the Go binary + the two statically-linked ffmpeg executables.
-# The nonroot variant runs as uid 65532 by default.
-FROM gcr.io/distroless/static-debian12:nonroot
+# ── Stage 3: Minimal final image ─────────────────────────────────────────────
+FROM alpine:3
 
-COPY --from=go-build   /reclaim               /reclaim
-COPY --from=ffmpeg-bins /ffmpeg               /usr/local/bin/ffmpeg
-COPY --from=ffmpeg-bins /ffprobe              /usr/local/bin/ffprobe
+RUN apk add --no-cache ffmpeg && \
+    adduser -D -H -u 1000 reclaim
 
+COPY --from=go-build /reclaim /reclaim
+
+USER reclaim
 EXPOSE 8080
 ENTRYPOINT ["/reclaim"]

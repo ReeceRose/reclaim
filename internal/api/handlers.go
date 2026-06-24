@@ -7,12 +7,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"reclaim/internal/store"
 )
 
-func (s *Server) handleStats(c echo.Context) error {
+func (s *Server) handleStats(c *echo.Context) error {
 	ov, err := s.store.Stats.Overview(c.Request().Context())
 	if err != nil {
 		return serverError(c, err)
@@ -48,7 +48,7 @@ func (s *Server) handleStats(c echo.Context) error {
 
 // handleCandidates returns one page of ranked candidates. The default sort uses
 // keyset pagination on (predicted_savings_bytes, id); other sorts use offset.
-func (s *Server) handleCandidates(c echo.Context) error {
+func (s *Server) handleCandidates(c *echo.Context) error {
 	q := store.CandidateQuery{
 		Sort: store.CandidateSort(defaultStr(c.QueryParam("sort"), string(store.SortSavingsDesc))),
 		Filter: store.CandidateFilter{
@@ -110,7 +110,7 @@ func (s *Server) handleCandidates(c echo.Context) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
-func (s *Server) handleFileDetail(c echo.Context) error {
+func (s *Server) handleFileDetail(c *echo.Context) error {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		return badRequest(c, "invalid file id")
@@ -125,18 +125,18 @@ func (s *Server) handleFileDetail(c echo.Context) error {
 	return c.JSON(http.StatusOK, toMediaFileDTO(f))
 }
 
-func (s *Server) handleScan(c echo.Context) error {
+func (s *Server) handleScan(c *echo.Context) error {
 	return s.triggerScan(c, false)
 }
 
-func (s *Server) handleFullScan(c echo.Context) error {
+func (s *Server) handleFullScan(c *echo.Context) error {
 	return s.triggerScan(c, true)
 }
 
 // triggerScan kicks off a scan in the background and returns 202. Scan lifecycle
 // is pushed over the WS hub so the UI can show progress without polling. The
 // request context is not used for the scan itself (it would cancel on return).
-func (s *Server) triggerScan(c echo.Context, force bool) error {
+func (s *Server) triggerScan(c *echo.Context, force bool) error {
 	if s.scanner == nil {
 		return c.JSON(http.StatusServiceUnavailable, errorBody("scanner unavailable"))
 	}
@@ -165,7 +165,7 @@ func (s *Server) triggerScan(c echo.Context, force bool) error {
 }
 
 // handleDryRun projects total savings for a set or filter, queuing nothing.
-func (s *Server) handleDryRun(c echo.Context) error {
+func (s *Server) handleDryRun(c *echo.Context) error {
 	ids, err := parseIDList(c.QueryParam("ids"))
 	if err != nil {
 		return badRequest(c, "ids must be a comma-separated list of integers")

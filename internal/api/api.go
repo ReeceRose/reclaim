@@ -2,10 +2,11 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 
 	"reclaim/internal/config"
 	"reclaim/internal/store"
@@ -15,6 +16,14 @@ import (
 // so handlers are testable without a real fsnotify-backed scanner.
 type ScanTrigger interface {
 	Scan(ctx context.Context, trigger string, force bool) (*store.ScanRun, error)
+}
+
+// JobCanceller is the slice of the worker the API drives to cancel a running
+// encode. Cancel returns true if the job was actively running and its
+// ffmpeg was killed; false means the worker isn't running it, so the handler
+// falls back to flipping the DB state for a merely-queued job.
+type JobCanceller interface {
+	Cancel(jobID int64) bool
 }
 
 // Deps are the wired dependencies the API needs. main.go builds this; tests
@@ -42,6 +51,7 @@ type Server struct {
 
 	hub          *Hub
 	loginLimiter *rateLimiter
+	canceller    JobCanceller
 }
 
 func New(d Deps) *Server {
@@ -65,12 +75,38 @@ func New(d Deps) *Server {
 // can push progress events.
 func (s *Server) Hub() *Hub { return s.hub }
 
+// SetCanceller wires the worker in after construction (the worker needs the
+// server's Hub, so the two are built in sequence and joined here).
+func (s *Server) SetCanceller(c JobCanceller) { s.canceller = c }
+
 // Handler builds the Echo instance and returns it as http.Handler.
 func (s *Server) Handler() http.Handler {
 	e := echo.New()
-	e.HideBanner = true
 
-	e.Use(middleware.Logger())
+	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogStatus:   true,
+		LogMethod:   true,
+		LogURI:      true,
+		LogLatency:  true,
+		LogRemoteIP: true,
+		HandleError: true,
+		LogValuesFunc: func(_ *echo.Context, v middleware.RequestLoggerValues) error {
+			attrs := []any{
+				"method", v.Method,
+				"uri", v.URI,
+				"status", v.Status,
+				"latency", v.Latency.String(),
+				"remote_ip", v.RemoteIP,
+			}
+			if v.Error != nil {
+				attrs = append(attrs, "err", v.Error)
+				slog.Error("http request", attrs...)
+			} else {
+				slog.Info("http request", attrs...)
+			}
+			return nil
+		},
+	}))
 	e.Use(middleware.Recover())
 	e.Use(echo.WrapMiddleware(AuthMiddleware(s.auth, s.disableAuth)))
 
@@ -94,7 +130,7 @@ func (s *Server) Handler() http.Handler {
 	api.POST("/scan", s.handleScan)
 	api.POST("/scan/full", s.handleFullScan)
 
-	// Profiles (CRUD §11).
+	// Profiles.
 	api.GET("/profiles", s.handleListProfiles)
 	api.POST("/profiles", s.handleCreateProfile)
 	api.PUT("/profiles/:id", s.handleUpdateProfile)
@@ -116,6 +152,6 @@ func (s *Server) Handler() http.Handler {
 	return e
 }
 
-func (s *Server) healthz(c echo.Context) error {
+func (s *Server) healthz(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }

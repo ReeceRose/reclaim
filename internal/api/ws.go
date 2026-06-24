@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Event is the typed envelope for every WS message. Push-only: all commands stay
-// on REST (§P5), which keeps the reconnection story simple.
+// on REST, which keeps the reconnection story simple.
 type Event struct {
 	Event string `json:"event"`
 	Data  any    `json:"data"`
@@ -92,9 +92,9 @@ var wsUpgrader = websocket.Upgrader{
 }
 
 // handleWS upgrades to a WebSocket after validating the session cookie. The
-// auth middleware already 401s /api/* without a cookie, but per §P5 the upgrade
-// handler validates the cookie itself so the handshake can never slip through.
-func (s *Server) handleWS(c echo.Context) error {
+// auth middleware already 401s /api/* without a cookie, but the upgrade handler
+// validates the cookie itself so the handshake can never slip through.
+func (s *Server) handleWS(c *echo.Context) error {
 	r := c.Request()
 	if !s.disableAuth {
 		secret := s.store.Settings.SessionSecret()

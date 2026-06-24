@@ -56,6 +56,75 @@ func Probe(ctx context.Context, path string) (*Result, error) {
 	return parse(out, path)
 }
 
+// Inspection is the verification-oriented view of a file: stream counts by
+// type, canonical dimensions, and duration. Distinct from Result, which maps
+// the primary streams into media_files columns.
+type Inspection struct {
+	DurationSeconds float64
+	Width           int
+	Height          int
+	VideoStreams    int
+	AudioStreams    int
+	SubtitleStreams int
+}
+
+// Inspect runs ffprobe for verification purposes and returns per-type stream
+// counts plus the primary video dimensions and duration. A successful return
+// (no error, at least one stream) doubles as the playability check.
+func Inspect(ctx context.Context, path string) (*Inspection, error) {
+	cmd := exec.CommandContext(ctx, "ffprobe",
+		"-v", "quiet",
+		"-print_format", "json",
+		"-show_format",
+		"-show_streams",
+		path,
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		var stderr string
+		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
+			stderr = ": " + strings.TrimSpace(string(ee.Stderr))
+		}
+		return nil, &ProbeError{Path: path, Msg: fmt.Sprintf("ffprobe failed%s", stderr)}
+	}
+
+	var raw probeOutput
+	if jerr := json.Unmarshal(out, &raw); jerr != nil {
+		return nil, &ProbeError{Path: path, Msg: fmt.Sprintf("parse JSON: %v", jerr)}
+	}
+
+	insp := &Inspection{}
+	if d := parsePositiveFloat(raw.Format.Duration); d != nil {
+		insp.DurationSeconds = *d
+	}
+	for _, s := range raw.Streams {
+		switch s.CodecType {
+		case "video":
+			insp.VideoStreams++
+			if insp.Width == 0 && s.Width > 0 {
+				insp.Width = s.Width
+			}
+			if insp.Height == 0 && s.Height > 0 {
+				insp.Height = s.Height
+			}
+			if insp.DurationSeconds == 0 {
+				if d := parsePositiveFloat(s.Duration); d != nil {
+					insp.DurationSeconds = *d
+				}
+			}
+		case "audio":
+			insp.AudioStreams++
+		case "subtitle":
+			insp.SubtitleStreams++
+		}
+	}
+
+	if len(raw.Streams) == 0 {
+		return nil, &ProbeError{Path: path, Msg: "no streams found"}
+	}
+	return insp, nil
+}
+
 // parse unmarshals raw ffprobe JSON and maps it to a Result.
 // Exported as an internal helper so tests can drive it directly with fixture files.
 func parse(data []byte, path string) (*Result, error) {

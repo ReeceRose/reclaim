@@ -1,5 +1,5 @@
 -- +goose Up
--- library_stats is a small denormalized aggregates table (§12) maintained
+-- library_stats is a small denormalized aggregates table maintained
 -- incrementally on every media_files change so the overview never has to run a
 -- GROUP BY over the whole library on dashboard open.
 --

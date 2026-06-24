@@ -6,13 +6,12 @@ import (
 	"time"
 )
 
-// Live is the runtime-mutable view of the settings that the spec lets an
-// operator change without a restart (§11): the encode window, probe concurrency,
-// and scan interval. It is seeded from the env-loaded Config at boot and then
-// owned in memory — the scanner and (P6) worker read it on each use, so a
-// PUT /api/settings takes effect immediately. Overrides are intentionally not
-// persisted to the DB: the settings table stays auth-only (§8), and a restart
-// re-seeds from env.
+// Live is the runtime-mutable view of the settings an operator can change
+// without a restart: the encode window, probe concurrency, and scan interval.
+// It is seeded from the env-loaded Config at boot and then owned in memory —
+// the scanner and worker read it on each use, so a PUT /api/settings takes
+// effect immediately. Overrides are intentionally not persisted to the DB: the
+// settings table stays auth-only, and a restart re-seeds from env.
 type Live struct {
 	mu                sync.RWMutex
 	encodeWindowStart time.Duration

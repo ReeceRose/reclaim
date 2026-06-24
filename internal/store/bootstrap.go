@@ -7,9 +7,9 @@ import (
 	"reclaim/internal/media"
 )
 
-// bootstrapIfNeeded repairs state left by a P3→P4 upgrade (or any boot where
-// library_stats was never populated and predicted_savings_bytes were never
-// computed). Fresh P4 installs with no media are a no-op.
+// bootstrapIfNeeded repairs state on any boot where library_stats was never
+// populated and predicted_savings_bytes were never computed. Fresh installs
+// with no media are a no-op.
 func (s *Store) bootstrapIfNeeded(ctx context.Context) error {
 	needsStats, err := s.Stats.needsRebuild(ctx)
 	if err != nil {
@@ -55,7 +55,7 @@ func (s *Stats) needsRebuild(ctx context.Context) (bool, error) {
 }
 
 // needsSavingsBackfill reports whether probed non-HEVC rows still carry the
-// P3 default of zero predicted_savings_bytes.
+// default of zero predicted_savings_bytes.
 func (m *Media) needsSavingsBackfill(ctx context.Context) (bool, error) {
 	var n int
 	err := m.r.QueryRowContext(ctx, `

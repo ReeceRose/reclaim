@@ -270,6 +270,48 @@ func (m *Media) RecordMove(ctx context.Context, keepID, mergeID int64, newPath s
 	return tx.Commit()
 }
 
+// ReplaceWithEncoded updates a media row after a verified HEVC swap: new size +
+// fingerprint, video_codec forced to hevc, is_already_hevc set, and predicted
+// savings zeroed (it's now HEVC — nothing left to reclaim). The library_stats
+// deltas are applied in the same transaction so the dashboard reflects the
+// reclaimed bytes immediately, and the is_already_hevc flip is what drops the
+// file out of the candidate query, closing the loop.
+func (m *Media) ReplaceWithEncoded(ctx context.Context, id, newSize int64, newFingerprint string, now int64) error {
+	tx, err := m.w.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	old, err := loadStatRow(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if err := applyContribution(ctx, tx, old, -1); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE media_files SET
+			size_bytes = ?, fingerprint = ?, video_codec = 'hevc',
+			is_already_hevc = 1, predicted_savings_bytes = 0,
+			mtime = ?, last_probed_at = ?, probe_error = NULL
+		WHERE id = ?`,
+		newSize, newFingerprint, now, now, id,
+	); err != nil {
+		return err
+	}
+
+	updated, err := loadStatRow(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if err := applyContribution(ctx, tx, updated, +1); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // loadStatRow loads the stat-relevant fields of a row (used inside write
 // transactions to compute deltas). q is *sql.Tx or *sql.DB.
 func loadStatRow(ctx context.Context, q ctxRowQuerier, id int64) (*MediaFile, error) {

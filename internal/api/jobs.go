@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"reclaim/internal/store"
 )
@@ -18,9 +18,9 @@ type createJobsRequest struct {
 }
 
 // handleCreateJobs enqueues one job per eligible file and echoes the resolved
-// selection back (§9.1) so the UI's confirm step is honest about exactly what
-// was queued and what was skipped.
-func (s *Server) handleCreateJobs(c echo.Context) error {
+// selection back so the UI's confirm step is honest about exactly what was
+// queued and what was skipped.
+func (s *Server) handleCreateJobs(c *echo.Context) error {
 	ctx := c.Request().Context()
 	var req createJobsRequest
 	if err := c.Bind(&req); err != nil {
@@ -117,7 +117,7 @@ func (s *Server) handleCreateJobs(c echo.Context) error {
 
 // handleListJobs returns the combined queue + history, optionally filtered by
 // status, with a 1-based queue position attached to queued jobs.
-func (s *Server) handleListJobs(c echo.Context) error {
+func (s *Server) handleListJobs(c *echo.Context) error {
 	ctx := c.Request().Context()
 	jobs, err := s.store.Jobs.ListAll(ctx)
 	if err != nil {
@@ -158,10 +158,10 @@ func queuePositions(jobs []store.TranscodeJob) map[int64]int {
 	return pos
 }
 
-// handleCancelJob cancels a queued/running/verifying job. The worker (P6/P7)
-// performs the process kill + temp cleanup for a running job; here we flip the
-// state so it stops being pulled / gets reconciled.
-func (s *Server) handleCancelJob(c echo.Context) error {
+// handleCancelJob cancels a queued/running/verifying job. The worker performs
+// the process kill + temp cleanup for a running job; here we flip the state so
+// it stops being pulled / gets reconciled.
+func (s *Server) handleCancelJob(c *echo.Context) error {
 	ctx := c.Request().Context()
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -175,8 +175,23 @@ func (s *Server) handleCancelJob(c echo.Context) error {
 		return serverError(c, err)
 	}
 	switch job.Status {
-	case "queued", "running", "verifying":
-		if err := s.store.Jobs.UpdateStatus(ctx, id, "cancelled"); err != nil {
+	case "running", "verifying":
+		// Hand off to the worker: it kills the ffmpeg process group, removes the
+		// temp, leaves the original untouched, and flips the state to cancelled.
+		// If the worker isn't actually running it (e.g. across a restart before
+		// reconcile), fall through to a direct state flip.
+		if s.canceller != nil && s.canceller.Cancel(id) {
+			return c.JSON(http.StatusOK, map[string]any{"job_id": id, "status": "cancelling"})
+		}
+		if err := s.store.Jobs.MarkCancelled(ctx, id, time.Now().Unix()); err != nil {
+			return serverError(c, err)
+		}
+		s.hub.Broadcast("job_cancelled", map[string]any{"job_id": id})
+		return c.JSON(http.StatusOK, map[string]any{"job_id": id, "status": "cancelled"})
+	case "queued":
+		// A queued job is just dropped. The guarded transition also wins the race
+		// against the worker claiming it at the same moment.
+		if err := s.store.Jobs.MarkCancelled(ctx, id, time.Now().Unix()); err != nil {
 			return serverError(c, err)
 		}
 		s.hub.Broadcast("job_cancelled", map[string]any{"job_id": id})

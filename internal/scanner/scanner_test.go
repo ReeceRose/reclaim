@@ -339,7 +339,7 @@ func TestProbeConcurrencyCap(t *testing.T) {
 	}
 }
 
-// TestScanComputesSavingsAndStats verifies the P4 wiring: a scan computes a
+// TestScanComputesSavingsAndStats verifies that a scan computes a
 // predicted-savings estimate at probe time and the incrementally-maintained
 // library stats reflect what was indexed.
 func TestScanComputesSavingsAndStats(t *testing.T) {

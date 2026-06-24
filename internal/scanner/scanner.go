@@ -46,7 +46,7 @@ type Scanner struct {
 
 	// scanIntervalFn returns the current scheduled-rescan interval. It defaults
 	// to the boot value but can be backed by the live config so a settings
-	// change reschedules without a restart (§P5 live config thread).
+	// change reschedules without a restart.
 	scanIntervalFn func() time.Duration
 
 	// sem bounds concurrent ffprobe subprocesses across every probe entry point
@@ -270,7 +270,7 @@ func (s *Scanner) Scan(ctx context.Context, trigger string, force bool) (*store.
 
 	// A force rescan re-probes everything, so it is the natural moment to
 	// reconcile the incrementally-maintained library_stats against the source
-	// of truth and repair any drift (§12; the P9 drift guard extends this).
+	// of truth and repair any drift.
 	if force {
 		if err := s.store.Stats.Recompute(ctx); err != nil {
 			slog.Error("scanner: stats recompute", "err", err)
@@ -364,7 +364,7 @@ func (s *Scanner) probeAndStore(
 		f.ContainerFormat = result.ContainerFormat
 		f.IsAlreadyHEVC = result.IsAlreadyHEVC
 		f.LastProbedAt = &now
-		// Compute the savings estimate at probe time and store it (§10.2) so the
+		// Compute the savings estimate at probe time and store it so the
 		// candidate ranking and dashboard never have to recompute it per query.
 		f.PredictedSavingsBytes = media.PredictedSavingsBytes(
 			result.VideoCodec, result.IsAlreadyHEVC, size,

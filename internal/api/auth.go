@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// AuthStore is implemented by the settings repo (P1). Tested here against a fake.
+// AuthStore is implemented by the settings repo. Tested here against a fake.
 type AuthStore interface {
 	IsSetupComplete() bool
 	ValidateLogin(username, password string) bool
@@ -114,7 +114,7 @@ func sessionUsername(r *http.Request, secret []byte) (string, bool) {
 
 // isSecureRequest reports whether the connection is HTTPS, so the session cookie
 // only gets the Secure flag when it can actually be honored. On a plain-HTTP LAN
-// the flag is omitted (documented tradeoff, §4.2).
+// the flag is omitted (documented tradeoff).
 func isSecureRequest(r *http.Request) bool {
 	if r.TLS != nil {
 		return true

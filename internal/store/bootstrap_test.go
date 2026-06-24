@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// insertPreP4Row simulates a P3-era row: probed media with zero savings and no
-// library_stats contribution (bypasses the incremental Media.Insert path).
-func insertPreP4Row(t *testing.T, s *Store, path, codec string, size int64) int64 {
+// insertLegacyRow simulates a pre-upgrade row: probed media with zero savings
+// and no library_stats contribution (bypasses the incremental Media.Insert path).
+func insertLegacyRow(t *testing.T, s *Store, path, codec string, size int64) int64 {
 	t.Helper()
 	res, err := s.w.Exec(`
 		INSERT INTO media_files (
@@ -31,13 +31,13 @@ func TestBootstrap_backfillsSavingsAndStatsOnUpgrade(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
 	ctx := context.Background()
 
-	// First open applies migrations; seed a P3-style row before bootstrap runs
+	// First open applies migrations; seed a legacy row before bootstrap runs
 	// by inserting directly after open on an empty stats table.
 	s1, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	insertPreP4Row(t, s1, "/m/legacy.mkv", "h264", 10_000)
+	insertLegacyRow(t, s1, "/m/legacy.mkv", "h264", 10_000)
 	s1.Close()
 
 	s2, err := Open(path)

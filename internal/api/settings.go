@@ -3,14 +3,14 @@ package api
 import (
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"reclaim/internal/config"
 )
 
 // handleGetSettings returns the live runtime knobs plus the read-only mount
-// paths (set via env, §11).
-func (s *Server) handleGetSettings(c echo.Context) error {
+// paths (set via env).
+func (s *Server) handleGetSettings(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{
 		"encode_window_start": config.FormatHHMM(s.live.EncodeWindowStart()),
 		"encode_window_end":   config.FormatHHMM(s.live.EncodeWindowEnd()),
@@ -29,9 +29,9 @@ type settingsRequest struct {
 }
 
 // handlePutSettings applies runtime-mutable settings without a restart. The
-// scanner (and P6 worker) read the live holder on each use, so changes take
-// effect immediately. Mount paths are read-only and ignored here.
-func (s *Server) handlePutSettings(c echo.Context) error {
+// scanner and worker read the live holder on each use, so changes take effect
+// immediately. Mount paths are read-only and ignored here.
+func (s *Server) handlePutSettings(c *echo.Context) error {
 	var req settingsRequest
 	if err := c.Bind(&req); err != nil {
 		return badRequest(c, "invalid JSON body")

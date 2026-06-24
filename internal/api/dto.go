@@ -4,18 +4,18 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"reclaim/internal/store"
 )
 
 func errorBody(msg string) map[string]string { return map[string]string{"error": msg} }
 
-func badRequest(c echo.Context, msg string) error {
+func badRequest(c *echo.Context, msg string) error {
 	return c.JSON(http.StatusBadRequest, errorBody(msg))
 }
 
-func serverError(c echo.Context, err error) error {
+func serverError(c *echo.Context, err error) error {
 	slog.Error("api: internal error", "path", c.Path(), "err", err)
 	return c.JSON(http.StatusInternalServerError, errorBody("internal error"))
 }

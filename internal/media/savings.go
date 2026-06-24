@@ -9,20 +9,15 @@ type RatioSource string
 const (
 	// RatioSeed is a conservative rule-of-thumb constant shipped with the build.
 	RatioSeed RatioSource = "seed"
-	// RatioLearned is derived from this instance's own completed jobs (P9, §10.2).
-	// Not produced in v1 — reserved so the API contract is stable.
+	// RatioLearned is derived from this instance's own completed jobs.
+	// Not yet produced — reserved so the API contract is stable.
 	RatioLearned RatioSource = "learned"
 )
 
 // seedHEVCRatios maps a source video codec to the estimated ratio of
 // output_size / original_size when re-encoding it to HEVC. Lower means more
-// savings. These are intentionally conservative rule-of-thumb seeds (§10.2):
-// it is better to under-promise savings than to over-promise them.
-//
-// This table is the single place the seeds live. P9 (§10.2) will start
-// overriding individual entries with the observed mean output/original ratio
-// per source codec once there is enough completed-job history to beat a seed;
-// at that point RatioFor should consult learned values first and fall back here.
+// savings. These are intentionally conservative rule-of-thumb seeds: it is
+// better to under-promise savings than to over-promise them.
 var seedHEVCRatios = map[string]float64{
 	"mpeg1video": 0.40,
 	"mpeg2video": 0.40,
@@ -40,8 +35,8 @@ var seedHEVCRatios = map[string]float64{
 	"vp8":        0.65,
 	"vp9":        0.90,
 	"av1":        1.00,
-	// HEVC sources are excluded from candidates entirely (§10.1); a 1.0 ratio
-	// here means "no savings" for the rare path that still asks.
+	// HEVC sources are excluded from candidates entirely; a 1.0 ratio here
+	// means "no savings" for the rare path that still asks.
 	"hevc": 1.00,
 	"h265": 1.00,
 }
@@ -52,7 +47,7 @@ const defaultHEVCRatio = 0.70
 
 // RatioFor returns the expected output/original ratio for a source codec plus
 // the source of that figure. A nil or unknown codec falls back to the default.
-// In v1 the source is always RatioSeed.
+// The source is always RatioSeed.
 func RatioFor(videoCodec *string) (ratio float64, source RatioSource) {
 	if videoCodec == nil {
 		return defaultHEVCRatio, RatioSeed
@@ -64,9 +59,9 @@ func RatioFor(videoCodec *string) (ratio float64, source RatioSource) {
 }
 
 // PredictedSavingsBytes estimates how many bytes a re-encode to HEVC would
-// reclaim: size_bytes * (1 - expected_hevc_ratio[codec]) (§10.2). Files already
-// in HEVC have nothing to gain and return 0. The result is clamped to be
-// non-negative. It is an estimate for ranking, never a guarantee.
+// reclaim: size_bytes * (1 - expected_hevc_ratio[codec]). Files already in HEVC
+// have nothing to gain and return 0. The result is clamped to be non-negative.
+// It is an estimate for ranking, never a guarantee.
 func PredictedSavingsBytes(videoCodec *string, isAlreadyHEVC bool, sizeBytes int64) int64 {
 	if isAlreadyHEVC || sizeBytes <= 0 {
 		return 0

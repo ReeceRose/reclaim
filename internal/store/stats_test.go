@@ -128,7 +128,7 @@ func TestStats_encodeCompletionUpdatesWithoutRecompute(t *testing.T) {
 		t.Fatalf("before recoverable = %d, want 4000", before.TotalRecoverableBytes)
 	}
 
-	// Simulate the §9.4 post-encode row update: now HEVC, smaller, no savings.
+	// Simulate the post-encode row update: now HEVC, smaller, no savings.
 	post := testFile{path: "/m/a.mkv", size: 6000, codec: "hevc", height: 1080, hevc: true, savings: 0}.toMedia()
 	post.ID = id
 	if err := s.Media.UpdateProbe(ctx, post); err != nil {

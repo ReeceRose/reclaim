@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// CandidateSort selects the ordering of a candidate page (§10.3).
+// CandidateSort selects the ordering of a candidate page.
 type CandidateSort string
 
 const (
@@ -63,7 +63,7 @@ const defaultCandidateLimit = 50
 const maxCandidateLimit = 200
 
 // jobExclusionSQL excludes files that already have an active or completed job so
-// the same candidate doesn't keep reappearing (§10.3). failed/cancelled jobs do
+// the same candidate doesn't keep reappearing. failed/cancelled jobs do
 // NOT exclude — those files are eligible to be re-queued.
 const jobExclusionSQL = `NOT EXISTS (
 	SELECT 1 FROM transcode_jobs j
@@ -71,8 +71,8 @@ const jobExclusionSQL = `NOT EXISTS (
 	  AND j.status IN ('queued', 'running', 'verifying', 'completed')
 )`
 
-// Candidates returns one page of re-encode candidates, ranked and filtered per
-// §10.2/§10.3. Files that are already HEVC, missing, failed to probe, or already
+// Candidates returns one page of re-encode candidates, ranked and filtered.
+// Files that are already HEVC, missing, failed to probe, or already
 // queued/completed are excluded.
 func (m *Media) Candidates(ctx context.Context, q CandidateQuery) ([]MediaFile, error) {
 	limit := q.Limit
@@ -154,8 +154,8 @@ func (m *Media) Candidates(ctx context.Context, q CandidateQuery) ([]MediaFile, 
 	return out, rows.Err()
 }
 
-// DryRunResult is the projected outcome of re-encoding a candidate set (§11):
-// pure decision support, queues nothing.
+// DryRunResult is the projected outcome of re-encoding a candidate set: pure
+// decision support, queues nothing.
 type DryRunResult struct {
 	FileCount             int64
 	TotalBytes            int64

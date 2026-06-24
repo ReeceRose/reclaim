@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"reclaim/internal/store"
 )
@@ -30,7 +30,7 @@ func (r credentialsRequest) validate() error {
 }
 
 // handleSetup performs first-run setup once. Subsequent calls return 409.
-func (s *Server) handleSetup(c echo.Context) error {
+func (s *Server) handleSetup(c *echo.Context) error {
 	var req credentialsRequest
 	if err := c.Bind(&req); err != nil {
 		return badRequest(c, "invalid JSON body")
@@ -53,7 +53,7 @@ func (s *Server) handleSetup(c echo.Context) error {
 }
 
 // handleLogin validates credentials and issues a signed session cookie.
-func (s *Server) handleLogin(c echo.Context) error {
+func (s *Server) handleLogin(c *echo.Context) error {
 	ip := clientIP(c.Request())
 	if !s.loginLimiter.allow(ip) {
 		return c.JSON(http.StatusTooManyRequests, errorBody("too many login attempts, slow down"))
@@ -73,14 +73,14 @@ func (s *Server) handleLogin(c echo.Context) error {
 }
 
 // handleLogout clears the session cookie.
-func (s *Server) handleLogout(c echo.Context) error {
+func (s *Server) handleLogout(c *echo.Context) error {
 	ClearSession(c.Response())
 	return c.NoContent(http.StatusNoContent)
 }
 
 // handleSession reports setup + auth state so the SPA can route to setup, login,
 // or the app on load. It is reachable unauthenticated by design.
-func (s *Server) handleSession(c echo.Context) error {
+func (s *Server) handleSession(c *echo.Context) error {
 	resp := map[string]any{
 		"setup_complete": s.store.Settings.IsSetupComplete(),
 		"authenticated":  false,
@@ -99,7 +99,7 @@ func (s *Server) handleSession(c echo.Context) error {
 
 // handleChangeCredentials re-bcrypts and stores new credentials. Never returns
 // the hash. Behind the session gate.
-func (s *Server) handleChangeCredentials(c echo.Context) error {
+func (s *Server) handleChangeCredentials(c *echo.Context) error {
 	var req credentialsRequest
 	if err := c.Bind(&req); err != nil {
 		return badRequest(c, "invalid JSON body")
@@ -132,7 +132,7 @@ func clientIP(r *http.Request) string {
 }
 
 // rateLimiter is a small per-key fixed-window counter. It exists only to slow
-// password brute force on the login endpoint (§4.2), not as a robust limiter.
+// password brute force on the login endpoint, not as a robust limiter.
 type rateLimiter struct {
 	mu       sync.Mutex
 	attempts map[string]*window

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"reclaim/internal/store"
 )
@@ -32,7 +32,7 @@ func (r profileRequest) validate() error {
 	return nil
 }
 
-func (s *Server) handleListProfiles(c echo.Context) error {
+func (s *Server) handleListProfiles(c *echo.Context) error {
 	profiles, err := s.store.Profiles.List(c.Request().Context())
 	if err != nil {
 		return serverError(c, err)
@@ -44,7 +44,7 @@ func (s *Server) handleListProfiles(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"items": out})
 }
 
-func (s *Server) handleCreateProfile(c echo.Context) error {
+func (s *Server) handleCreateProfile(c *echo.Context) error {
 	var req profileRequest
 	if err := c.Bind(&req); err != nil {
 		return badRequest(c, "invalid JSON body")
@@ -67,7 +67,7 @@ func (s *Server) handleCreateProfile(c echo.Context) error {
 	return c.JSON(http.StatusCreated, toProfileDTO(p))
 }
 
-func (s *Server) handleUpdateProfile(c echo.Context) error {
+func (s *Server) handleUpdateProfile(c *echo.Context) error {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		return badRequest(c, "invalid profile id")
@@ -98,7 +98,7 @@ func (s *Server) handleUpdateProfile(c echo.Context) error {
 	return c.JSON(http.StatusOK, toProfileDTO(p))
 }
 
-func (s *Server) handleDeleteProfile(c echo.Context) error {
+func (s *Server) handleDeleteProfile(c *echo.Context) error {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		return badRequest(c, "invalid profile id")

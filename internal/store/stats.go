@@ -30,7 +30,7 @@ type ResolutionStat struct {
 	PredictedSavingsBytes int64
 }
 
-// LibraryStats is the precomputed overview the dashboard renders (§11, §12).
+// LibraryStats is the precomputed overview the dashboard renders.
 type LibraryStats struct {
 	TotalFiles            int64
 	TotalBytes            int64
@@ -99,8 +99,7 @@ func (s *Stats) Overview(ctx context.Context) (*LibraryStats, error) {
 
 // Recompute rebuilds library_stats from media_files in a single transaction.
 // This is the source of truth / repair tool: incremental deltas are fast but
-// drift-prone, so this exists to reconcile them (wired into force rescans and,
-// per P9, the scheduled drift guard).
+// drift-prone, so this exists to reconcile them.
 func (s *Stats) Recompute(ctx context.Context) error {
 	tx, err := s.w.BeginTx(ctx, nil)
 	if err != nil {

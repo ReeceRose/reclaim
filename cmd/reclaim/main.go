@@ -15,6 +15,7 @@ import (
 	"reclaim/internal/scanner"
 	"reclaim/internal/startup"
 	"reclaim/internal/store"
+	"reclaim/internal/worker"
 )
 
 func main() {
@@ -71,14 +72,22 @@ func main() {
 	// Scanner runs the startup scan then drives the watcher + scheduled rescan.
 	go sc.Start(ctx)
 
-	handler := api.New(api.Deps{
+	apiSrv := api.New(api.Deps{
 		Store:       db,
 		Scanner:     sc,
 		Live:        live,
 		MoviesPath:  cfg.MoviesPath,
 		TVPath:      cfg.TVPath,
 		DisableAuth: cfg.DisableAuth,
-	}).Handler()
+	})
+
+	// Worker executes encodes within the window and pushes progress over the
+	// server's WS hub; the API drives it to cancel running jobs.
+	wk := worker.New(db, live, apiSrv.Hub(), []string{cfg.MoviesPath, cfg.TVPath})
+	apiSrv.SetCanceller(wk)
+	go wk.Run(ctx)
+
+	handler := apiSrv.Handler()
 
 	srv := &http.Server{
 		Addr:    ":8080",

@@ -2,8 +2,10 @@ package scanner
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -241,6 +243,99 @@ func TestScanFullForceRescan(t *testing.T) {
 	}
 	if run.FilesUpdated != 2 {
 		t.Errorf("force rescan: FilesUpdated = %d, want 2", run.FilesUpdated)
+	}
+}
+
+// TestProbeConcurrencyCap proves the scanner-wide semaphore bounds concurrent
+// probes to PROBE_CONCURRENCY across *all* entry points: a walk fills the cap,
+// then a watcher probe for a fresh file must queue on the same semaphore rather
+// than starting an extra ffprobe. With the old per-Scan() semaphore (and the
+// watcher bypassing it entirely) this test would observe a probe beyond the cap.
+func TestProbeConcurrencyCap(t *testing.T) {
+	const capN = 2
+	const nFiles = 10
+
+	root := t.TempDir()
+	for i := 0; i < nFiles; i++ {
+		writeFile(t, filepath.Join(root, fmt.Sprintf("f%02d.mkv", i)))
+	}
+
+	var cur, peak int32
+	release := make(chan struct{})
+	// Buffered generously so probes never block on the send; they only block on
+	// release. This lets us observe exactly how many got past the semaphore.
+	started := make(chan struct{}, nFiles+1)
+
+	probe := func(_ context.Context, _ string) (*ffprobe.Result, error) {
+		n := atomic.AddInt32(&cur, 1)
+		for {
+			old := atomic.LoadInt32(&peak)
+			if n <= old || atomic.CompareAndSwapInt32(&peak, old, n) {
+				break
+			}
+		}
+		started <- struct{}{}
+		<-release
+		atomic.AddInt32(&cur, -1)
+		codec := "h264"
+		return &ffprobe.Result{VideoCodec: &codec}, nil
+	}
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	cfg := &config.Config{
+		MoviesPath:       root,
+		TVPath:           root,
+		ProbeConcurrency: capN,
+		ScanInterval:     time.Hour,
+	}
+	sc, err := New(st, cfg, WithProbeFunc(probe), WithDebounceDur(10*time.Millisecond))
+	if err != nil {
+		t.Fatalf("new scanner: %v", err)
+	}
+
+	ctx := context.Background()
+	scanDone := make(chan struct{})
+	go func() {
+		defer close(scanDone)
+		if _, err := sc.Scan(ctx, "manual", false); err != nil {
+			t.Errorf("scan: %v", err)
+		}
+	}()
+
+	// Wait until the walk saturates the cap.
+	for i := 0; i < capN; i++ {
+		<-started
+	}
+
+	// Fire a watcher probe for a brand-new file while every slot is occupied. It
+	// shares the scanner-wide semaphore, so it must block on acquire and never
+	// reach the probe func until a slot frees.
+	watchPath := filepath.Join(root, "watched.mkv")
+	writeFile(t, watchPath)
+	watchDone := make(chan struct{})
+	go func() {
+		defer close(watchDone)
+		sc.probeSingleFile(ctx, watchPath)
+	}()
+
+	// No probe may start beyond the cap while the slots stay full.
+	select {
+	case <-started:
+		t.Fatalf("a probe started beyond the cap of %d (semaphore not shared across walk + watcher)", capN)
+	case <-time.After(250 * time.Millisecond):
+	}
+
+	close(release)
+	<-scanDone
+	<-watchDone
+
+	if p := atomic.LoadInt32(&peak); p > capN {
+		t.Errorf("peak concurrent probes = %d, want <= %d", p, capN)
 	}
 }
 

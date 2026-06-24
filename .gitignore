@@ -6,6 +6,7 @@ bin/
 *.db
 *.db-wal
 *.db-shm
+reclaim
 
 # Frontend build output (embedded into binary at build time)
 web/out/

@@ -41,9 +41,14 @@ type Scanner struct {
 	store *store.Store
 	roots map[string]string // mountPath -> libraryType
 
-	probeFunc        ProbeFunc
-	probeConcurrency int
-	scanInterval     time.Duration
+	probeFunc    ProbeFunc
+	scanInterval time.Duration
+
+	// sem bounds concurrent ffprobe subprocesses across every probe entry point
+	// (walk, fsnotify watcher, scheduled/manual/overlapping scans). Its capacity
+	// is PROBE_CONCURRENCY. The limit exists to spare the NAS/storage, not Go —
+	// goroutines fan out freely and queue here before touching disk.
+	sem chan struct{}
 
 	// fsnotify watcher and per-path debounce timers
 	watcher        *fsnotify.Watcher
@@ -84,7 +89,7 @@ func New(st *store.Store, cfg *config.Config, opts ...Option) (*Scanner, error) 
 			cfg.TVPath:     "tv",
 		},
 		probeFunc:        ffprobe.Probe,
-		probeConcurrency: cfg.ProbeConcurrency,
+		sem:              make(chan struct{}, cfg.ProbeConcurrency),
 		scanInterval:     cfg.ScanInterval,
 		watcher:          w,
 		debounceDur:      30 * time.Second,
@@ -117,7 +122,6 @@ func (s *Scanner) Scan(ctx context.Context, trigger string, force bool) (*store.
 		scanned, added, updated, moved, removed, errs int64
 	)
 
-	sem := make(chan struct{}, s.probeConcurrency)
 	var wg sync.WaitGroup
 
 	// seenPaths is written only in the sequential WalkDir callback, so no mutex needed.
@@ -163,8 +167,6 @@ func (s *Scanner) Scan(ctx context.Context, trigger string, force bool) (*store.
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
 
 				fp, newID, isNew := s.probeAndStore(ctx, path, lt, size, mtime, rec)
 				if newID < 0 {
@@ -281,6 +283,18 @@ func (s *Scanner) probeAndStore(
 	size, mtime int64,
 	existing *store.FileSummary,
 ) (fp string, rowID int64, isNew bool) {
+	// Hold a semaphore slot for the whole probe: both ffprobe and the fingerprint
+	// read below hit storage, so bounding the pair is what actually protects the
+	// NAS. The DB write is already serialized by the single-writer pool, so
+	// keeping it inside the slot is harmless and keeps this the one chokepoint
+	// every entry point passes through.
+	select {
+	case s.sem <- struct{}{}:
+	case <-ctx.Done():
+		return "", -1, false
+	}
+	defer func() { <-s.sem }()
+
 	result, err := s.probeFunc(ctx, path)
 
 	fp, ferr := media.Fingerprint(path)

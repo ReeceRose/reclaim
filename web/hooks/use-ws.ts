@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { wsURL, type AppEvent } from '@/lib/api';
+import { wsURL, type AppEvent, type ScanProgress } from '@/lib/api';
 import { toast } from 'sonner';
 
 const SCAN_EVENTS = new Set(['scan_started', 'scan_completed', 'scan_failed']);
@@ -10,6 +10,12 @@ const JOB_MUTATE_EVENTS = new Set(['jobs_queued', 'job_completed', 'job_failed',
 
 const MIN_DELAY_MS = 1_000;
 const MAX_DELAY_MS = 30_000;
+const SCAN_POLL_MS = 2_000;
+
+function invalidateScanData(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ['stats'] });
+  qc.invalidateQueries({ queryKey: ['candidates'] });
+}
 
 export function useWS() {
   const qc = useQueryClient();
@@ -20,9 +26,21 @@ export function useWS() {
 
     let ws: WebSocket;
     let reconnectTimer: ReturnType<typeof setTimeout>;
+    let scanPollTimer: ReturnType<typeof setInterval> | undefined;
     let alive = true;
     let delay = MIN_DELAY_MS;
     let hasConnected = false;
+
+    function startScanPoll() {
+      if (scanPollTimer) return;
+      scanPollTimer = setInterval(() => invalidateScanData(qc), SCAN_POLL_MS);
+    }
+
+    function stopScanPoll() {
+      if (!scanPollTimer) return;
+      clearInterval(scanPollTimer);
+      scanPollTimer = undefined;
+    }
 
     function connect() {
       ws = new WebSocket(url);
@@ -49,9 +67,17 @@ export function useWS() {
         const { event, data } = msg;
 
         if (SCAN_EVENTS.has(event)) {
-          qc.setQueryData(['scanning'], event === 'scan_started');
-          qc.invalidateQueries({ queryKey: ['stats'] });
-          qc.invalidateQueries({ queryKey: ['candidates'] });
+          const scanning = event === 'scan_started';
+          qc.setQueryData(['scanning'], scanning);
+          if (scanning) {
+            qc.setQueryData(['scan_progress'], null);
+          }
+          if (scanning) {
+            startScanPoll();
+          } else {
+            stopScanPoll();
+          }
+          invalidateScanData(qc);
           if (event === 'scan_completed') {
             const d = data as { files_added?: number; files_updated?: number; files_removed?: number; errors?: number } | undefined;
             const added = d?.files_added ?? 0;
@@ -72,6 +98,10 @@ export function useWS() {
             const d = data as { error?: string } | undefined;
             toast.error('Scan failed', { description: d?.error });
           }
+        } else if (event === 'scan_progress') {
+          qc.setQueryData(['scanning'], true);
+          qc.setQueryData<ScanProgress>(['scan_progress'], data as ScanProgress);
+          startScanPoll();
         } else if (event === 'job_started' || JOB_MUTATE_EVENTS.has(event)) {
           qc.invalidateQueries({ queryKey: ['jobs'] });
           if (JOB_MUTATE_EVENTS.has(event)) {
@@ -105,6 +135,7 @@ export function useWS() {
 
     return () => {
       alive = false;
+      stopScanPoll();
       clearTimeout(reconnectTimer);
       ws?.close();
     };

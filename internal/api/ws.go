@@ -28,6 +28,7 @@ const (
 // WebSocket scan lifecycle event names.
 const (
 	WSEventScanStarted   = "scan_started"
+	WSEventScanProgress  = "scan_progress"
 	WSEventScanCompleted = "scan_completed"
 	WSEventScanFailed    = "scan_failed"
 )

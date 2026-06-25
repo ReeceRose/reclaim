@@ -4,9 +4,9 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, type ScanProgress } from '@/lib/api';
 import { useWS } from '@/hooks/use-ws';
-import { windowInfo } from '@/lib/format';
+import { formatInt, windowInfo } from '@/lib/format';
 import { toast } from 'sonner';
 import { NotificationPanel, useUnreadCount } from '@/components/notification-panel';
 import { LogoMark } from '@/components/logo';
@@ -173,6 +173,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     staleTime: Infinity,
     gcTime: Infinity,
   });
+  const { data: scanProgress } = useQuery<ScanProgress | null>({
+    queryKey: ['scan_progress'],
+    queryFn: () => null,
+    initialData: null,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
 
   const [notifOpen, setNotifOpen] = useState(false);
   const pathname = usePathname();
@@ -222,6 +229,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const win = settings ? windowInfo(settings.encode_window_start, settings.encode_window_end) : null;
   const username = session?.username ?? '';
   const initials = username.slice(0, 2).toUpperCase() || '?';
+  const scanProgressDetail = scanProgress
+    ? [
+        `${formatInt(scanProgress.files_processed)} indexed`,
+        scanProgress.files_seen > scanProgress.files_processed ? `${formatInt(scanProgress.files_seen)} found` : null,
+        scanProgress.errors > 0 ? `${formatInt(scanProgress.errors)} errors` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : null;
 
   function isActive(path: string) {
     return path === '/' ? pathname === '/' : pathname.startsWith(path);
@@ -262,7 +278,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 flex-shrink-0 animate-spin" style={{ animationDuration: '1.1s' }}>
                 <path d="M21 12a9 9 0 11-6.219-8.56" strokeLinecap="round"/>
               </svg>
-              Scanning library…
+              <div className="min-w-0">
+                <div>Scanning library…</div>
+                {scanProgressDetail && <div className="truncate text-[0.66rem] font-normal opacity-80">{scanProgressDetail}</div>}
+              </div>
             </div>
           </div>
         </div>

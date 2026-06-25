@@ -225,6 +225,21 @@ export interface AppEvent {
   created_at: number;
 }
 
+export interface ScanProgress {
+  scan_run_id: number;
+  kind: 'incremental' | 'full';
+  trigger: string;
+  started_at: number;
+  files_seen: number;
+  files_processed: number;
+  files_scanned: number;
+  files_added: number;
+  files_updated: number;
+  files_moved: number;
+  files_removed: number;
+  errors: number;
+}
+
 // ---------------------------------------------------------------------------
 // Query params
 // ---------------------------------------------------------------------------

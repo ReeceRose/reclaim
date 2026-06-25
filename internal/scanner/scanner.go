@@ -51,6 +51,8 @@ const (
 	ScanKindFull        = "full"
 )
 
+const scanProgressMinInterval = time.Second
+
 // ScanKind returns the wire kind for a scan given whether it is forced (full).
 func ScanKind(force bool) string {
 	if force {
@@ -77,9 +79,9 @@ type ProbeFunc func(ctx context.Context, path string) (*ffprobe.Result, error)
 
 // Scanner indexes media files, maintains the DB, and drives the fsnotify watcher.
 type Scanner struct {
-	store *store.Store
-	roots map[string]string // mountPath -> libraryType
-	hub   Broadcaster       // nil-safe; set via SetBroadcaster
+	store      *store.Store
+	roots      map[string]string     // mountPath -> libraryType
+	hub        Broadcaster           // nil-safe; set via SetBroadcaster
 	invalidate CandidatesInvalidator // nil-safe; set via SetCandidateInvalidator
 
 	probeFunc    ProbeFunc
@@ -247,10 +249,47 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 	}
 
 	var (
-		scanned, added, updated, moved, removed, errs int64
+		seen, scanned, added, updated, moved, removed, errs int64
 	)
 
 	var wg sync.WaitGroup
+
+	var progressMu sync.Mutex
+	var lastProgress time.Time
+	emitProgress := func(flush bool) {
+		if s.hub == nil {
+			return
+		}
+		now := time.Now()
+		progressMu.Lock()
+		if !flush && !lastProgress.IsZero() && now.Sub(lastProgress) < scanProgressMinInterval {
+			progressMu.Unlock()
+			return
+		}
+		lastProgress = now
+		progressMu.Unlock()
+
+		filesScanned := atomic.LoadInt64(&scanned)
+		filesAdded := atomic.LoadInt64(&added)
+		filesUpdated := atomic.LoadInt64(&updated)
+		filesRemoved := atomic.LoadInt64(&removed)
+		filesMoved := atomic.LoadInt64(&moved)
+		errorCount := atomic.LoadInt64(&errs)
+		s.hub.Broadcast("scan_progress", map[string]any{
+			"scan_run_id":     runID,
+			"kind":            ScanKind(force),
+			"trigger":         trigger,
+			"started_at":      startedAt,
+			"files_seen":      atomic.LoadInt64(&seen),
+			"files_processed": filesScanned + filesAdded + filesUpdated + errorCount,
+			"files_scanned":   filesScanned,
+			"files_added":     filesAdded,
+			"files_updated":   filesUpdated,
+			"files_moved":     filesMoved,
+			"files_removed":   filesRemoved,
+			"errors":          errorCount,
+		})
+	}
 
 	// seenPaths is written only in the sequential WalkDir callback, so no mutex needed.
 	seenPaths := make(map[string]struct{})
@@ -277,11 +316,13 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 			if !isMediaFile(path) {
 				return nil
 			}
+			atomic.AddInt64(&seen, 1)
 
 			info, err := d.Info()
 			if err != nil {
 				slog.Warn("scanner: stat error", "path", path, "err", err)
 				atomic.AddInt64(&errs, 1)
+				emitProgress(false)
 				return nil
 			}
 
@@ -292,6 +333,7 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 
 			if !force && rec != nil && rec.SizeBytes == size && rec.Mtime == mtime {
 				atomic.AddInt64(&scanned, 1)
+				emitProgress(false)
 				return nil
 			}
 
@@ -302,6 +344,7 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 				fp, newID, isNew := s.probeAndStore(ctx, path, lt, size, mtime, rec)
 				if newID < 0 {
 					atomic.AddInt64(&errs, 1)
+					emitProgress(false)
 					return
 				}
 				if isNew {
@@ -314,6 +357,7 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 				} else {
 					atomic.AddInt64(&updated, 1)
 				}
+				emitProgress(false)
 			}()
 
 			return nil
@@ -321,6 +365,7 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 		if werr != nil {
 			slog.Error("scanner: walk failed", "root", root, "err", werr)
 			atomic.AddInt64(&errs, 1)
+			emitProgress(false)
 		}
 	}
 
@@ -342,6 +387,7 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 			} else {
 				atomic.AddInt64(&removed, 1)
 			}
+			emitProgress(false)
 			continue
 		}
 
@@ -353,6 +399,7 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 			} else {
 				atomic.AddInt64(&moved, 1)
 			}
+			emitProgress(false)
 			continue
 		}
 
@@ -366,6 +413,7 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 			} else {
 				atomic.AddInt64(&moved, 1)
 			}
+			emitProgress(false)
 			continue
 		}
 
@@ -375,6 +423,7 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 		} else {
 			atomic.AddInt64(&removed, 1)
 		}
+		emitProgress(false)
 	}
 
 	// Reconcile incrementally-maintained library_stats against the source of
@@ -386,6 +435,7 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 			atomic.AddInt64(&errs, 1)
 		}
 	}
+	emitProgress(true)
 
 	now := time.Now().Unix()
 	run := &store.ScanRun{

@@ -109,8 +109,9 @@ function DashboardContent() {
   const scanMutation = useMutation({
     mutationFn: api.scan,
     onSuccess: () => {
+      qc.setQueryData(['scanning'], true);
+      qc.setQueryData(['scan_progress'], null);
       toast.success('Scan started');
-      setTimeout(() => qc.invalidateQueries({ queryKey: ['stats'] }), 2000);
     },
     onError: () => toast.error('Scan failed to start'),
   });

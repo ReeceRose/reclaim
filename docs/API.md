@@ -197,7 +197,7 @@ Triggers an incremental (diff) rescan in the background. `202 Accepted`.
 ### `POST /api/scan/full`
 Force re-probe of every file + stats recompute. `202 Accepted` (`"kind": "full"`).
 
-Both broadcast `scan_started` / `scan_completed` (or `scan_failed`) over the WebSocket. The startup and scheduled scans use the same lifecycle events; clients that connect mid-scan receive a retained `scan_started` on WebSocket registration.
+Both broadcast `scan_started`, throttled `scan_progress`, and `scan_completed` (or `scan_failed`) over the WebSocket. The startup and scheduled scans use the same lifecycle events; clients that connect mid-scan receive a retained `scan_started` on WebSocket registration.
 
 ---
 
@@ -351,6 +351,7 @@ Every message is a typed envelope:
 | Event | Data | Emitted when |
 |---|---|---|
 | `scan_started` | `{ "kind": "incremental" \| "full" }` | any scan begins (startup, scheduled, or manual) |
+| `scan_progress` | `{ "scan_run_id", "kind", "trigger", "started_at", "files_seen", "files_processed", "files_scanned", "files_added", "files_updated", "files_moved", "files_removed", "errors" }` | scan progress changes (throttled) |
 | `scan_completed` | `{ "scan_run_id", "files_scanned", "files_added", "files_updated", "files_moved", "files_removed", "errors" }` | a scan finishes |
 | `scan_failed` | `{ "error": "..." }` | a scan errors |
 | `jobs_queued` | `{ "count", "profile_id" }` | jobs are enqueued |

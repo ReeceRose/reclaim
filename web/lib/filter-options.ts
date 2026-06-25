@@ -50,11 +50,16 @@ function sortByOrder<T extends { value: string }>(items: T[], order: string[]): 
 
 export function codecFilterOptions(
   stats: Stats | undefined,
-  opts?: { excludeHEVC?: boolean },
+  opts?: { excludeHEVC?: boolean; excludeUnknown?: boolean },
 ): FilterOption[] {
   if (!stats) return [];
   return stats.by_codec
-    .filter((c) => !opts?.excludeHEVC || (c.codec !== 'hevc' && c.codec !== 'h265'))
+    .filter((c) => {
+      const codec = c.codec.toLowerCase();
+      if (opts?.excludeHEVC && (codec === 'hevc' || codec === 'h265')) return false;
+      if (opts?.excludeUnknown && codec === 'unknown') return false;
+      return true;
+    })
     .map((c) => ({ value: c.codec, label: codecLabel(c.codec) }));
 }
 

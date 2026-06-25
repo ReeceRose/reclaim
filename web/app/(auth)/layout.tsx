@@ -1,6 +1,34 @@
+'use client';
+
+import { useQuery } from '@tanstack/react-query';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import { api } from '@/lib/api';
 import { LogoMark } from '@/components/logo';
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const { data: session } = useQuery({
+    queryKey: ['session'],
+    queryFn: api.session,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (!session) return;
+    // Already authenticated — no business on the setup or login pages.
+    if (session.authenticated) {
+      router.replace('/');
+      return;
+    }
+    // Setup is done — the setup page is off-limits; send them to login.
+    if (session.setup_complete && pathname === '/setup') {
+      router.replace('/login');
+    }
+  }, [session, pathname, router]);
+
   return (
     <div
       className="fixed inset-0 flex items-center justify-center p-6 z-[200]"

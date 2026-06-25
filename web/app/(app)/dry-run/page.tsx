@@ -50,7 +50,7 @@ function DryRunContent() {
     queryFn: api.stats,
     staleTime: 30_000,
   });
-  const codecOptions = useMemo(() => codecFilterOptions(stats, { excludeHEVC: true }), [stats]);
+  const codecOptions = useMemo(() => codecFilterOptions(stats, { excludeHEVC: true, excludeUnknown: true }), [stats]);
   const libraryOptions = useMemo(() => libraryFilterOptions(stats), [stats]);
 
   // Clamp to options that actually exist so a stale selection (e.g. after a

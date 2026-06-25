@@ -528,7 +528,7 @@ export default function Page() {
     queryFn: api.stats,
     staleTime: 30_000,
   });
-  const codecOptions = useMemo(() => codecFilterOptions(stats, { excludeHEVC: true }), [stats]);
+  const codecOptions = useMemo(() => codecFilterOptions(stats, { excludeHEVC: true, excludeUnknown: true }), [stats]);
   const resolutionOptions = useMemo(() => resolutionFilterOptions(stats), [stats]);
   const libraryOptions = useMemo(() => libraryFilterOptions(stats), [stats]);
 

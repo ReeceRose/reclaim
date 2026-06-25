@@ -4,10 +4,10 @@ import { site } from "@/lib/site";
 
 function DashboardMock() {
   const codecs = [
-    { label: "h264", pct: 100, color: "var(--gold)", meta: "8,214 · 41.2 TB" },
-    { label: "hevc", pct: 38, color: "var(--green)", meta: "3,110 · 9.8 TB" },
-    { label: "mpeg2", pct: 14, color: "var(--rose)", meta: "612 · 5.1 TB" },
-    { label: "vc1", pct: 7, color: "var(--violet)", meta: "204 · 2.3 TB" },
+    { label: "h264", pct: 100, color: "var(--gold)", meta: "8,214 (68%) · 41.2 TB (71%)" },
+    { label: "hevc", pct: 38, color: "var(--green)", meta: "3,110 (26%) · 9.8 TB (17%)" },
+    { label: "mpeg2", pct: 14, color: "var(--rose)", meta: "612 (5%) · 5.1 TB (9%)" },
+    { label: "vc1", pct: 7, color: "var(--violet)", meta: "204 (2%) · 2.3 TB (4%)" },
   ];
 
   return (
@@ -68,18 +68,18 @@ function DashboardMock() {
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-2xs text-muted-fg">
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-2.5 w-2.5 rounded-[4px] bg-brand" />
-              Reclaimable · 18.4 TB
+              Reclaimable · 18.4 TB · 31%
             </span>
             <span className="flex items-center gap-1.5">
               <span className="inline-block h-2.5 w-2.5 rounded-[4px] bg-surface-3" />
-              After encode · 30.2 TB
+              After encode · 30.2 TB · 52%
             </span>
             <span className="flex items-center gap-1.5">
               <span
                 className="inline-block h-2.5 w-2.5 rounded-[4px]"
                 style={{ background: "color-mix(in srgb, var(--green) 45%, transparent)" }}
               />
-              Already HEVC · 9.8 TB
+              Already HEVC · 9.8 TB · 17%
             </span>
           </div>
         </div>
@@ -107,7 +107,7 @@ function DashboardMock() {
                     style={{ width: `${c.pct}%`, background: c.color }}
                   />
                 </div>
-                <span className="w-[96px] text-right text-2xs text-muted-fg tnum">
+                <span className="w-[148px] text-right text-2xs text-muted-fg tnum">
                   {c.meta}
                 </span>
               </div>

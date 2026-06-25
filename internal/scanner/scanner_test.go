@@ -110,6 +110,54 @@ func TestSecondScanUnchangedSkips(t *testing.T) {
 	}
 }
 
+func TestScanNoChangesCreatesEvent(t *testing.T) {
+	root := t.TempDir()
+	sc, st := newTestScanner(t, root, root)
+	ctx := context.Background()
+
+	writeFile(t, filepath.Join(root, "movie.mkv"))
+	if _, err := sc.Scan(ctx, TriggerManual, false); err != nil {
+		t.Fatalf("initial scan: %v", err)
+	}
+	if _, err := sc.Scan(ctx, TriggerManual, false); err != nil {
+		t.Fatalf("second scan: %v", err)
+	}
+
+	events, err := st.Events.List(ctx, store.EventFilter{Limit: 10})
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("events = %d, want 2 (one per scan)", len(events))
+	}
+	if events[0].Message != "Manual scan: no changes" {
+		t.Errorf("message = %q, want %q", events[0].Message, "Manual scan: no changes")
+	}
+	if events[0].Type != store.EventScanCompleted {
+		t.Errorf("type = %q, want scan_completed", events[0].Type)
+	}
+}
+
+func TestScanEventMessage(t *testing.T) {
+	tests := []struct {
+		name string
+		run  store.ScanRun
+		want string
+	}{
+		{"manual no changes", store.ScanRun{Trigger: TriggerManual}, "Manual scan: no changes"},
+		{"startup no changes", store.ScanRun{Trigger: TriggerStartup}, "Startup scan: no changes"},
+		{"scheduled with changes", store.ScanRun{Trigger: TriggerScheduled, FilesAdded: 2, FilesUpdated: 1}, "Scheduled scan: 2 added, 1 updated, 0 moved, 0 removed"},
+		{"manual with errors", store.ScanRun{Trigger: TriggerManual, Errors: 1}, "Manual scan: 0 added, 0 updated, 0 moved, 0 removed, 1 errors"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := scanEventMessage(&tt.run); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestScanDeleteFile verifies that a deleted file is marked as missing.
 func TestScanDeleteFile(t *testing.T) {
 	root := t.TempDir()

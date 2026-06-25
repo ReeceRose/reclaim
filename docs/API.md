@@ -301,6 +301,12 @@ Newest first. Keyset-paginated via `after_id`.
 }
 ```
 
+### `DELETE /api/events`
+Removes every event from the audit log. `204 No Content`.
+
+### `DELETE /api/events/:id`
+Removes one event. `204 No Content` · `404` if not found.
+
 ---
 
 ## Settings

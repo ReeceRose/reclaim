@@ -137,6 +137,7 @@ func (s *Server) Handler() http.Handler {
 	// Read side.
 	api.GET("/stats", s.handleStats)
 	api.GET("/candidates", s.handleCandidates)
+	api.GET("/candidates/grouped/episodes", s.handleGroupedSeasonEpisodes)
 	api.GET("/candidates/grouped", s.handleGroupedCandidates)
 	api.GET("/files/:id", s.handleFileDetail)
 	api.GET("/dry-run", s.handleDryRun)
@@ -159,6 +160,8 @@ func (s *Server) Handler() http.Handler {
 
 	// Events audit log.
 	api.GET("/events", s.handleListEvents)
+	api.DELETE("/events", s.handleDeleteAllEvents)
+	api.DELETE("/events/:id", s.handleDeleteEvent)
 
 	// Settings.
 	api.GET("/settings", s.handleGetSettings)

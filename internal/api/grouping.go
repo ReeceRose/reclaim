@@ -27,76 +27,105 @@ type episodeDTO struct {
 	Episode *int `json:"episode"`
 }
 
-type seasonGroup struct {
-	Season                int          `json:"season"`
-	CandidateCount        int          `json:"candidate_count"`
-	TotalBytes            int64        `json:"total_bytes"`
-	PredictedSavingsBytes int64        `json:"predicted_savings_bytes"`
-	Episodes              []episodeDTO `json:"episodes"`
+type seasonSummary struct {
+	Season                int     `json:"season"`
+	CandidateCount        int     `json:"candidate_count"`
+	TotalBytes            int64   `json:"total_bytes"`
+	PredictedSavingsBytes int64   `json:"predicted_savings_bytes"`
+	EpisodeIDs            []int64 `json:"episode_ids"`
 }
 
-type seriesGroup struct {
-	Title                 string        `json:"title"`
-	LibraryType           string        `json:"library_type"`
+type seriesSummary struct {
+	Title                 string          `json:"title"`
+	LibraryType           string          `json:"library_type"`
 	CandidateCount        int           `json:"candidate_count"`
 	SeasonCount           int           `json:"season_count"`
 	TotalBytes            int64         `json:"total_bytes"`
 	PredictedSavingsBytes int64         `json:"predicted_savings_bytes"`
-	Seasons               []seasonGroup `json:"seasons"`
+	Seasons               []seasonSummary `json:"seasons"`
 }
 
-// handleGroupedCandidates returns the candidate set grouped by TV series →
-// season → episode, with movies listed flat. It backs the "By series" view.
-// Aggregation happens server-side over the whole candidate set (filtered, but
-// not paginated) so the UI can render counts/savings per series instantly.
-func (s *Server) handleGroupedCandidates(c *echo.Context) error {
-	filter := store.CandidateFilter{
+func parseCandidateFilter(c *echo.Context) store.CandidateFilter {
+	return store.CandidateFilter{
 		LibraryType:    c.QueryParam("library_type"),
 		VideoCodec:     c.QueryParam("video_codec"),
 		ResolutionBand: c.QueryParam("resolution_band"),
 		Search:         c.QueryParam("search"),
 	}
+}
 
-	files, err := s.store.Media.AllCandidates(c.Request().Context(), filter)
+// handleGroupedCandidates returns TV series/season summaries (no episode rows)
+// for the "By series" view. Episode details are loaded on demand via
+// handleGroupedSeasonEpisodes; movies use the paginated /api/candidates endpoint.
+func (s *Server) handleGroupedCandidates(c *echo.Context) error {
+	filter := parseCandidateFilter(c)
+	if filter.LibraryType == store.LibraryTypeMovies {
+		return c.JSON(http.StatusOK, map[string]any{"series": []seriesSummary{}})
+	}
+
+	tvFilter := filter
+	tvFilter.LibraryType = store.LibraryTypeTV
+	files, err := s.store.Media.AllCandidates(c.Request().Context(), tvFilter)
+	if err != nil {
+		return badRequest(c, err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"series": s.groupTVSummaries(files),
+	})
+}
+
+// handleGroupedSeasonEpisodes returns the episode rows for one TV series season.
+func (s *Server) handleGroupedSeasonEpisodes(c *echo.Context) error {
+	series := strings.TrimSpace(c.QueryParam("series"))
+	if series == "" {
+		return badRequest(c, "series is required")
+	}
+	seasonStr := c.QueryParam("season")
+	season, err := strconv.Atoi(seasonStr)
+	if err != nil {
+		return badRequest(c, "season must be an integer")
+	}
+
+	filter := parseCandidateFilter(c)
+	filter.LibraryType = store.LibraryTypeTV
+
+	prefix := filepath.Join(s.tvPath, series)
+	if s.tvPath != "" && !strings.HasSuffix(prefix, string(filepath.Separator)) {
+		prefix += string(filepath.Separator)
+	}
+	files, err := s.store.Media.CandidatesUnderPathPrefix(c.Request().Context(), filter, prefix)
 	if err != nil {
 		return badRequest(c, err.Error())
 	}
 
-	series, movies := s.groupCandidates(files)
-	return c.JSON(http.StatusOK, map[string]any{
-		"series": series,
-		"movies": movies,
-	})
+	episodes := s.buildSeasonEpisodes(files, series, season)
+	return c.JSON(http.StatusOK, map[string]any{"episodes": episodes})
 }
 
-// groupCandidates partitions candidates into TV series groups and flat movies.
-// files is expected pre-sorted by predicted savings desc; that ordering carries
-// through to movies and to episodes-within-season as a savings tiebreak.
-func (s *Server) groupCandidates(files []store.MediaFile) ([]seriesGroup, []mediaFileDTO) {
+// groupTVSummaries aggregates TV candidates into series → season summaries.
+// files is expected pre-sorted by predicted savings desc; series ordering
+// follows total predicted savings.
+func (s *Server) groupTVSummaries(files []store.MediaFile) []seriesSummary {
 	type seasonAcc struct {
 		season int
-		eps    []episodeDTO
+		ids    []int64
+		bytes  int64
+		saving int64
 	}
 	type seriesAcc struct {
 		title   string
 		lib     string
 		seasons map[int]*seasonAcc
-		order   []int // season numbers in first-seen order
+		order   []int
 		savings int64
 	}
 
 	bySeries := make(map[string]*seriesAcc)
 	var seriesOrder []string
-	movies := make([]mediaFileDTO, 0)
 
 	for i := range files {
 		f := &files[i]
-		if f.LibraryType != store.LibraryTypeTV {
-			movies = append(movies, toMediaFileDTO(f))
-			continue
-		}
-
-		title, season, episode := parseTVInfo(f.Path, s.tvPath)
+		title, season, _ := parseTVInfo(f.Path, s.tvPath)
 		acc, ok := bySeries[title]
 		if !ok {
 			acc = &seriesAcc{title: title, lib: f.LibraryType, seasons: map[int]*seasonAcc{}}
@@ -111,52 +140,82 @@ func (s *Server) groupCandidates(files []store.MediaFile) ([]seriesGroup, []medi
 			acc.seasons[season] = sa
 			acc.order = append(acc.order, season)
 		}
+		sa.ids = append(sa.ids, f.ID)
+		sa.bytes += f.SizeBytes
+		sa.saving += f.PredictedSavingsBytes
+	}
+
+	sort.SliceStable(seriesOrder, func(a, b int) bool {
+		return bySeries[seriesOrder[a]].savings > bySeries[seriesOrder[b]].savings
+	})
+
+	out := make([]seriesSummary, 0, len(seriesOrder))
+	for _, title := range seriesOrder {
+		acc := bySeries[title]
+		sg := seriesSummary{Title: acc.title, LibraryType: acc.lib}
+
+		sort.Ints(acc.order)
+		for _, sn := range acc.order {
+			sa := acc.seasons[sn]
+			sg.Seasons = append(sg.Seasons, seasonSummary{
+				Season:                sn,
+				CandidateCount:        len(sa.ids),
+				TotalBytes:            sa.bytes,
+				PredictedSavingsBytes: sa.saving,
+				EpisodeIDs:            sa.ids,
+			})
+			sg.CandidateCount += len(sa.ids)
+			sg.TotalBytes += sa.bytes
+			sg.PredictedSavingsBytes += sa.saving
+		}
+		sg.SeasonCount = len(sg.Seasons)
+		out = append(out, sg)
+	}
+	return out
+}
+
+func (s *Server) buildSeasonEpisodes(files []store.MediaFile, seriesTitle string, season int) []episodeDTO {
+	eps := make([]episodeDTO, 0)
+	for i := range files {
+		f := &files[i]
+		title, sn, episode := parseTVInfo(f.Path, s.tvPath)
+		if title != seriesTitle || sn != season {
+			continue
+		}
 		ep := episodeDTO{mediaFileDTO: toMediaFileDTO(f), Season: season}
 		if episode >= 0 {
 			e := episode
 			ep.Episode = &e
 		}
-		sa.eps = append(sa.eps, ep)
+		eps = append(eps, ep)
 	}
-
-	// Order series by total predicted savings desc.
-	sort.SliceStable(seriesOrder, func(a, b int) bool {
-		return bySeries[seriesOrder[a]].savings > bySeries[seriesOrder[b]].savings
-	})
-
-	out := make([]seriesGroup, 0, len(seriesOrder))
-	for _, title := range seriesOrder {
-		acc := bySeries[title]
-		sg := seriesGroup{Title: acc.title, LibraryType: acc.lib}
-
-		sort.Ints(acc.order)
-		for _, sn := range acc.order {
-			sa := acc.seasons[sn]
-			sort.SliceStable(sa.eps, func(a, b int) bool {
-				ea, eb := sa.eps[a], sa.eps[b]
-				if (ea.Episode == nil) != (eb.Episode == nil) {
-					return ea.Episode != nil // numbered episodes first
-				}
-				if ea.Episode != nil && eb.Episode != nil && *ea.Episode != *eb.Episode {
-					return *ea.Episode < *eb.Episode
-				}
-				return ea.PredictedSavingsBytes > eb.PredictedSavingsBytes
-			})
-			season := seasonGroup{Season: sn, Episodes: sa.eps}
-			for _, ep := range sa.eps {
-				season.CandidateCount++
-				season.TotalBytes += ep.SizeBytes
-				season.PredictedSavingsBytes += ep.PredictedSavingsBytes
-			}
-			sg.Seasons = append(sg.Seasons, season)
-			sg.CandidateCount += season.CandidateCount
-			sg.TotalBytes += season.TotalBytes
-			sg.PredictedSavingsBytes += season.PredictedSavingsBytes
+	sort.SliceStable(eps, func(a, b int) bool {
+		ea, eb := eps[a], eps[b]
+		if (ea.Episode == nil) != (eb.Episode == nil) {
+			return ea.Episode != nil
 		}
-		sg.SeasonCount = len(sg.Seasons)
-		out = append(out, sg)
+		if ea.Episode != nil && eb.Episode != nil && *ea.Episode != *eb.Episode {
+			return *ea.Episode < *eb.Episode
+		}
+		return ea.PredictedSavingsBytes > eb.PredictedSavingsBytes
+	})
+	return eps
+}
+
+// groupCandidates partitions candidates into TV series groups and flat movies.
+// Kept for tests; production uses groupTVSummaries + paginated movie queries.
+func (s *Server) groupCandidates(files []store.MediaFile) ([]seriesSummary, []mediaFileDTO) {
+	var tv []store.MediaFile
+	movies := make([]mediaFileDTO, 0)
+	for i := range files {
+		f := &files[i]
+		if f.LibraryType != store.LibraryTypeTV {
+			movies = append(movies, toMediaFileDTO(f))
+			continue
+		}
+		tv = append(tv, *f)
 	}
-	return out, movies
+	return s.groupTVSummaries(tv), movies
 }
 
 // parseTVInfo derives (series title, season, episode) from a TV file path.

@@ -344,26 +344,26 @@ func (s *Scanner) Scan(ctx context.Context, trigger string, force bool) (*store.
 		slog.Error("scanner: complete scan_run", "id", runID, "err", err)
 	}
 
-	// Log a durable event only when the scan found changes (not routine no-op scans).
-	totalChanges := run.FilesAdded + run.FilesUpdated + run.FilesMoved + run.FilesRemoved
-	if totalChanges > 0 {
-		scanMsg := fmt.Sprintf("Scan: %d added, %d updated, %d moved, %d removed",
-			run.FilesAdded, run.FilesUpdated, run.FilesMoved, run.FilesRemoved)
-		scanMeta := scanJsonMeta(map[string]any{
-			"scan_run_id":   run.ID,
-			"files_scanned": run.FilesScanned,
-			"files_added":   run.FilesAdded,
-			"files_updated": run.FilesUpdated,
-			"files_moved":   run.FilesMoved,
-			"files_removed": run.FilesRemoved,
-			"trigger":       run.Trigger,
-		})
-		eventID, err := s.store.Events.Insert(ctx, store.EventScanCompleted, store.SeverityInfo, scanMsg, scanMeta)
-		if err != nil {
-			slog.Error("scanner: scan event", "err", err)
-		} else if s.hub != nil {
-			s.hub.Broadcast("event_created", scanEventBroadcast(eventID, scanMsg, scanMeta))
-		}
+	severity := store.SeverityInfo
+	if run.Errors > 0 {
+		severity = store.SeverityError
+	}
+	scanMsg := scanEventMessage(run)
+	scanMeta := scanJsonMeta(map[string]any{
+		"scan_run_id":   run.ID,
+		"files_scanned": run.FilesScanned,
+		"files_added":   run.FilesAdded,
+		"files_updated": run.FilesUpdated,
+		"files_moved":   run.FilesMoved,
+		"files_removed": run.FilesRemoved,
+		"errors":        run.Errors,
+		"trigger":       run.Trigger,
+	})
+	eventID, err := s.store.Events.Insert(ctx, store.EventScanCompleted, severity, scanMsg, scanMeta)
+	if err != nil {
+		slog.Error("scanner: scan event", "err", err)
+	} else if s.hub != nil {
+		s.hub.Broadcast("event_created", scanEventBroadcast(eventID, severity, scanMsg, scanMeta))
 	}
 
 	slog.Info("scan complete",
@@ -445,6 +445,19 @@ func (s *Scanner) probeAndStore(
 	if existing == nil {
 		id, err := s.store.Media.Insert(ctx, f)
 		if err != nil {
+			// A row may already exist at this path with a non-active status —
+			// the watcher marks a file "missing" when it briefly vanishes, and
+			// ActiveFileSummaries only loads active rows, so a resurrected file
+			// looks new and collides with the UNIQUE(path) constraint. Reconcile
+			// by updating the existing row in place (which also reactivates it).
+			if prior, gerr := s.store.Media.GetByPath(ctx, path); gerr == nil {
+				f.ID = prior.ID
+				if uerr := s.store.Media.UpdateProbe(ctx, f); uerr != nil {
+					slog.Error("scanner: update probe (resurrected)", "path", path, "err", uerr)
+					return fp, -1, false
+				}
+				return fp, prior.ID, false
+			}
 			slog.Error("scanner: insert", "path", path, "err", err)
 			return fp, -1, true
 		}
@@ -672,6 +685,33 @@ func (s *Scanner) logNetworkMountWarning() {
 	}
 }
 
+func scanTriggerLabel(trigger string) string {
+	switch trigger {
+	case TriggerManual:
+		return "Manual"
+	case TriggerScheduled:
+		return "Scheduled"
+	case TriggerStartup:
+		return "Startup"
+	default:
+		return trigger
+	}
+}
+
+func scanEventMessage(run *store.ScanRun) string {
+	label := scanTriggerLabel(run.Trigger)
+	totalChanges := run.FilesAdded + run.FilesUpdated + run.FilesMoved + run.FilesRemoved
+	if totalChanges == 0 && run.Errors == 0 {
+		return fmt.Sprintf("%s scan: no changes", label)
+	}
+	msg := fmt.Sprintf("%s scan: %d added, %d updated, %d moved, %d removed",
+		label, run.FilesAdded, run.FilesUpdated, run.FilesMoved, run.FilesRemoved)
+	if run.Errors > 0 {
+		msg += fmt.Sprintf(", %d errors", run.Errors)
+	}
+	return msg
+}
+
 // scanJsonMeta serializes v to a JSON string for events.metadata.
 func scanJsonMeta(v any) string {
 	b, _ := json.Marshal(v)
@@ -679,11 +719,11 @@ func scanJsonMeta(v any) string {
 }
 
 // scanEventBroadcast builds the WS payload for an event_created scan event.
-func scanEventBroadcast(id int64, message, meta string) map[string]any {
+func scanEventBroadcast(id int64, severity, message, meta string) map[string]any {
 	m := map[string]any{
 		"id":         id,
 		"type":       store.EventScanCompleted,
-		"severity":   store.SeverityInfo,
+		"severity":   severity,
 		"message":    message,
 		"created_at": time.Now().Unix(),
 		"metadata":   nil,

@@ -248,6 +248,47 @@ function EpisodeRow({ ep, selected, onToggle }: { ep: Episode; selected: boolean
   );
 }
 
+function SeasonEpisodes({
+  seriesTitle,
+  season,
+  filters,
+  selectedIds,
+  onToggle,
+  onEpisodesLoaded,
+}: {
+  seriesTitle: string;
+  season: number;
+  filters: CandidateFilters;
+  selectedIds: Set<number>;
+  onToggle: (id: number) => void;
+  onEpisodesLoaded: (files: MediaFile[]) => void;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['candidates', 'grouped', 'episodes', filters, seriesTitle, season],
+    queryFn: () => api.groupedSeasonEpisodes({ ...filters, series: seriesTitle, season }),
+  });
+
+  useEffect(() => {
+    if (data?.episodes) onEpisodesLoaded(data.episodes);
+  }, [data?.episodes, onEpisodesLoaded]);
+
+  if (isLoading) {
+    return (
+      <div className="px-4 py-3 pl-[42px] text-sm text-muted-dim border-b border-line-soft">
+        Loading episodes…
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {(data?.episodes ?? []).map((ep) => (
+        <EpisodeRow key={ep.id} ep={ep} selected={selectedIds.has(ep.id)} onToggle={onToggle} />
+      ))}
+    </>
+  );
+}
+
 function GroupedSkeleton() {
   return (
     <div className="bg-surface border border-line rounded-[var(--radius)] overflow-hidden">
@@ -274,16 +315,50 @@ function GroupedContent({
   onToggle,
   onToggleSeries,
   filters,
+  onEpisodesLoaded,
 }: {
   selectedIds: Set<number>;
   onToggle: (id: number) => void;
   onToggleSeries: (ids: number[]) => void;
   filters: CandidateFilters;
+  onEpisodesLoaded: (files: MediaFile[]) => void;
 }) {
   const { data } = useSuspenseQuery({
     queryKey: ['candidates', 'grouped', filters],
     queryFn: () => api.groupedCandidates(filters),
   });
+
+  const movieFilters = { ...filters, library_type: 'movies' as const };
+  const {
+    data: movieData,
+    fetchNextPage: fetchNextMovies,
+    hasNextPage: hasMoreMovies,
+    isFetchingNextPage: isFetchingMovies,
+  } = useInfiniteQuery({
+    queryKey: ['candidates', 'grouped', 'movies', movieFilters],
+    queryFn: ({ pageParam }: { pageParam: Record<string, number | undefined> }) =>
+      api.candidates({ ...movieFilters, sort: 'savings_desc', limit: PAGE_SIZE, ...pageParam }),
+    initialPageParam: {} as Record<string, number | undefined>,
+    getNextPageParam: (lastPage, allPages) => {
+      if (lastPage.next_cursor) {
+        return { after_savings: lastPage.next_cursor.after_savings, after_id: lastPage.next_cursor.after_id };
+      }
+      if (lastPage.items.length === PAGE_SIZE) {
+        return { offset: allPages.flatMap((p) => p.items).length };
+      }
+      return undefined;
+    },
+    enabled: filters.library_type !== 'tv',
+  });
+
+  const movies = useMemo(
+    () => movieData?.pages.flatMap((p) => p.items) ?? [],
+    [movieData],
+  );
+
+  useEffect(() => {
+    if (movies.length > 0) onEpisodesLoaded(movies);
+  }, [movies, onEpisodesLoaded]);
 
   const [expandedSeries, setExpandedSeries] = useState<Set<string>>(new Set());
   const [expandedSeasons, setExpandedSeasons] = useState<Set<string>>(new Set());
@@ -305,7 +380,7 @@ function GroupedContent({
   }
 
   function seriesEpisodeIds(s: SeriesGroup): number[] {
-    return s.seasons.flatMap((se) => se.episodes.map((e) => e.id));
+    return s.seasons.flatMap((se) => se.episode_ids);
   }
 
   function seriesSelState(s: SeriesGroup): 'none' | 'partial' | 'all' {
@@ -357,7 +432,7 @@ function GroupedContent({
                 {s.seasons.map((se) => {
                   const seasonKey = `${s.title}-${se.season}`;
                   const seasonExpanded = expandedSeasons.has(seasonKey);
-                  const seasonSelCount = se.episodes.filter((e) => selectedIds.has(e.id)).length;
+                  const seasonSelCount = se.episode_ids.filter((id) => selectedIds.has(id)).length;
                   return (
                     <div key={se.season}>
                       <div
@@ -371,9 +446,16 @@ function GroupedContent({
                         {seasonSelCount > 0 && <span className="text-brand">({seasonSelCount} sel)</span>}
                         <span className="ml-auto text-brand font-semibold">{formatBytes(se.predicted_savings_bytes)}</span>
                       </div>
-                      {seasonExpanded && se.episodes.map((ep) => (
-                        <EpisodeRow key={ep.id} ep={ep} selected={selectedIds.has(ep.id)} onToggle={onToggle} />
-                      ))}
+                      {seasonExpanded && (
+                        <SeasonEpisodes
+                          seriesTitle={s.title}
+                          season={se.season}
+                          filters={filters}
+                          selectedIds={selectedIds}
+                          onToggle={onToggle}
+                          onEpisodesLoaded={onEpisodesLoaded}
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -383,14 +465,27 @@ function GroupedContent({
         );
       })}
 
-      {data.movies.length > 0 && (
+      {filters.library_type !== 'tv' && movies.length > 0 && (
         <>
           <div className="text-[0.7rem] uppercase tracking-widest text-muted-dim font-bold px-4 pt-[15px] pb-[9px] border-b border-line-soft">
             Movies
           </div>
-          {data.movies.map((f) => (
+          {movies.map((f) => (
             <FlatRow key={f.id} item={f} selected={selectedIds.has(f.id)} onToggle={onToggle} />
           ))}
+          {(hasMoreMovies || isFetchingMovies) && (
+            <div className="px-4 py-3 text-center border-t border-line-soft">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={isFetchingMovies}
+                onClick={() => void fetchNextMovies()}
+                className="text-sm text-muted-fg"
+              >
+                {isFetchingMovies ? 'Loading more…' : 'Load more movies'}
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -402,6 +497,7 @@ function GroupedView(props: {
   onToggle: (id: number) => void;
   onToggleSeries: (ids: number[]) => void;
   filters: CandidateFilters;
+  onEpisodesLoaded: (files: MediaFile[]) => void;
 }) {
   return (
     <Suspense fallback={<GroupedSkeleton />}>
@@ -515,6 +611,10 @@ export default function Page() {
 
   const clearSel = useCallback(() => setSelectedIds(new Set()), []);
 
+  const registerLoadedFiles = useCallback((files: MediaFile[]) => {
+    files.forEach((item) => fileMapRef.current.set(item.id, item));
+  }, []);
+
   const selectedFiles = useMemo(
     () => [...selectedIds].map((id) => fileMapRef.current.get(id)).filter(Boolean) as MediaFile[],
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -536,6 +636,7 @@ export default function Page() {
   });
 
   const allSelected = allItems.length > 0 && allItems.every((i) => selectedIds.has(i.id));
+  const totalCount = data?.pages[0]?.total_count;
 
   return (
     <div className="flex flex-col min-w-0 h-screen overflow-hidden">
@@ -548,7 +649,11 @@ export default function Page() {
           <div className="text-[0.82rem] text-muted-fg mt-px">
             {data === undefined
               ? <Skeleton className="h-3 w-52 mt-1" />
-              : `${formatInt(allItems.length)}+ files · ranked by predicted savings`}
+              : totalCount != null
+                ? `${formatInt(totalCount)} files · ranked by predicted savings`
+                : hasNextPage
+                  ? `${formatInt(allItems.length)}+ files · ranked by predicted savings`
+                  : `${formatInt(allItems.length)} files · ranked by predicted savings`}
           </div>
         </div>
         {profiles[0] && (
@@ -697,6 +802,7 @@ export default function Page() {
               onToggle={toggleId}
               onToggleSeries={toggleSeries}
               filters={filters}
+              onEpisodesLoaded={registerLoadedFiles}
             />
           </div>
         )}

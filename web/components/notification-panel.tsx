@@ -1,11 +1,20 @@
 'use client';
 
 import { useState, useEffect, useMemo, useSyncExternalStore } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type AppEvent } from '@/lib/api';
 import { relativeTime } from '@/lib/format';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 const WATERMARK_KEY = 'reclaim_last_seen_event_id';
 
@@ -42,18 +51,31 @@ function ExpandableMetadata({ metadata }: { metadata: Record<string, unknown> | 
   );
 }
 
-function EventRow({ event }: { event: AppEvent }) {
+function EventRow({ event, onDelete, deleting }: { event: AppEvent; onDelete: (id: number) => void; deleting: boolean }) {
   return (
-    <div className="flex gap-3 px-6 py-3.5 border-b border-line-soft last:border-0">
+    <div className="group flex gap-3 px-6 py-3.5 border-b border-line-soft last:border-0">
       <div className="pt-[5px] flex-shrink-0">
         <span className={`block w-2 h-2 rounded-full ${SEVERITY_DOT[event.severity] ?? 'bg-muted-dim'}`} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
           <p className="text-[0.85rem] leading-snug text-text break-words">{event.message}</p>
-          <span className="text-[0.7rem] text-muted-dim whitespace-nowrap flex-shrink-0">
-            {relativeTime(event.created_at)}
-          </span>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <span className="text-[0.7rem] text-muted-dim whitespace-nowrap">
+              {relativeTime(event.created_at)}
+            </span>
+            <button
+              type="button"
+              onClick={() => onDelete(event.id)}
+              disabled={deleting}
+              aria-label="Dismiss event"
+              className="rounded-[6px] p-1 text-muted-dim opacity-0 transition-opacity hover:bg-surface-2 hover:text-text group-hover:opacity-100 focus:opacity-100 disabled:opacity-40"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
         </div>
         {event.type === 'job_failed' && <ExpandableMetadata metadata={event.metadata} />}
       </div>
@@ -82,7 +104,50 @@ interface Props {
   onOpenChange: (v: boolean) => void;
 }
 
+function ClearAllDialog({
+  open,
+  onClose,
+  onConfirm,
+  pending,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  pending: boolean;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent
+        className="max-w-sm border-line p-0 overflow-hidden"
+        style={{ background: 'var(--surface)' }}
+      >
+        <DialogHeader className="px-6 pt-[22px] pb-4 border-b border-line">
+          <DialogTitle className="text-[1.1rem] font-bold">Clear all events?</DialogTitle>
+          <DialogDescription className="text-[0.85rem] text-muted-fg mt-1">
+            This removes every event from the list. New activity will still be logged going forward.
+          </DialogDescription>
+        </DialogHeader>
+
+        <DialogFooter className="px-6 pb-5 pt-1 flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose} disabled={pending} className="rounded-[11px]">
+            Cancel
+          </Button>
+          <Button
+            onClick={onConfirm}
+            disabled={pending}
+            variant="destructive"
+            className="rounded-[11px]"
+          >
+            {pending ? 'Clearing…' : 'Clear all'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function NotificationPanel({ open, onOpenChange }: Props) {
+  const qc = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ['events'],
     queryFn: () => api.events({ limit: 50 }),
@@ -90,6 +155,39 @@ export function NotificationPanel({ open, onOpenChange }: Props) {
   });
 
   const events = useMemo(() => data?.items ?? [], [data]);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.deleteEvent(id),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: ['events'] });
+      const prev = qc.getQueryData<{ items: AppEvent[] }>(['events']);
+      qc.setQueryData<{ items: AppEvent[] }>(['events'], (old) => ({
+        items: (old?.items ?? []).filter((e) => e.id !== id),
+      }));
+      return { prev };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['events'], ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['events'] }),
+  });
+
+  const clearMutation = useMutation({
+    mutationFn: () => api.clearEvents(),
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: ['events'] });
+      const prev = qc.getQueryData<{ items: AppEvent[] }>(['events']);
+      qc.setQueryData<{ items: AppEvent[] }>(['events'], { items: [] });
+      localStorage.setItem(WATERMARK_KEY, '0');
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['events'], ctx.prev);
+    },
+    onSuccess: () => setClearDialogOpen(false),
+    onSettled: () => qc.invalidateQueries({ queryKey: ['events'] }),
+  });
 
   // Update watermark when panel opens
   useEffect(() => {
@@ -99,10 +197,22 @@ export function NotificationPanel({ open, onOpenChange }: Props) {
   }, [open, events]);
 
   return (
+    <>
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent>
-        <SheetHeader>
+        <SheetHeader className="flex-row items-center justify-between pr-12">
           <SheetTitle>Events</SheetTitle>
+          {events.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setClearDialogOpen(true)}
+              disabled={clearMutation.isPending}
+              className="rounded-[8px] h-7 px-2.5 text-[0.78rem] text-muted-dim hover:text-text"
+            >
+              Clear all
+            </Button>
+          )}
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto">
@@ -116,11 +226,26 @@ export function NotificationPanel({ open, onOpenChange }: Props) {
               <p className="text-[0.85rem]">No events yet</p>
             </div>
           ) : (
-            events.map((event) => <EventRow key={event.id} event={event} />)
+            events.map((event) => (
+              <EventRow
+                key={event.id}
+                event={event}
+                onDelete={(id) => deleteMutation.mutate(id)}
+                deleting={deleteMutation.isPending}
+              />
+            ))
           )}
         </div>
       </SheetContent>
     </Sheet>
+
+    <ClearAllDialog
+      open={clearDialogOpen}
+      onClose={() => setClearDialogOpen(false)}
+      onConfirm={() => clearMutation.mutate()}
+      pending={clearMutation.isPending}
+    />
+    </>
   );
 }
 

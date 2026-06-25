@@ -20,7 +20,7 @@ type Profiles struct {
 }
 
 func (p *Profiles) List(ctx context.Context) ([]TranscodeProfile, error) {
-	rows, err := p.r.QueryContext(ctx, profileQ+" ORDER BY id")
+	rows, err := p.r.QueryContext(ctx, profileQ+" ORDER BY is_default DESC, id")
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,19 @@ func (p *Profiles) GetDefault(ctx context.Context) (*TranscodeProfile, error) {
 }
 
 func (p *Profiles) Create(ctx context.Context, prof *TranscodeProfile) (int64, error) {
-	res, err := p.w.ExecContext(ctx, `
+	tx, err := p.w.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	if prof.IsDefault {
+		if _, err := tx.ExecContext(ctx, "UPDATE transcode_profiles SET is_default = 0"); err != nil {
+			return 0, err
+		}
+	}
+
+	res, err := tx.ExecContext(ctx, `
 		INSERT INTO transcode_profiles (name, crf, preset, extra_args, is_default)
 		VALUES (?, ?, ?, ?, ?)`,
 		prof.Name, prof.CRF, prof.Preset, prof.ExtraArgs, btoi(prof.IsDefault),
@@ -54,17 +66,36 @@ func (p *Profiles) Create(ctx context.Context, prof *TranscodeProfile) (int64, e
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
 }
 
 func (p *Profiles) Update(ctx context.Context, prof *TranscodeProfile) error {
-	_, err := p.w.ExecContext(ctx, `
+	tx, err := p.w.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if prof.IsDefault {
+		if _, err := tx.ExecContext(ctx, "UPDATE transcode_profiles SET is_default = 0 WHERE id <> ?", prof.ID); err != nil {
+			return err
+		}
+	}
+
+	_, err = tx.ExecContext(ctx, `
 		UPDATE transcode_profiles
 		SET name = ?, crf = ?, preset = ?, extra_args = ?, is_default = ?
 		WHERE id = ?`,
 		prof.Name, prof.CRF, prof.Preset, prof.ExtraArgs, btoi(prof.IsDefault), prof.ID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (p *Profiles) Delete(ctx context.Context, id int64) error {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -51,6 +52,27 @@ func (s *Server) handleListEvents(c *echo.Context) error {
 		resp["next_cursor"] = events[len(events)-1].ID
 	}
 	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) handleDeleteEvent(c *echo.Context) error {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		return badRequest(c, "invalid event id")
+	}
+	if err := s.store.Events.Delete(c.Request().Context(), id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return c.JSON(http.StatusNotFound, errorBody("event not found"))
+		}
+		return serverError(c, err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (s *Server) handleDeleteAllEvents(c *echo.Context) error {
+	if err := s.store.Events.DeleteAll(c.Request().Context()); err != nil {
+		return serverError(c, err)
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 // toEventDTO converts a store.Event to the wire shape, decoding the JSON

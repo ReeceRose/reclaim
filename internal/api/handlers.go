@@ -114,6 +114,12 @@ func (s *Server) handleCandidates(c *echo.Context) error {
 	}
 
 	resp := map[string]any{"items": items}
+	// Total count on the first page helps the UI show "N files" vs "N+ files".
+	if q.Sort == store.SortSavingsDesc && q.AfterSavings == nil && q.AfterID == nil && q.Offset == 0 {
+		if total, err := s.store.Media.CountCandidates(c.Request().Context(), q.Filter); err == nil {
+			resp["total_count"] = total
+		}
+	}
 	// Provide the next keyset cursor only when the default sort returned a full
 	// page. A partial (or empty) page means we've reached the end of the list.
 	if q.Sort == store.SortSavingsDesc && q.Limit > 0 && len(files) == q.Limit {

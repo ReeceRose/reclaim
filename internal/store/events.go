@@ -127,3 +127,25 @@ func (ev *Events) List(ctx context.Context, f EventFilter) ([]Event, error) {
 	}
 	return out, rows.Err()
 }
+
+// Delete removes one event by id. Returns ErrNotFound when no row matched.
+func (ev *Events) Delete(ctx context.Context, id int64) error {
+	res, err := ev.w.ExecContext(ctx, "DELETE FROM events WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteAll removes every event from the audit log.
+func (ev *Events) DeleteAll(ctx context.Context) error {
+	_, err := ev.w.ExecContext(ctx, "DELETE FROM events")
+	return err
+}

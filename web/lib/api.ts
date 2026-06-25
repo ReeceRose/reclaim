@@ -111,6 +111,7 @@ export interface KeysetCursor {
 export interface CandidatesPage {
   items: MediaFile[];
   next_cursor?: KeysetCursor;
+  total_count?: number;
 }
 
 export interface Episode extends MediaFile {
@@ -123,7 +124,7 @@ export interface SeasonGroup {
   candidate_count: number;
   total_bytes: number;
   predicted_savings_bytes: number;
-  episodes: Episode[];
+  episode_ids: number[];
 }
 
 export interface SeriesGroup {
@@ -138,7 +139,10 @@ export interface SeriesGroup {
 
 export interface GroupedCandidates {
   series: SeriesGroup[];
-  movies: MediaFile[];
+}
+
+export interface GroupedSeasonEpisodes {
+  episodes: Episode[];
 }
 
 export interface Profile {
@@ -267,6 +271,8 @@ export const api = {
     request<CandidatesPage>("GET", `/api/candidates${buildQuery(filters)}`),
   groupedCandidates: (filters: CandidateFilters) =>
     request<GroupedCandidates>("GET", `/api/candidates/grouped${buildQuery(filters)}`),
+  groupedSeasonEpisodes: (filters: CandidateFilters & { series: string; season: number }) =>
+    request<GroupedSeasonEpisodes>("GET", `/api/candidates/grouped/episodes${buildQuery(filters)}`),
   dryRun: (params: { ids?: string } & CandidateFilters) =>
     request<DryRunResult>("GET", `/api/dry-run${buildQuery(params)}`),
 
@@ -297,6 +303,8 @@ export const api = {
   // Events
   events: (params?: { after_id?: number; limit?: number; severity?: string; type?: string }) =>
     request<{ items: AppEvent[]; next_cursor?: number }>("GET", `/api/events${buildQuery(params ?? {})}`),
+  deleteEvent: (id: number) => request<void>("DELETE", `/api/events/${id}`),
+  clearEvents: () => request<void>("DELETE", "/api/events"),
 
   // Settings
   settings: () => request<Settings>("GET", "/api/settings"),

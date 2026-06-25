@@ -291,6 +291,15 @@ function SettingsContent() {
     onError: () => toast.error('Delete failed'),
   });
 
+  const defaultProfileMutation = useMutation({
+    mutationFn: ({ id, ...profile }: Profile) => api.updateProfile(id, { ...profile, is_default: true }),
+    onSuccess: (profile) => {
+      toast.success(`"${profile.name}" is now the default`);
+      qc.invalidateQueries({ queryKey: ['profiles'] });
+    },
+    onError: () => toast.error('Failed to update default profile'),
+  });
+
   const [profileDialog, setProfileDialog] = useState<{ open: boolean; initial: Partial<Profile> | null }>({
     open: false,
     initial: null,
@@ -468,16 +477,27 @@ function SettingsContent() {
                 Edit
               </Button>
               {!p.is_default && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    if (confirm(`Delete profile "${p.name}"?`)) deleteProfileMutation.mutate(p.id);
-                  }}
-                  className="rounded-[11px] text-red hover:bg-red-soft hover:text-red"
-                >
-                  Delete
-                </Button>
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => defaultProfileMutation.mutate(p)}
+                    disabled={defaultProfileMutation.isPending}
+                    className="rounded-[11px]"
+                  >
+                    Set default
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (confirm(`Delete profile "${p.name}"?`)) deleteProfileMutation.mutate(p.id);
+                    }}
+                    className="rounded-[11px] text-red hover:bg-red-soft hover:text-red"
+                  >
+                    Delete
+                  </Button>
+                </>
               )}
             </div>
           ))}

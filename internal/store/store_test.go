@@ -78,6 +78,71 @@ func TestDefaultProfile_seededOnce(t *testing.T) {
 	}
 }
 
+func TestProfiles_defaultIsUnique(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	secondID, err := s.Profiles.Create(ctx, &TranscodeProfile{
+		Name:      "Quality",
+		CRF:       22,
+		Preset:    "slow",
+		IsDefault: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	profiles, err := s.Profiles.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDefaultProfile(t, profiles, secondID)
+
+	thirdID, err := s.Profiles.Create(ctx, &TranscodeProfile{
+		Name:   "Fast",
+		CRF:    28,
+		Preset: "fast",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Profiles.Update(ctx, &TranscodeProfile{
+		ID:        thirdID,
+		Name:      "Fast",
+		CRF:       28,
+		Preset:    "fast",
+		IsDefault: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	profiles, err = s.Profiles.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDefaultProfile(t, profiles, thirdID)
+	if !profiles[0].IsDefault {
+		t.Fatalf("want default profile first in list, got %+v", profiles[0])
+	}
+}
+
+func assertDefaultProfile(t *testing.T, profiles []TranscodeProfile, wantID int64) {
+	t.Helper()
+
+	var defaults []TranscodeProfile
+	for _, p := range profiles {
+		if p.IsDefault {
+			defaults = append(defaults, p)
+		}
+	}
+	if len(defaults) != 1 {
+		t.Fatalf("want exactly 1 default profile, got %d: %+v", len(defaults), profiles)
+	}
+	if defaults[0].ID != wantID {
+		t.Fatalf("want default profile id %d, got %d", wantID, defaults[0].ID)
+	}
+}
+
 func TestSessionSecret_stableAcrossReopen(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
 

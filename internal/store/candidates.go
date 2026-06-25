@@ -171,6 +171,69 @@ func (m *Media) Candidates(ctx context.Context, q CandidateQuery) ([]MediaFile, 
 	return out, rows.Err()
 }
 
+// CountCandidates returns how many files match the candidate filter. Uses the
+// same exclusions as Candidates so totals line up with paging.
+func (m *Media) CountCandidates(ctx context.Context, filter CandidateFilter) (int64, error) {
+	where := []string{
+		"status = 'active'",
+		"is_already_hevc = 0",
+		"probe_error IS NULL",
+		"video_codec IS NOT NULL",
+		jobExclusionSQL,
+	}
+	var args []any
+	var err error
+	where, args, err = appendFilter(where, args, filter)
+	if err != nil {
+		return 0, err
+	}
+
+	query := `SELECT COUNT(*) FROM media_files WHERE ` + strings.Join(where, " AND ")
+	var n int64
+	if err := m.r.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// CandidatesUnderPathPrefix returns candidates whose path starts with prefix.
+// Used to load one TV series' episodes without scanning the whole library.
+func (m *Media) CandidatesUnderPathPrefix(ctx context.Context, filter CandidateFilter, prefix string) ([]MediaFile, error) {
+	where := []string{
+		"status = 'active'",
+		"is_already_hevc = 0",
+		"probe_error IS NULL",
+		"video_codec IS NOT NULL",
+		jobExclusionSQL,
+		"path LIKE ? ESCAPE '\\'",
+	}
+	args := []any{likePrefix(prefix)}
+	var err error
+	where, args, err = appendFilter(where, args, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	query := mediaQ + " WHERE " + strings.Join(where, " AND ") +
+		" ORDER BY predicted_savings_bytes DESC, id ASC"
+
+	rows, err := m.r.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []MediaFile
+	for rows.Next() {
+		f, err := scanMedia(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *f)
+	}
+	return out, rows.Err()
+}
+
 // AllCandidates returns every candidate matching the filter, ranked by
 // predicted savings (desc). Unlike Candidates it is not paginated — it backs the
 // grouped/by-series view, which aggregates the whole set in one pass. The same
@@ -269,4 +332,17 @@ func resolutionBandClause(band string) (string, error) {
 	default:
 		return "", fmt.Errorf("unknown resolution band %q", band)
 	}
+}
+
+// likePrefix escapes % and _ in prefix for a LIKE 'prefix%' match.
+func likePrefix(prefix string) string {
+	var b strings.Builder
+	for _, r := range prefix {
+		if r == '%' || r == '_' || r == '\\' {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	b.WriteByte('%')
+	return b.String()
 }

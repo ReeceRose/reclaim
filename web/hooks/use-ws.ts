@@ -45,15 +45,21 @@ export function useWS() {
           qc.invalidateQueries({ queryKey: ['stats'] });
           qc.invalidateQueries({ queryKey: ['candidates'] });
           if (event === 'scan_completed') {
-            const d = data as { files_added?: number; files_updated?: number; files_removed?: number } | undefined;
+            const d = data as { files_added?: number; files_updated?: number; files_removed?: number; errors?: number } | undefined;
             const added = d?.files_added ?? 0;
             const updated = d?.files_updated ?? 0;
             const removed = d?.files_removed ?? 0;
+            const errors = d?.errors ?? 0;
             const parts: string[] = [];
             if (added) parts.push(`${added} added`);
             if (updated) parts.push(`${updated} updated`);
             if (removed) parts.push(`${removed} removed`);
-            toast.success('Scan complete', { description: parts.length ? parts.join(', ') : 'No changes' });
+            if (errors > 0) {
+              const desc = [parts.join(', '), `${errors} error${errors === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
+              toast.warning('Scan completed with errors', { description: desc });
+            } else {
+              toast.success('Scan complete', { description: parts.length ? parts.join(', ') : 'No changes' });
+            }
           } else if (event === 'scan_failed') {
             const d = data as { error?: string } | undefined;
             toast.error('Scan failed', { description: d?.error });

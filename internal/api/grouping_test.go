@@ -28,7 +28,7 @@ func TestParseTVInfo(t *testing.T) {
 	}
 }
 
-func TestGroupCandidates(t *testing.T) {
+func TestGroupTVSummaries(t *testing.T) {
 	s := &Server{tvPath: "/media/tv", moviesPath: "/media/movies"}
 	mk := func(id int64, lib, path string, size, savings int64) store.MediaFile {
 		return store.MediaFile{
@@ -40,13 +40,9 @@ func TestGroupCandidates(t *testing.T) {
 		mk(1, "tv", "/media/tv/Harbor Lights/Season 01/Harbor.Lights.S01E01.mkv", 100, 40),
 		mk(2, "tv", "/media/tv/Harbor Lights/Season 01/Harbor.Lights.S01E02.mkv", 100, 40),
 		mk(3, "tv", "/media/tv/Harbor Lights/Season 02/Harbor.Lights.S02E01.mkv", 100, 40),
-		mk(4, "movie", "/media/movies/Glasshouse (2011)/Glasshouse.2011.mkv", 200, 90),
 	}
-	series, movies := s.groupCandidates(files)
+	series := s.groupTVSummaries(files)
 
-	if len(movies) != 1 || movies[0].ID != 4 {
-		t.Fatalf("want 1 movie (id 4), got %+v", movies)
-	}
 	if len(series) != 1 {
 		t.Fatalf("want 1 series, got %d", len(series))
 	}
@@ -65,5 +61,52 @@ func TestGroupCandidates(t *testing.T) {
 	}
 	if len(hl.Seasons) != 2 || hl.Seasons[0].Season != 1 || hl.Seasons[0].CandidateCount != 2 {
 		t.Errorf("unexpected season layout: %+v", hl.Seasons)
+	}
+	if len(hl.Seasons[0].EpisodeIDs) != 2 || hl.Seasons[0].EpisodeIDs[0] != 1 {
+		t.Errorf("unexpected episode ids: %+v", hl.Seasons[0].EpisodeIDs)
+	}
+}
+
+func TestBuildSeasonEpisodes(t *testing.T) {
+	s := &Server{tvPath: "/media/tv"}
+	mk := func(id int64, path string, savings int64) store.MediaFile {
+		return store.MediaFile{
+			ID: id, LibraryType: "tv", Path: path,
+			SizeBytes: 100, PredictedSavingsBytes: savings, Status: "active",
+		}
+	}
+	files := []store.MediaFile{
+		mk(1, "/media/tv/Harbor Lights/Season 01/Harbor.Lights.S01E02.mkv", 40),
+		mk(2, "/media/tv/Harbor Lights/Season 01/Harbor.Lights.S01E01.mkv", 50),
+		mk(3, "/media/tv/Harbor Lights/Season 02/Harbor.Lights.S02E01.mkv", 30),
+	}
+	eps := s.buildSeasonEpisodes(files, "Harbor Lights", 1)
+	if len(eps) != 2 {
+		t.Fatalf("want 2 episodes, got %d", len(eps))
+	}
+	if eps[0].ID != 2 || eps[0].Episode == nil || *eps[0].Episode != 1 {
+		t.Errorf("want ep 1 first, got %+v", eps[0])
+	}
+}
+
+func TestGroupCandidates(t *testing.T) {
+	s := &Server{tvPath: "/media/tv", moviesPath: "/media/movies"}
+	mk := func(id int64, lib, path string, size, savings int64) store.MediaFile {
+		return store.MediaFile{
+			ID: id, LibraryType: lib, Path: path,
+			SizeBytes: size, PredictedSavingsBytes: savings, Status: "active",
+		}
+	}
+	files := []store.MediaFile{
+		mk(1, "tv", "/media/tv/Harbor Lights/Season 01/Harbor.Lights.S01E01.mkv", 100, 40),
+		mk(4, "movie", "/media/movies/Glasshouse (2011)/Glasshouse.2011.mkv", 200, 90),
+	}
+	series, movies := s.groupCandidates(files)
+
+	if len(movies) != 1 || movies[0].ID != 4 {
+		t.Fatalf("want 1 movie (id 4), got %+v", movies)
+	}
+	if len(series) != 1 || series[0].Title != "Harbor Lights" {
+		t.Fatalf("unexpected series: %+v", series)
 	}
 }

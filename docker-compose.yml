@@ -1,10 +1,12 @@
 services:
   reclaim:
     build: .
-    image: reclaim:latest
+    # After a release: docker pull ghcr.io/reecerose/reclaim:<version>
+    image: ghcr.io/reecerose/reclaim:latest
     ports:
       - "8080:8080"
     volumes:
+      # Edit host paths to match your NAS layout (must be read-write)
       - /mnt/movies:/movies:rw
       - /mnt/tv:/tv:rw
       - reclaim-data:/data
@@ -22,6 +24,12 @@ services:
       # Auth escape hatches — uncomment only when needed, never leave enabled
       # DISABLE_AUTH: "true"
       # RESET_AUTH: "true"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     restart: unless-stopped
 
 volumes:

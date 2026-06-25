@@ -6,52 +6,27 @@ Single self-contained binary: Go backend + embedded Next.js frontend. No externa
 
 ---
 
-## Building from source
+## Docker deployment
 
-The Dockerfile is a four-stage build: Next.js frontend → static ffmpeg binaries → Go binary (with the frontend embedded) → minimal distroless image.
+**See [`docs/DOCKER.md`](docs/DOCKER.md)** for the full guide: ports, volumes, environment variables, Unraid template fields, Compose, and `docker run`.
 
-**Requirements:** Docker 24+ (BuildKit enabled by default).
+Quick start with the included Compose file (edit media paths and `TZ` first):
 
 ```bash
-# Build the image locally
-docker build -t reclaim:latest .
-
-# Or let Compose build and start in one step
-docker compose up --build
+docker compose up --build -d
 ```
 
-The compose file (`docker-compose.yml`) in the repo root is configured for self-hosting. Edit the volume paths and `TZ` environment variable before running.
+Open `http://<host>:8080` and complete first-run setup. Release images publish to `ghcr.io/reecerose/reclaim` on version tags — see [`docs/RELEASES.md`](docs/RELEASES.md).
 
----
+Media mounts **must be read-write** — Reclaim replaces files in-place after encoding.
 
-## Deployment
+### Building the image
 
-### Docker Compose (recommended)
+Three-stage Dockerfile: Next.js static export → Go binary (frontend embedded) → Alpine 3.21 with pinned ffmpeg.
 
-```yaml
-services:
-  reclaim:
-    image: ghcr.io/you/reclaim:latest
-    ports:
-      - "8080:8080"
-    volumes:
-      - /mnt/movies:/movies:rw
-      - /mnt/tv:/tv:rw
-      - reclaim-data:/data
-    environment:
-      MOVIES_PATH: /movies
-      TV_PATH: /tv
-      DB_PATH: /data/reclaim.db
-      ENCODE_WINDOW_START: "00:00"
-      ENCODE_WINDOW_END: "06:00"
-      SCAN_INTERVAL: 24h
-      PROBE_CONCURRENCY: 4
-
-volumes:
-  reclaim-data:
+```bash
+docker build -t ghcr.io/reecerose/reclaim:latest .
 ```
-
-The media mounts **must be read-write** — Reclaim replaces files in-place after encoding.
 
 ### Standalone binary
 
@@ -75,6 +50,8 @@ export DB_PATH=/var/lib/reclaim/reclaim.db
 | `ENCODE_WINDOW_END` | no | `06:00` | End of the encode window |
 | `SCAN_INTERVAL` | no | `24h` | How often a diff-based rescan runs (Go duration string) |
 | `PROBE_CONCURRENCY` | no | `4` | Max parallel ffprobe calls during a scan |
+| `SCAN_ANCHOR` | no | `00:00` | Daily scan anchor time (`HH:MM`, local) |
+| `TZ` | no | — | Container timezone — **set this in Docker** so the encode window matches your clock |
 | `DISABLE_AUTH` | no | `false` | Bypass login entirely — **trusted LAN use only** |
 | `RESET_AUTH` | no | `false` | Clear stored credentials on boot, re-triggering first-run setup |
 
@@ -130,7 +107,7 @@ A running job is never interrupted when the window closes — it finishes and no
 
 ### ffmpeg/ffprobe
 
-The binary ships with pinned static builds of ffmpeg and ffprobe. Versions are logged at startup. To upgrade, replace the bundled binaries and rebuild the image.
+The Docker image installs ffmpeg from Alpine 3.21 (pinned package version in the `Dockerfile`; includes `ffprobe`). Rebuild the image to bump ffmpeg deliberately.
 
 ### Network mounts (NFS/SMB)
 

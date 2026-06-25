@@ -32,10 +32,15 @@ RUN CGO_ENABLED=0 GOOS=linux \
     upx --best /reclaim
 
 # ── Stage 3: Minimal final image ─────────────────────────────────────────────
-FROM alpine:3
+# Pin Alpine minor + ffmpeg package so encode behavior stays stable across rebuilds.
+FROM alpine:3.21
 
-RUN apk add --no-cache ffmpeg && \
+ARG FFMPEG_VERSION=6.1.2-r1
+RUN apk add --no-cache "ffmpeg=${FFMPEG_VERSION}" && \
     adduser -D -H -u 1000 reclaim
+
+LABEL org.opencontainers.image.source="https://github.com/ReeceRose/reclaim" \
+      org.reclaim.ffmpeg.version="${FFMPEG_VERSION}"
 
 COPY --from=go-build /reclaim /reclaim
 

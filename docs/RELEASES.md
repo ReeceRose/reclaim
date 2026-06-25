@@ -31,9 +31,11 @@ Pushing the tag also triggers the **Docker** GitHub Actions workflow, which buil
 ## Pulling a released image
 
 ```bash
-docker pull ghcr.io/<owner>/reclaim:1.2.4   # exact version (recommended)
-docker pull ghcr.io/<owner>/reclaim:1.2      # latest patch of 1.2.x
+docker pull ghcr.io/reecerose/reclaim:1.2.4   # exact version (recommended)
+docker pull ghcr.io/reecerose/reclaim:1.2      # latest patch of 1.2.x
 ```
+
+Deployment steps (ports, volumes, env vars, Unraid): [`docs/DOCKER.md`](DOCKER.md).
 
 ## If the changelog generation fails
 

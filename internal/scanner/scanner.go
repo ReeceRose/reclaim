@@ -55,7 +55,7 @@ type ProbeFunc func(ctx context.Context, path string) (*ffprobe.Result, error)
 type Scanner struct {
 	store *store.Store
 	roots map[string]string // mountPath -> libraryType
-	hub   Broadcaster       // nil-safe; set via WithBroadcaster
+	hub   Broadcaster       // nil-safe; set via SetBroadcaster
 
 	probeFunc    ProbeFunc
 	scanInterval time.Duration
@@ -88,12 +88,6 @@ type Option func(*Scanner)
 // WithProbeFunc overrides the probe function (use in tests to avoid ffprobe dependency).
 func WithProbeFunc(fn ProbeFunc) Option {
 	return func(s *Scanner) { s.probeFunc = fn }
-}
-
-// WithBroadcaster wires the WS hub so the scanner can push event_created
-// broadcasts after scan completions that found changes.
-func WithBroadcaster(b Broadcaster) Option {
-	return func(s *Scanner) { s.hub = b }
 }
 
 // SetBroadcaster wires the hub after construction. Used in main.go where the

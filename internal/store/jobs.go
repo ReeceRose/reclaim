@@ -50,44 +50,6 @@ func (j *Jobs) GetByID(ctx context.Context, id int64) (*TranscodeJob, error) {
 	return scanJob(j.r.QueryRowContext(ctx, jobQ+" WHERE id = ?", id))
 }
 
-func (j *Jobs) ListByStatus(ctx context.Context, status string) ([]TranscodeJob, error) {
-	rows, err := j.r.QueryContext(ctx, jobQ+" WHERE status = ? ORDER BY queued_at", status)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []TranscodeJob
-	for rows.Next() {
-		job, err := scanJob(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *job)
-	}
-	return out, rows.Err()
-}
-
-// ListAll returns every job, newest first. Used by GET /api/jobs to render the
-// combined queue + history view.
-func (j *Jobs) ListAll(ctx context.Context) ([]TranscodeJob, error) {
-	rows, err := j.r.QueryContext(ctx, jobQ+" ORDER BY queued_at DESC, id DESC")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []TranscodeJob
-	for rows.Next() {
-		job, err := scanJob(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *job)
-	}
-	return out, rows.Err()
-}
-
 // ListAllWithPath returns every job, newest first, with the originating media
 // file's path joined in (SourcePath). Used by GET /api/jobs so the UI can show
 // the file name instead of a bare media_file_id. The LEFT JOIN keeps jobs whose
@@ -125,13 +87,6 @@ func (j *Jobs) HasBlockingJob(ctx context.Context, mediaFileID int64) (bool, err
 		return false, err
 	}
 	return n > 0, nil
-}
-
-func (j *Jobs) UpdateStatus(ctx context.Context, id int64, status string) error {
-	_, err := j.w.ExecContext(ctx,
-		"UPDATE transcode_jobs SET status = ? WHERE id = ?", status, id,
-	)
-	return err
 }
 
 func (j *Jobs) UpdateProgress(ctx context.Context, id int64, pct float64) error {
@@ -182,12 +137,15 @@ func (j *Jobs) ClaimNextQueued(ctx context.Context, startedAt int64) (*Transcode
 	return job, nil
 }
 
-// Transition performs a guarded status change: it only succeeds if the row is
-// currently in `from`, which both serializes through the single writer and
-// rejects illegal transitions (the FSM guard lives in jobs.CanTransition; this
-// is the persistence-layer enforcement of it). Returns ErrIllegalTransition if
-// the row was not in the expected state.
+// Transition performs a guarded status change. The move is first checked
+// against the pure FSM in jobs.CanTransition, then applied with an UPDATE that
+// only succeeds if the row is currently in `from` — serializing through the
+// single writer and rejecting a state that changed underneath us. Returns
+// ErrIllegalTransition for an FSM-illegal move or a stale source state.
 func (j *Jobs) Transition(ctx context.Context, id int64, from, to string) error {
+	if !jobs.CanTransition(jobs.Status(from), jobs.Status(to)) {
+		return ErrIllegalTransition
+	}
 	res, err := j.w.ExecContext(ctx,
 		"UPDATE transcode_jobs SET status = ? WHERE id = ? AND status = ?", to, id, from,
 	)

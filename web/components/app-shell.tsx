@@ -9,6 +9,7 @@ import { useWS } from '@/hooks/use-ws';
 import { windowInfo } from '@/lib/format';
 import { toast } from 'sonner';
 import { NotificationPanel, useUnreadCount } from '@/components/notification-panel';
+import { LogoMark } from '@/components/logo';
 
 // ---------------------------------------------------------------------------
 // WindowArc — 24-hour clock face showing the encode window period
@@ -123,7 +124,13 @@ const NAV_ITEMS = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   useWS();
-  const { data: isScanning } = useQuery<boolean>({ queryKey: ['scanning'], initialData: false });
+  const { data: isScanning } = useQuery<boolean>({
+    queryKey: ['scanning'],
+    queryFn: () => false,
+    initialData: false,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
 
   const [notifOpen, setNotifOpen] = useState(false);
   const pathname = usePathname();
@@ -198,16 +205,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       >
         {/* Brand */}
         <div className="flex items-center gap-[11px] px-5 py-5 border-b border-line-soft">
-          <div
-            className="relative w-[30px] h-[30px] rounded-[9px] flex-shrink-0"
-            style={{
-              background: 'linear-gradient(145deg, var(--brand), var(--brand-2))',
-              boxShadow: '0 0 0 1px var(--brand-line), 0 6px 18px var(--brand-soft)',
-            }}
-          >
-            <span className="absolute inset-x-[7px] top-[7px] h-1 rounded-sm" style={{ background: 'var(--bg)', opacity: 0.6, boxShadow: '0 6px 0 var(--bg)' }} />
-            <span className="absolute right-1.5 bottom-1.5 w-[5px] h-[5px] rounded-full" style={{ background: 'var(--bg)', opacity: 0.6 }} />
-          </div>
+          <LogoMark size={30} className="flex-shrink-0" style={{ boxShadow: '0 6px 18px var(--brand-soft)', borderRadius: 9 }} />
           <span className="font-extrabold tracking-tight text-[1.22rem] flex-1">
             Re<span className="text-brand">claim</span>
           </span>

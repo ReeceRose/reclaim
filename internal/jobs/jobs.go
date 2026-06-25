@@ -42,23 +42,8 @@ var transitions = map[Status]map[Status]bool{
 	StatusCancelled: {},
 }
 
-// CanTransition reports whether moving from → to is legal.
+// CanTransition reports whether moving from → to is legal. It is the single
+// source of truth for the lifecycle, enforced by the store's guarded UPDATEs.
 func CanTransition(from, to Status) bool {
 	return transitions[from][to]
-}
-
-// IsTerminal reports whether a status admits no further transitions.
-func IsTerminal(s Status) bool {
-	return len(transitions[s]) == 0 && s != ""
-}
-
-// IsActive reports whether a job is still in flight (not in a terminal state).
-// Used by crash recovery to find jobs to reconcile.
-func IsActive(s Status) bool {
-	switch s {
-	case StatusQueued, StatusRunning, StatusVerifying:
-		return true
-	default:
-		return false
-	}
 }

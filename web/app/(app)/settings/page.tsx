@@ -10,6 +10,35 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { CircleHelpIcon } from 'lucide-react';
+
+function HelpTip({ children }: { children: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label="More info"
+          className="inline-flex align-middle text-muted-dim hover:text-muted-fg transition-colors focus:outline-none"
+        >
+          <CircleHelpIcon className="size-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="leading-relaxed">{children}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function LabelWithHelp({ label, help }: { label: string; help: React.ReactNode }) {
+  return (
+    <Label className="text-[0.8rem] font-semibold mb-1.5 flex items-center gap-1.5">
+      {label}
+      <HelpTip>{help}</HelpTip>
+    </Label>
+  );
+}
 
 function TimeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const parts = value.split(':');
@@ -97,11 +126,32 @@ function ProfileDialog({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label className="text-[0.8rem] font-semibold mb-1.5 block">CRF</Label>
+              <LabelWithHelp
+                label="CRF"
+                help={
+                  <>
+                    <strong>Constant Rate Factor</strong> — the quality target for libx265.
+                    Lower means higher quality and bigger files; higher means more compression
+                    and smaller files. Range is 0–51; <strong>24–28</strong> is the sweet spot
+                    for visually-lossless HEVC. Each +6 roughly halves the bitrate.
+                  </>
+                }
+              />
               <Input type="number" min={0} max={51} value={crf} onChange={(e) => setCrf(Number(e.target.value))} />
             </div>
             <div>
-              <Label className="text-[0.8rem] font-semibold mb-1.5 block">Preset</Label>
+              <LabelWithHelp
+                label="Preset"
+                help={
+                  <>
+                    Encoder speed vs. compression efficiency. Slower presets squeeze out more
+                    savings at the same CRF but take longer to encode. <strong>medium</strong> is
+                    a balanced default; <strong>slow</strong>/<strong>slower</strong> gain a few
+                    extra percent, while <strong>fast</strong>/<strong>veryfast</strong> trade
+                    file size for shorter encode times.
+                  </>
+                }
+              />
               <Select value={preset} onValueChange={setPreset}>
                 <SelectTrigger className="rounded-lg text-sm">
                   <SelectValue />
@@ -115,7 +165,18 @@ function ProfileDialog({
             </div>
           </div>
           <div>
-            <Label className="text-[0.8rem] font-semibold mb-1.5 block">Extra args</Label>
+            <LabelWithHelp
+              label="Extra args"
+              help={
+                <>
+                  Raw flags appended to the <span className="font-mono">ffmpeg</span> command.
+                  Defaults to <span className="font-mono">-c:a copy -c:s copy</span>, which
+                  passes audio and subtitle streams through untouched so only the video is
+                  re-encoded. Add flags here to tweak the output (e.g.{' '}
+                  <span className="font-mono">-pix_fmt yuv420p10le</span> for 10-bit).
+                </>
+              }
+            />
             <Input className="font-mono text-sm" value={extra} onChange={(e) => setExtra(e.target.value)} />
             <p className="text-[0.75rem] text-muted-dim mt-1">Audio/subtitle passthrough etc.</p>
           </div>
@@ -271,7 +332,17 @@ function SettingsContent() {
               <p className="text-[0.75rem] text-muted-dim mt-1.5">A running job finishes even if the window closes — only new pulls stop.</p>
             </div>
             <div className="mb-4">
-              <Label className="text-[0.8rem] font-semibold mb-1.5 block">Probe concurrency</Label>
+              <LabelWithHelp
+                label="Probe concurrency"
+                help={
+                  <>
+                    How many <span className="font-mono">ffprobe</span> processes run in parallel
+                    while indexing your library. Higher values scan faster but use more CPU and
+                    disk I/O. <strong>4</strong> is a safe default; bump it up on fast NAS/SSD
+                    storage, lower it if scans are saturating a spinning disk.
+                  </>
+                }
+              />
               <Input
                 type="number"
                 min={1}
@@ -282,7 +353,17 @@ function SettingsContent() {
               <p className="text-[0.75rem] text-muted-dim mt-1.5">Parallel ffprobe cap during scans.</p>
             </div>
             <div className="mb-4">
-              <Label className="text-[0.8rem] font-semibold mb-1.5 block">Scan interval</Label>
+              <LabelWithHelp
+                label="Scan interval"
+                help={
+                  <>
+                    How often Reclaim re-walks your libraries to pick up new or changed files.
+                    The <strong>at</strong> time anchors the schedule, so a 24h interval anchored
+                    to 12:00 AM rescans nightly at midnight. File changes are also caught live via
+                    a filesystem watcher between scans.
+                  </>
+                }
+              />
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-2">
                   <Input

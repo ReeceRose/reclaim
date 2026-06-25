@@ -1,3 +1,5 @@
+import { LogoMark } from '@/components/logo';
+
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -9,18 +11,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
     >
       <div className="w-full max-w-[380px] text-center">
         <div className="flex items-center justify-center gap-3 mb-2">
-          <div
-            className="relative flex-shrink-0 rounded-[9px]"
-            style={{
-              width: 38,
-              height: 38,
-              background: 'linear-gradient(145deg, var(--brand), var(--brand-2))',
-              boxShadow: '0 0 0 1px var(--brand-line), 0 6px 18px var(--brand-soft)',
-            }}
-          >
-            <span className="absolute inset-x-[7px] top-[7px] h-1 rounded-sm" style={{ background: 'var(--bg)', opacity: 0.6, boxShadow: '0 6px 0 var(--bg)' }} />
-            <span className="absolute right-1.5 bottom-1.5 w-[5px] h-[5px] rounded-full" style={{ background: 'var(--bg)', opacity: 0.6 }} />
-          </div>
+          <LogoMark size={38} className="flex-shrink-0" style={{ boxShadow: '0 6px 18px var(--brand-soft)', borderRadius: 11 }} />
           <div className="text-[1.7rem] font-extrabold tracking-tight">
             Re<span className="text-brand">claim</span>
           </div>

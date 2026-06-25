@@ -1,8 +1,8 @@
 # Docker deployment
 
-Reclaim runs as a single container: Go API + embedded web UI + ffmpeg/ffprobe. Point it at your movie and TV libraries, keep the database on persistent storage, and open the web UI to scan and queue encodes.
+Reclaim runs as one container: Go API + web UI + ffmpeg/ffprobe. Mount the same movie and TV folders your media server uses, plus persistent storage for SQLite.
 
-**Full deployment reference** — use this page for Unraid, Synology, TrueNAS, or any Docker host.
+It reads the filesystem directly. No Sonarr, Radarr, Plex, Jellyfin, or Emby API setup is required.
 
 ---
 
@@ -18,7 +18,7 @@ Reclaim runs as a single container: Go API + embedded web UI + ffmpeg/ffprobe. P
 
 ### Required volumes
 
-All three mounts are required. Media paths **must be read-write** — Reclaim replaces files in-place after a successful encode.
+All three mounts are required. Media paths **must be read-write**.
 
 | Container path | Purpose | Example host path (Unraid) |
 |---|---|---|
@@ -26,7 +26,7 @@ All three mounts are required. Media paths **must be read-write** — Reclaim re
 | `/tv` | TV library root | `/mnt/user/media/tv` |
 | `/data` | SQLite database | `/mnt/user/appdata/reclaim` |
 
-On Unraid, map `/data` to an `appdata` folder (not `system`). The DB file is `reclaim.db` inside that folder; WAL sidecar files (`reclaim.db-wal`, `reclaim.db-shm`) are normal.
+On Unraid, map `/data` to `appdata`. The repo Compose file uses a named volume for quick trials; NAS users may prefer a host path like `/mnt/user/appdata/reclaim:/data`.
 
 ### Required environment variables
 
@@ -61,8 +61,10 @@ On Unraid, map `/data` to an `appdata` folder (not `system`). The DB file is `re
 1. Start the container (see options below).
 2. Open `http://<nas-ip>:8080`.
 3. Create a username and password on the setup page.
-4. Reclaim scans your libraries on startup. Browse **Candidates**, select files, pick a profile, and queue encodes.
-5. Encodes run only inside `ENCODE_WINDOW_START`–`ENCODE_WINDOW_END` (local time per `TZ`). A job already running when the window closes is allowed to finish.
+4. Let the startup scan finish, then queue files from **Candidates**.
+5. Encodes run only inside the configured window unless you use **Force** on a queued job.
+
+For HTTPS reverse proxies, forward `X-Forwarded-Proto: https`.
 
 ---
 
@@ -132,7 +134,7 @@ PROBE_CONCURRENCY=4
 
 ### Building on Unraid
 
-If no release image is available yet, clone the repo on any machine with Docker, run `docker compose build`, then load/save the image, or build directly on Unraid if the Docker folder is on a share with the source.
+If no release image is available, build on any Docker host and import the image into Unraid.
 
 ---
 
@@ -164,7 +166,7 @@ docker run -d \
   ghcr.io/reecerose/reclaim:latest
 ```
 
-Synology **Container Manager**, TrueNAS **Apps**, and Proxmox LXC-with-Docker follow the same mapping: one published port, three volumes, same env vars.
+Synology, TrueNAS, and Proxmox follow the same pattern: one port, three volumes, same env vars.
 
 ---
 
@@ -187,7 +189,7 @@ Credentials and job history are in `reclaim.db`; do not delete the data volume u
 
 ### Network mounts (NFS / SMB)
 
-`fsnotify` does not work reliably over NFS or SMB. Reclaim logs a warning and relies on `SCAN_INTERVAL` to pick up new files. This is expected — you will not get instant watcher-triggered probes on remote shares.
+`fsnotify` is unreliable over NFS/SMB, so remote shares rely on `SCAN_INTERVAL` rescans.
 
 ### Large libraries (inotify limit)
 
@@ -200,7 +202,7 @@ sudo sysctl -p
 
 ### Encode throughput
 
-CPU x265 is slow by design. A large library at the `medium` preset can take months of overnight windows. See the throughput table in [`README.md`](../README.md#throughput-expectations).
+CPU `libx265` only; no GPU/NVENC. Large libraries can take months of overnight windows.
 
 ### Lost password
 

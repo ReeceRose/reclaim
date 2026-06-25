@@ -3,18 +3,11 @@
 import { useState, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, type AppEvent } from '@/lib/api';
+import { relativeTime } from '@/lib/format';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 
 const WATERMARK_KEY = 'reclaim_last_seen_event_id';
-
-function relativeTime(unixSec: number): string {
-  const diff = Math.floor(Date.now() / 1000) - unixSec;
-  if (diff < 60) return 'just now';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
 
 const SEVERITY_DOT: Record<string, string> = {
   info: 'bg-[var(--green)]',

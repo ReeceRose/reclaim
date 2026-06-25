@@ -86,5 +86,8 @@ func (j *Jobs) insertJobWithStatus(ctx context.Context, mediaID int64, status st
 	if err != nil {
 		return err
 	}
-	return j.UpdateStatus(ctx, id, status)
+	_, err = j.w.ExecContext(ctx,
+		"UPDATE transcode_jobs SET status = ? WHERE id = ?", status, id,
+	)
+	return err
 }

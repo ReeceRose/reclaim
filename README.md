@@ -1,24 +1,41 @@
-# Reclaim
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="web/public/logo.svg">
+    <img alt="Reclaim" src="web/public/logo-light.svg" width="340">
+  </picture>
+</p>
 
-Self-hosted media codec audit and re-encode tool. Scans your Plex/NAS libraries via `ffprobe`, ranks files by predicted HEVC savings, and lets you manually queue re-encodes that run through `ffmpeg` in a configurable overnight window.
+Self-hosted codec audit and re-encode tool for homelabs. Point it at the same movie and TV folders Plex, Jellyfin, or Emby already use, rank files by predicted HEVC savings, and manually queue overnight `ffmpeg` jobs.
 
-Single self-contained binary: Go backend + embedded Next.js frontend. No external runtime dependencies.
+Single container: Go API + embedded web UI + ffmpeg/ffprobe. No database server, Redis, or sidecar services.
 
 ---
 
-## Docker deployment
+## What it is
 
-**See [`docs/DOCKER.md`](docs/DOCKER.md)** for the full guide: ports, volumes, environment variables, Unraid template fields, Compose, and `docker run`.
+Reclaim is for large libraries with mixed codecs where you want a safe, manual-first way to find the biggest space wins.
 
-Quick start with the included Compose file (edit media paths and `TZ` first):
+| Does | Does not |
+|---|---|
+| Scans mounted library folders directly | Integrate with Sonarr, Radarr, Plex, Jellyfin, or Emby APIs |
+| Ranks candidates by estimated savings | Auto-encode your whole library |
+| Replaces files in-place after verification | Use GPU/NVENC hardware encoding (CPU `libx265` only) |
+| Runs encodes in a configurable overnight window | Pause for active streams (time window only) |
+
+---
+
+## Quick start (Docker)
+
+Full deployment guide: [`docs/DOCKER.md`](docs/DOCKER.md).
 
 ```bash
+# Edit media paths and TZ in docker-compose.yml first
 docker compose up --build -d
 ```
 
-Open `http://<host>:8080` and complete first-run setup. Release images publish to `ghcr.io/reecerose/reclaim` on version tags — see [`docs/RELEASES.md`](docs/RELEASES.md).
+Open `http://<nas-ip>:8080`, create your login, and let the first scan run.
 
-Media mounts **must be read-write** — Reclaim replaces files in-place after encoding.
+Media mounts must be **read-write** because Reclaim replaces files in-place after verification. The included Compose file uses a named DB volume; NAS users may prefer a host `appdata` path as shown in [`docs/DOCKER.md`](docs/DOCKER.md).
 
 ### Building the image
 
@@ -29,6 +46,8 @@ docker build -t ghcr.io/reecerose/reclaim:latest .
 ```
 
 ### Standalone binary
+
+If you run outside Docker, you need `ffmpeg` and `ffprobe` on `PATH`:
 
 ```bash
 export MOVIES_PATH=/mnt/movies
@@ -55,41 +74,45 @@ export DB_PATH=/var/lib/reclaim/reclaim.db
 | `DISABLE_AUTH` | no | `false` | Bypass login entirely — **trusted LAN use only** |
 | `RESET_AUTH` | no | `false` | Clear stored credentials on boot, re-triggering first-run setup |
 
+See [`.env.example`](.env.example) for a copy-paste template.
+
 ---
 
 ## First-run setup
 
-On first boot, navigate to `http://<host>:8080`. You will be prompted to create a username and password. This is stored bcrypt-hashed in the database; the plaintext never leaves your browser.
-
-After setup, login is via a signed HTTP-only session cookie (same model as Sonarr/Radarr Forms auth). Credentials can be changed at any time from the Settings page without a restart.
+On first boot, open `http://<host>:8080` and create a username/password. The password is bcrypt-hashed in SQLite; login uses a signed HTTP-only cookie.
 
 ### Auth escape hatches
 
-- **`DISABLE_AUTH=true`** — skips the login gate entirely. Useful on a fully trusted LAN where you don't want the overhead. Don't expose port 8080 to the internet with this set.
-- **`RESET_AUTH=true`** — clears credentials on boot, sending you back to the first-run setup page. Use this if you've lost your password. Remove the variable after resetting.
+- **`DISABLE_AUTH=true`** — skips login; trusted LAN only.
+- **`RESET_AUTH=true`** — clears credentials on boot; remove after resetting.
+
+### Behind a reverse proxy
+
+For HTTPS reverse proxies, forward `X-Forwarded-Proto: https` so cookies get the `Secure` flag.
 
 ---
 
 ## How it works
 
-1. **Scan** — walks `MOVIES_PATH` and `TV_PATH` with `ffprobe`, recording codec, resolution, duration, bitrate, and a fingerprint (sha256 of size + first/last 64 KB) per file. Subsequent scans are diff-based: files with unchanged `(size, mtime)` are skipped. Renames are detected via fingerprint and recorded as moves, preserving job history.
+1. **Scan** — walks `MOVIES_PATH` and `TV_PATH`, probes video files with `ffprobe`, and records codec, resolution, bitrate, size, mtime, and fingerprint. Later scans skip unchanged files and detect renames.
 
-2. **Rank** — files are ranked by predicted HEVC savings (`size × (1 − expected_output_ratio[codec])`). The seed ratios are conservative rule-of-thumb constants per codec. After enough completed jobs accumulate for a given codec (≥ 10 by default), Reclaim replaces the seed ratio with the observed `mean(output_size / original_size)` from your own encodes, labelled "learned" in the UI.
+2. **Rank** — files are sorted by predicted HEVC savings. After enough completed jobs for a codec, estimates switch from seed values to your observed results.
 
-3. **Queue** — you browse the candidate list, multi-select files, pick an encode profile (CRF + preset), and confirm the resolved selection before anything is queued. No silent bulk operations.
+3. **Queue** — select files, pick a profile, and confirm before jobs are created.
 
-4. **Encode** — the worker picks up queued jobs inside the encode window only. It encodes to a `.reclaim-tmp` temp file, then:
+4. **Encode** — queued jobs run inside the encode window unless forced. Reclaim writes a `.reclaim-tmp` file, then:
    - Verifies the output (duration ±1 s, stream counts, resolution match)
    - On pass: atomically swaps original → `.reclaim-backup`, temp → original, deletes backup
    - On fail: marks the job failed, keeps the temp for inspection, leaves the original untouched
 
-5. **Crash recovery** — on boot, Reclaim sweeps for orphaned `.reclaim-tmp` (deleted) and `.reclaim-backup` files (restored if the original is missing). Jobs stuck in `running`/`verifying` are reconciled to `failed`.
+5. **Recover** — on boot, temp files are cleaned up, interrupted backups are restored, and stuck jobs are marked failed.
 
 ---
 
 ## Throughput expectations
 
-CPU x265 is slow by design — it trades CPU time for the best compression. Realistic throughput on modern hardware:
+CPU x265 is slow by design. Rough expectations:
 
 | Preset | Typical speed | 1-hour HD file |
 |---|---|---|
@@ -97,7 +120,7 @@ CPU x265 is slow by design — it trades CPU time for the best compression. Real
 | `fast` | ~2–3× realtime | 20–30 min |
 | `ultrafast` | ~8–10× realtime | 6–8 min |
 
-**A 20 000-file library at `medium` preset will take months of overnight encode windows.** That is expected and by design — this is a background task that runs while you sleep, not a batch job. The window gate (`ENCODE_WINDOW_START`/`END`) exists precisely so it never competes with daytime playback.
+**A 20 000-file library at `medium` can take months of overnight windows.** Reclaim is meant to chip away safely, not batch-convert everything at once.
 
 A running job is never interrupted when the window closes — it finishes and no new job is pulled.
 
@@ -107,11 +130,11 @@ A running job is never interrupted when the window closes — it finishes and no
 
 ### ffmpeg/ffprobe
 
-The Docker image installs ffmpeg from Alpine 3.21 (pinned package version in the `Dockerfile`; includes `ffprobe`). Rebuild the image to bump ffmpeg deliberately.
+The Docker image includes pinned Alpine ffmpeg/ffprobe. Rebuild to bump ffmpeg deliberately.
 
 ### Network mounts (NFS/SMB)
 
-`fsnotify` does not work reliably over NFS or SMB — kernel inotify events are not propagated from the remote side. Reclaim logs a warning at startup when it detects a network mount. The scheduled `SCAN_INTERVAL` rescan will still catch new files; you just won't get the ~30 s watcher-triggered probe.
+`fsnotify` is unreliable over NFS/SMB. Reclaim falls back to scheduled `SCAN_INTERVAL` rescans for remote shares.
 
 On Linux, large libraries (20 000+ directories) can hit the default inotify watch limit (`/proc/sys/fs/inotify/max_user_watches`). Increase it if the startup log reports watch failures:
 
@@ -122,7 +145,7 @@ sudo sysctl -p
 
 ### SQLite WAL files
 
-The database runs in WAL mode. Two auxiliary files (`reclaim.db-wal`, `reclaim.db-shm`) will appear next to the database file on the volume. This is normal. Do not delete them while Reclaim is running. They are safe to delete when Reclaim is stopped (they will be recreated on next boot).
+SQLite WAL sidecars (`reclaim.db-wal`, `reclaim.db-shm`) next to the DB are normal. Do not delete them while Reclaim is running.
 
 ### In-place replace safety
 
@@ -134,6 +157,14 @@ tmp      → original                  (rename, atomic)
 delete original.reclaim-backup
 ```
 
-Both renames are within the same directory, so they are atomic on any single filesystem. A crash between steps is recovered on next boot.
+Both renames happen in the same directory and are recovered on next boot if interrupted. Avoid filesystems that do not support atomic rename.
 
-**Do not store media on a filesystem that does not support atomic rename** (some network shares under certain configurations). If in doubt, test with a single file before queuing your library.
+---
+
+## Further reading
+
+| Doc | Audience |
+|---|---|
+| [`docs/DOCKER.md`](docs/DOCKER.md) | Homelab deployment (Unraid, Synology, Compose, `docker run`) |
+| [`docs/RELEASES.md`](docs/RELEASES.md) | Pulling versioned images from GHCR |
+| [`docs/API.md`](docs/API.md) | REST + WebSocket reference for scripting and integrations |

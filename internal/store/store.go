@@ -95,13 +95,6 @@ func (s *Store) Close() error {
 	return errors.Join(s.w.Close(), s.r.Close())
 }
 
-// Tx opens a write transaction. Callers must defer tx.Rollback() and call
-// tx.Commit() on success. Used to bundle a job state change + event insert
-// atomically without exposing the raw write pool.
-func (s *Store) Tx(ctx context.Context) (*sql.Tx, error) {
-	return s.w.BeginTx(ctx, nil)
-}
-
 // Version returns the highest applied migration version.
 func (s *Store) Version() (int64, error) {
 	return migrationVersion(s.r)

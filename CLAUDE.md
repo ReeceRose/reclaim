@@ -134,11 +134,11 @@ The frontend uses the **Next.js App Router** (`web/app/`). **Important:** `web/A
 
 ### WebSocket events
 
-The hub broadcasts: `job_started`, `job_progress` (with `percent`), `job_completed`, `job_failed`, `job_cancelled`. The scanner broadcasts `scan_progress` events during active scans.
+The hub broadcasts: `job_started`, `job_progress` (with `percent`), `job_completed`, `job_failed`, `job_cancelled`, `jobs_queued`, `event_created`. The scanner broadcasts `scan_started`, `scan_completed`, and `scan_failed` during scans.
 
 ### Candidate pagination & filtering
 
-`GET /api/candidates` supports 8 sort options via `?sort=`: `savings_desc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`. Filters: `library_type` (movie|tv), `video_codec`, `resolution_band` (sd|hd|uhd), `search` (path substring).
+`GET /api/candidates` supports 8 sort options via `?sort=`: `savings_desc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`. Filters: `library_type` (`movies`|`tv`), `video_codec`, `resolution_band` (sd|hd|uhd), `search` (path substring).
 
 Pagination: the default `savings_desc` sort uses keyset cursors (`after_savings` + `after_id`) for gap-free infinite scroll over large libraries. All other sorts fall back to `offset` pagination.
 

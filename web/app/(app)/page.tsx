@@ -98,7 +98,13 @@ function DashboardContent() {
   const maxCodecFiles = Math.max(...stats.by_codec.map((c) => c.file_count), 1);
   const maxResFiles = Math.max(...stats.by_resolution.map((r) => r.file_count), 1);
 
-  const { data: isScanning } = useQuery<boolean>({ queryKey: ['scanning'], initialData: false });
+  const { data: isScanning } = useQuery<boolean>({
+    queryKey: ['scanning'],
+    queryFn: () => false,
+    initialData: false,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
 
   const scanMutation = useMutation({
     mutationFn: api.scan,

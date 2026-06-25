@@ -41,10 +41,6 @@ func (m *Media) GetByPath(ctx context.Context, path string) (*MediaFile, error) 
 	return scanMedia(m.r.QueryRowContext(ctx, mediaQ+" WHERE path = ?", path))
 }
 
-func (m *Media) GetByFingerprint(ctx context.Context, fp string) (*MediaFile, error) {
-	return scanMedia(m.r.QueryRowContext(ctx, mediaQ+" WHERE fingerprint = ? AND status = 'active'", fp))
-}
-
 func (m *Media) Insert(ctx context.Context, f *MediaFile) (int64, error) {
 	tx, err := m.w.BeginTx(ctx, nil)
 	if err != nil {
@@ -124,13 +120,6 @@ func (m *Media) UpdateProbe(ctx context.Context, f *MediaFile) error {
 	return tx.Commit()
 }
 
-func (m *Media) UpdatePath(ctx context.Context, id int64, newPath string) error {
-	_, err := m.w.ExecContext(ctx,
-		"UPDATE media_files SET path = ?, status = 'active' WHERE id = ?", newPath, id,
-	)
-	return err
-}
-
 func (m *Media) MarkMissing(ctx context.Context, id int64) error {
 	tx, err := m.w.BeginTx(ctx, nil)
 	if err != nil {
@@ -156,27 +145,6 @@ func (m *Media) MarkMissing(ctx context.Context, id int64) error {
 		return err
 	}
 	return tx.Commit()
-}
-
-// ActivePaths returns a path→id map of all active media files. Used by the
-// scanner to diff the filesystem against known state.
-func (m *Media) ActivePaths(ctx context.Context) (map[string]int64, error) {
-	rows, err := m.r.QueryContext(ctx, "SELECT id, path FROM media_files WHERE status = 'active'")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make(map[string]int64)
-	for rows.Next() {
-		var id int64
-		var path string
-		if err := rows.Scan(&id, &path); err != nil {
-			return nil, err
-		}
-		out[path] = id
-	}
-	return out, rows.Err()
 }
 
 // FileSummary is the minimal record the scanner loads at the start of each diff

@@ -371,7 +371,7 @@ func TestDryRunProjectsSavingsWithoutQueueing(t *testing.T) {
 	}
 
 	// No jobs were created.
-	jobs, err := st.Jobs.ListAll(ctx)
+	jobs, err := st.Jobs.ListAllWithPath(ctx)
 	if err != nil {
 		t.Fatalf("list jobs: %v", err)
 	}

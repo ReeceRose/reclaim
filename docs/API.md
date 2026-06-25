@@ -1,7 +1,7 @@
 # Reclaim — HTTP API
 
-Reference for the REST + WebSocket surface introduced in **P5**. All routes are
-served by the Go backend on port `8080` (mapped to `8484` in docker-compose).
+REST + WebSocket reference for the Go backend. The server listens on port `8080`
+(same inside and outside the container in the default `docker-compose.yml`).
 
 - **Base URL (local dev):** `http://localhost:8080`
 - **Content type:** request and response bodies are JSON unless noted.
@@ -105,7 +105,9 @@ Precomputed library overview (O(buckets), not O(files)).
   "total_bytes": 9876543210,
   "total_recoverable_bytes": 3210000000,
   "by_codec": [
-    { "codec": "h264", "file_count": 900, "total_bytes": 8000000000, "predicted_savings_bytes": 3000000000 }
+    { "codec": "h264", "file_count": 900, "total_bytes": 8000000000,
+      "predicted_savings_bytes": 3000000000, "ratio_source": "learned",
+      "learned_sample_count": 42 }
   ],
   "by_resolution": [
     { "band": "hd", "file_count": 800, "total_bytes": 7000000000, "predicted_savings_bytes": 2500000000 }
@@ -122,9 +124,10 @@ One page of ranked re-encode candidates. Excludes files that are already HEVC,
 | Param | Notes |
 |---|---|
 | `sort` | `savings_desc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type` |
-| `library_type` | filter, e.g. `movie` / `tv` |
+| `library_type` | filter: `movies` or `tv` |
 | `video_codec` | filter, exact source codec, e.g. `h264` |
 | `resolution_band` | filter, `sd` \| `hd` \| `uhd` |
+| `search` | path substring filter |
 | `limit` | page size (default 50, max 200) |
 | `offset` | for non-default sorts only |
 | `after_savings`, `after_id` | **keyset cursor** for the default `savings_desc` sort; pass both, taken from the previous page's `next_cursor` |
@@ -146,6 +149,25 @@ width, height, duration_seconds, bitrate_kbps, audio_codec, audio_channels,
 container_format, is_already_hevc, predicted_savings_bytes, last_probed_at,
 probe_error, status`. Nullable columns serialize as `null`.
 
+### `GET /api/candidates/grouped`
+Full candidate set grouped for the TV **By series** view: series → season → episode,
+with movies returned flat. Not paginated — aggregation runs server-side over all
+matching candidates.
+
+**Query params:** same filters as `/api/candidates` (`library_type`, `video_codec`,
+`resolution_band`, `search`).
+
+```json
+{
+  "series": [
+    { "title": "Breaking Bad", "library_type": "tv", "candidate_count": 12,
+      "season_count": 2, "total_bytes": 50000000000, "predicted_savings_bytes": 15000000000,
+      "seasons": [ { "season": 1, "candidate_count": 6, "episodes": [ { "id": 5, "path": "...", "season": 1, "episode": 1, "...": "..." } ] } ] }
+  ],
+  "movies": [ { "id": 99, "path": "/movies/Inception (2010)/Inception.mkv", "...": "..." } ]
+}
+```
+
 ### `GET /api/files/:id`
 Single media file by id.
 - `200` → file object
@@ -156,7 +178,7 @@ Projects total savings for a set or filter. **Queues nothing.** Uses the same
 candidate exclusions as `/api/candidates`.
 
 **Query params:** `ids` (comma-separated ids), and/or `library_type`, `video_codec`,
-`resolution_band`. With none, spans the whole candidate list.
+`resolution_band`, `search`. With none, spans the whole candidate list.
 
 ```json
 { "file_count": 2, "total_bytes": 2000, "predicted_savings_bytes": 800 }
@@ -206,15 +228,15 @@ Same body as create.
 ## Jobs
 
 Job lifecycle: `queued → running → verifying → completed | failed | cancelled`.
-Execution (run/verify/swap) lands in P6/P7 — these routes manage queueing and state.
 
 A job object:
 ```
 id, media_file_id, profile_id, status, queued_at, started_at, completed_at,
 original_size_bytes, output_size_bytes, progress_percent, output_path,
-error_message, verification_result, queue_position
+error_message, verification_result, source_path, queue_position, forced
 ```
-`queue_position` is 1-based for `queued` jobs, `0` otherwise.
+`queue_position` is 1-based for `queued` jobs, `0` otherwise. `forced` is `true`
+when the job was marked to bypass the encode window.
 
 ### `POST /api/jobs`
 Enqueues one job per eligible file and **echoes the resolved selection** so the
@@ -246,10 +268,38 @@ Combined queue + history, newest first.
 ```
 
 ### `POST /api/jobs/:id/cancel`
-Cancels a `queued`/`running`/`verifying` job (flips state; the worker handles the
-process kill + temp cleanup in P6/P7).
+Cancels a `queued`/`running`/`verifying` job. The worker kills the ffmpeg process
+and cleans up temp files for running jobs.
 - `200` → `{ "job_id": 10, "status": "cancelled" }`
 - `404` → not found · `409` → not cancellable in current state
+
+### `POST /api/jobs/:id/force`
+Marks a `queued` job as forced so the worker runs it immediately, bypassing the
+encode window.
+- `200` → `{ "job_id": 10, "forced": true }`
+- `404` → not found · `409` → job is not in the `queued` state
+
+---
+
+## Events
+
+Persistent audit log (also pushed live over WebSocket as `event_created`).
+
+### `GET /api/events`
+Newest first. Keyset-paginated via `after_id`.
+
+**Query params:** `limit` (default 50, max 200), `after_id`, `severity` (`info`/`warn`/`error`),
+`type` (e.g. `job_completed`, `job_failed`, `job_cancelled`, `scan_completed`, `orphan_restored`).
+
+```json
+{
+  "items": [
+    { "id": 1, "type": "job_completed", "severity": "info", "message": "Encode completed",
+      "created_at": 1710000000, "metadata": { "job_id": 10 } }
+  ],
+  "next_cursor": 1
+}
+```
 
 ---
 
@@ -298,9 +348,12 @@ Every message is a typed envelope:
 | `scan_completed` | `{ "scan_run_id", "files_scanned", "files_added", "files_updated", "files_moved", "files_removed", "errors" }` | a scan finishes |
 | `scan_failed` | `{ "error": "..." }` | a scan errors |
 | `jobs_queued` | `{ "count", "profile_id" }` | jobs are enqueued |
+| `job_started` | `{ "job_id", "media_file_id" }` | worker begins an encode |
+| `job_progress` | `{ "job_id", "percent" }` | ffmpeg progress (throttled ~1/s to DB) |
+| `job_completed` | `{ "job_id", "output_size_bytes", ... }` | encode + verify + swap succeeded |
+| `job_failed` | `{ "job_id", "error" }` | encode or verification failed |
 | `job_cancelled` | `{ "job_id" }` | a job is cancelled |
-
-> Live per-encode progress ticks (`job_progress`) arrive with the P6 worker.
+| `event_created` | event object (same shape as `/api/events` items) | audit log entry written |
 
 The server sends WebSocket pings every ~54s; clients should respond with pongs
 (browsers do this automatically). Slow clients that fill their send buffer are

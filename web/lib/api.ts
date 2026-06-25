@@ -267,13 +267,11 @@ export const api = {
     request<CandidatesPage>("GET", `/api/candidates${buildQuery(filters)}`),
   groupedCandidates: (filters: CandidateFilters) =>
     request<GroupedCandidates>("GET", `/api/candidates/grouped${buildQuery(filters)}`),
-  file: (id: number) => request<MediaFile>("GET", `/api/files/${id}`),
   dryRun: (params: { ids?: string } & CandidateFilters) =>
     request<DryRunResult>("GET", `/api/dry-run${buildQuery(params)}`),
 
   // Scanning
   scan: () => request<{ started: boolean; kind: string }>("POST", "/api/scan"),
-  fullScan: () => request<{ started: boolean; kind: string }>("POST", "/api/scan/full"),
 
   // Profiles
   profiles: () => request<{ items: Profile[] }>("GET", "/api/profiles"),

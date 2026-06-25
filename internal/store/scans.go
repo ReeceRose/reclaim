@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"errors"
 )
 
 type ScanRun struct {
@@ -46,26 +45,3 @@ func (s *Scans) Complete(ctx context.Context, run *ScanRun) error {
 	return err
 }
 
-func (s *Scans) GetByID(ctx context.Context, id int64) (*ScanRun, error) {
-	return scanRun(s.r.QueryRowContext(ctx, `
-		SELECT id, trigger, started_at, completed_at, files_scanned, files_added,
-			files_updated, files_moved, files_removed, errors
-		FROM scan_runs WHERE id = ?`, id,
-	))
-}
-
-func scanRun(s rowScanner) (*ScanRun, error) {
-	var r ScanRun
-	err := s.Scan(
-		&r.ID, &r.Trigger, &r.StartedAt, &r.CompletedAt,
-		&r.FilesScanned, &r.FilesAdded, &r.FilesUpdated,
-		&r.FilesMoved, &r.FilesRemoved, &r.Errors,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &r, nil
-}

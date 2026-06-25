@@ -86,9 +86,6 @@ func WithEncodeFunc(fn EncodeFunc) Option     { return func(w *Worker) { w.encod
 func WithInspectFunc(fn InspectFunc) Option   { return func(w *Worker) { w.inspect = fn } }
 func WithClock(fn func() time.Time) Option    { return func(w *Worker) { w.clock = fn } }
 func WithPollInterval(d time.Duration) Option { return func(w *Worker) { w.pollInterval = d } }
-func WithOrphanInterval(d time.Duration) Option {
-	return func(w *Worker) { w.orphanInterval = d }
-}
 func WithProgressDBPeriod(d time.Duration) Option {
 	return func(w *Worker) { w.progressDBPeriod = d }
 }

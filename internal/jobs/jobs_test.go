@@ -35,30 +35,3 @@ func TestCanTransition(t *testing.T) {
 		}
 	}
 }
-
-func TestIsTerminal(t *testing.T) {
-	terminal := []Status{StatusCompleted, StatusFailed, StatusCancelled}
-	for _, s := range terminal {
-		if !IsTerminal(s) {
-			t.Errorf("expected %s terminal", s)
-		}
-	}
-	for _, s := range []Status{StatusQueued, StatusRunning, StatusVerifying} {
-		if IsTerminal(s) {
-			t.Errorf("expected %s non-terminal", s)
-		}
-	}
-}
-
-func TestIsActive(t *testing.T) {
-	for _, s := range []Status{StatusQueued, StatusRunning, StatusVerifying} {
-		if !IsActive(s) {
-			t.Errorf("expected %s active", s)
-		}
-	}
-	for _, s := range []Status{StatusCompleted, StatusFailed, StatusCancelled} {
-		if IsActive(s) {
-			t.Errorf("expected %s inactive", s)
-		}
-	}
-}

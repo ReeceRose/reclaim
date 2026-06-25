@@ -15,26 +15,9 @@ export function formatBytes(bytes: number, digits = 1): string {
   return `${bytes} B`;
 }
 
-/** formatCount renders large integers as 1.2k / 3.4M. */
-export function formatCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return `${n}`;
-}
-
 /** formatInt adds thousands separators. */
 export function formatInt(n: number): string {
   return n.toLocaleString("en-US");
-}
-
-/** formatDurationSeconds renders seconds as H:MM:SS or M:SS. */
-export function formatDurationSeconds(seconds: number | null | undefined): string {
-  if (seconds == null || seconds <= 0) return "—";
-  const s = Math.floor(seconds % 60);
-  const m = Math.floor((seconds / 60) % 60);
-  const h = Math.floor(seconds / 3600);
-  const pad = (x: number) => String(x).padStart(2, "0");
-  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
 /** relativeTime renders a unix-seconds timestamp as "18 min ago". */

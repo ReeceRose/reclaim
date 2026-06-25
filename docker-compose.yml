@@ -9,6 +9,8 @@ services:
       # Edit host paths to match your NAS layout (must be read-write)
       - /mnt/movies:/movies:rw
       - /mnt/tv:/tv:rw
+      # On a NAS, prefer a host appdata path instead of a named volume, e.g.:
+      # - /mnt/user/appdata/reclaim:/data:rw
       - reclaim-data:/data
     environment:
       MOVIES_PATH: /movies

@@ -9,8 +9,8 @@ type RatioSource string
 const (
 	// RatioSeed is a conservative rule-of-thumb constant shipped with the build.
 	RatioSeed RatioSource = "seed"
-	// RatioLearned is derived from this instance's own completed jobs.
-	// Not yet produced — reserved so the API contract is stable.
+	// RatioLearned is derived from this instance's own completed jobs. The
+	// stats handler surfaces it for codecs with enough learned samples.
 	RatioLearned RatioSource = "learned"
 )
 
@@ -56,18 +56,6 @@ func RatioFor(videoCodec *string) (ratio float64, source RatioSource) {
 		return r, RatioSeed
 	}
 	return defaultHEVCRatio, RatioSeed
-}
-
-// RatioForWithLearned is like RatioFor but checks the learned map first. If
-// the codec has a learned ratio (from completed jobs on this instance), that
-// is returned with RatioLearned; otherwise falls back to RatioFor.
-func RatioForWithLearned(videoCodec *string, learned map[string]float64) (float64, RatioSource) {
-	if videoCodec != nil && learned != nil {
-		if r, ok := learned[strings.ToLower(*videoCodec)]; ok {
-			return r, RatioLearned
-		}
-	}
-	return RatioFor(videoCodec)
 }
 
 // PredictedSavingsBytes estimates how many bytes a re-encode to HEVC would

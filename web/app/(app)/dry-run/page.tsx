@@ -24,7 +24,7 @@ const LIBRARY_OPTIONS = [
 
 function DryRunSkeleton() {
   return (
-    <div className="px-7 py-[26px] w-full pb-14">
+    <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
       <div className="border border-line rounded-[var(--radius)] p-5 mb-[18px]" style={{ background: 'var(--surface)' }}>
         <Skeleton className="h-3 w-24 mb-4" />
         <div className="flex items-center gap-[10px] flex-wrap">
@@ -76,7 +76,7 @@ function DryRunContent() {
   const selectedProfile = profiles.find((p) => p.id === profileId) ?? profiles.find((p) => p.is_default) ?? profiles[0];
 
   return (
-      <div className="px-7 py-[26px] w-full pb-14">
+      <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
         <div className="border border-line rounded-[var(--radius)] p-5 mb-[18px]" style={{ background: 'var(--surface)' }}>
           <div className="text-xs uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Filter a set</div>
           <div className="flex items-center gap-[10px] flex-wrap">
@@ -134,7 +134,7 @@ function DryRunContent() {
         {result && result.file_count > 0 && (
           <>
             <div
-              className="rounded-[18px] border border-line px-7 py-[26px] relative overflow-hidden"
+              className="rounded-[18px] border border-line px-5 py-[22px] relative overflow-hidden sm:px-7 sm:py-[26px]"
               style={{
                 background:
                   'radial-gradient(120% 150% at 100% 0%, var(--brand-soft), transparent 55%), var(--surface)',
@@ -147,7 +147,7 @@ function DryRunContent() {
               <div className="flex items-end justify-between gap-6 flex-wrap">
                 <div>
                   <div
-                    className="text-[3.8rem] font-extrabold leading-none tracking-tight text-brand"
+                    className="text-[2.8rem] sm:text-[3.8rem] font-extrabold leading-none tracking-tight text-brand"
                     style={{ textShadow: '0 4px 26px var(--brand-soft)' }}
                   >
                     {formatBytes(savings, 1).replace(' ', '')}
@@ -229,11 +229,11 @@ export default function Page() {
   return (
     <div className="flex flex-col min-w-0">
       <div
-        className="flex items-center gap-4 px-7 py-[18px] border-b border-line"
+        className="flex items-center gap-4 px-4 py-[14px] border-b border-line sm:px-7 sm:py-[18px]"
         style={{ background: 'rgba(22,22,22,.82)', backdropFilter: 'blur(10px)' }}
       >
         <div>
-          <div className="text-[1.38rem] font-bold tracking-tight">Dry-run savings</div>
+          <div className="text-title font-bold tracking-tight">Dry-run savings</div>
           <div className="text-[0.82rem] text-muted-fg mt-px">Project a batch before committing. Queues nothing.</div>
         </div>
       </div>

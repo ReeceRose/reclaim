@@ -22,12 +22,20 @@ export function useWS() {
     let reconnectTimer: ReturnType<typeof setTimeout>;
     let alive = true;
     let delay = MIN_DELAY_MS;
+    let hasConnected = false;
 
     function connect() {
       ws = new WebSocket(url);
 
       ws.onopen = () => {
         delay = MIN_DELAY_MS;
+        if (hasConnected) {
+          qc.invalidateQueries({ queryKey: ['jobs'] });
+          qc.invalidateQueries({ queryKey: ['stats'] });
+          qc.invalidateQueries({ queryKey: ['candidates'] });
+          qc.invalidateQueries({ queryKey: ['events'] });
+        }
+        hasConnected = true;
       };
 
       ws.onmessage = (evt) => {

@@ -201,7 +201,7 @@ function ProfileDialog({
 
 function SettingsSkeleton() {
   return (
-    <div className="px-7 py-[26px] w-full pb-14">
+    <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
       <div className="grid grid-cols-2 gap-[18px] mb-[18px] max-sm:grid-cols-1">
         {[0, 1].map((i) => (
           <div key={i} className="border border-line rounded-[var(--radius)] p-5" style={{ background: 'var(--surface)' }}>
@@ -316,16 +316,16 @@ function SettingsContent() {
   return (
     <>
       <div
-        className="flex items-center gap-4 px-7 py-[18px] border-b border-line"
+        className="flex items-center gap-4 px-4 py-[14px] border-b border-line sm:px-7 sm:py-[18px]"
         style={{ background: 'rgba(22,22,22,.82)', backdropFilter: 'blur(10px)' }}
       >
         <div>
-          <div className="text-[1.38rem] font-bold tracking-tight">Settings</div>
+          <div className="text-title font-bold tracking-tight">Settings</div>
           <div className="text-[0.82rem] text-muted-fg mt-px">Changes apply live — no restart</div>
         </div>
       </div>
 
-      <div className="px-7 py-[26px] w-full pb-14">
+      <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
         <div className="grid grid-cols-2 gap-[18px] mb-[18px] max-sm:grid-cols-1">
           <div className="border border-line rounded-[var(--radius)] p-5" style={{ background: 'var(--surface)' }}>
             <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Encoding</div>
@@ -333,7 +333,7 @@ function SettingsContent() {
               <Label className="text-[0.8rem] font-semibold mb-1.5 block">
                 Encode window <span className="text-muted-dim font-normal">· when jobs may run</span>
               </Label>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 flex-wrap sm:gap-3">
                 <TimeSelect value={windowStart} onChange={setWindowStart} />
                 <span className="text-muted-fg">to</span>
                 <TimeSelect value={windowEnd} onChange={setWindowEnd} />
@@ -450,7 +450,7 @@ function SettingsContent() {
           {profiles.map((p) => (
             <div
               key={p.id}
-              className="flex items-center gap-3.5 border rounded-[12px] px-4 py-[14px] mb-2.5 last:mb-0"
+              className="flex flex-wrap items-center gap-x-3.5 gap-y-2 border rounded-[12px] px-4 py-[14px] mb-2.5 last:mb-0"
               style={{
                 borderColor: p.is_default ? 'var(--brand-line)' : 'var(--line)',
                 background: p.is_default ? 'var(--brand-soft)' : undefined,
@@ -463,42 +463,44 @@ function SettingsContent() {
                     <span className="ml-2 text-[0.66rem] font-bold uppercase tracking-wider text-brand">Default</span>
                   )}
                 </div>
-                <div className="text-[0.78rem] text-muted-fg font-mono mt-0.5">
+                <div className="text-[0.78rem] text-muted-fg font-mono mt-0.5 break-words">
                   libx265 · CRF {p.crf} · preset {p.preset}
                   {p.extra_args && ` · ${p.extra_args}`}
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setProfileDialog({ open: true, initial: p })}
-                className="rounded-[11px]"
-              >
-                Edit
-              </Button>
-              {!p.is_default && (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => defaultProfileMutation.mutate(p)}
-                    disabled={defaultProfileMutation.isPending}
-                    className="rounded-[11px]"
-                  >
-                    Set default
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      if (confirm(`Delete profile "${p.name}"?`)) deleteProfileMutation.mutate(p.id);
-                    }}
-                    className="rounded-[11px] text-red hover:bg-red-soft hover:text-red"
-                  >
-                    Delete
-                  </Button>
-                </>
-              )}
+              <div className="flex gap-1 basis-full justify-end sm:basis-auto">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setProfileDialog({ open: true, initial: p })}
+                  className="rounded-[11px]"
+                >
+                  Edit
+                </Button>
+                {!p.is_default && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => defaultProfileMutation.mutate(p)}
+                      disabled={defaultProfileMutation.isPending}
+                      className="rounded-[11px]"
+                    >
+                      Set default
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm(`Delete profile "${p.name}"?`)) deleteProfileMutation.mutate(p.id);
+                      }}
+                      className="rounded-[11px] text-red hover:bg-red-soft hover:text-red"
+                    >
+                      Delete
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -520,11 +522,11 @@ export default function Page() {
       <Suspense fallback={
         <>
           <div
-            className="flex items-center gap-4 px-7 py-[18px] border-b border-line"
+            className="flex items-center gap-4 px-4 py-[14px] border-b border-line sm:px-7 sm:py-[18px]"
             style={{ background: 'rgba(22,22,22,.82)', backdropFilter: 'blur(10px)' }}
           >
             <div>
-              <div className="text-[1.38rem] font-bold tracking-tight">Settings</div>
+              <div className="text-title font-bold tracking-tight">Settings</div>
               <Skeleton className="h-3 w-48 mt-1.5" />
             </div>
           </div>

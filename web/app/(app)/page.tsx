@@ -33,8 +33,8 @@ function codecClass(codec: string): string {
 
 function DashboardSkeleton() {
   return (
-    <div className="px-7 pt-7 pb-14 w-full">
-      <div className="rounded-[18px] border border-line px-7 py-7 mb-6" style={{ background: 'var(--surface)' }}>
+    <div className="px-4 pt-5 pb-14 w-full sm:px-7 sm:pt-7">
+      <div className="rounded-[18px] border border-line px-5 py-6 mb-6 sm:px-7 sm:py-7" style={{ background: 'var(--surface)' }}>
         <div className="flex items-center justify-between mb-6">
           <Skeleton className="h-3 w-40" />
           <Skeleton className="h-7 w-20 rounded-[10px]" />
@@ -117,7 +117,7 @@ function DashboardContent() {
 
   if (stats.total_files === 0) {
     return (
-      <div className="px-7 pt-7 pb-14 w-full flex flex-col items-center justify-center min-h-[50vh] gap-4 text-center">
+      <div className="px-4 pt-5 pb-14 w-full flex flex-col items-center justify-center min-h-[50vh] gap-4 text-center sm:px-7 sm:pt-7">
         <div
           className="w-14 h-14 rounded-[16px] border border-line grid place-items-center text-muted-dim"
           style={{ background: 'var(--surface-2)' }}
@@ -146,10 +146,10 @@ function DashboardContent() {
   }
 
   return (
-    <div className="px-7 pt-7 pb-14 w-full">
+    <div className="px-4 pt-5 pb-14 w-full sm:px-7 sm:pt-7">
       {/* Hero — replaces the generic page header */}
       <div
-        className="rounded-[18px] border border-line px-7 py-7 mb-6 relative overflow-hidden"
+        className="rounded-[18px] border border-line px-5 py-6 mb-6 relative overflow-hidden sm:px-7 sm:py-7"
         style={{ background: 'radial-gradient(120% 150% at 100% 0%, var(--brand-soft), transparent 55%), var(--surface)' }}
       >
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'repeating-linear-gradient(0deg, rgba(244,244,244,.022) 0 1px, transparent 1px 4px)' }} />

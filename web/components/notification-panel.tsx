@@ -69,7 +69,7 @@ function EventRow({ event, onDelete, deleting }: { event: AppEvent; onDelete: (i
               onClick={() => onDelete(event.id)}
               disabled={deleting}
               aria-label="Dismiss event"
-              className="rounded-[6px] p-1 text-muted-dim opacity-0 transition-opacity hover:bg-surface-2 hover:text-text group-hover:opacity-100 focus:opacity-100 disabled:opacity-40"
+              className="rounded-[6px] p-1 text-muted-dim opacity-0 max-sm:opacity-100 transition-opacity hover:bg-surface-2 hover:text-text group-hover:opacity-100 focus:opacity-100 disabled:opacity-40"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />

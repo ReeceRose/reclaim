@@ -118,6 +118,48 @@ const NAV_ITEMS = [
   },
 ] as const;
 
+function NotificationBell({
+  unreadCount,
+  onClick,
+}: {
+  unreadCount: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="relative w-7 h-7 flex items-center justify-center rounded-[8px] text-muted-fg hover:text-text hover:bg-surface-2 transition-colors flex-shrink-0"
+      aria-label="Events"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[15px] h-[15px]">
+        <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>
+      </svg>
+      {unreadCount > 0 && (
+        <span
+          className="absolute -top-1 -right-1 h-[15px] min-w-[15px] px-[3px] rounded-full text-[0.58rem] font-bold leading-none grid place-items-center tabular-nums"
+          style={{ background: 'var(--brand)', color: 'var(--on-brand)' }}
+        >
+          {unreadCount > 9 ? '9+' : unreadCount}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function BrandLink({ size = 30, className = '' }: { size?: number; className?: string }) {
+  return (
+    <Link
+      href="/"
+      className={`flex items-center gap-[11px] min-w-0 flex-1 rounded-[10px] transition-opacity hover:opacity-90 ${className}`}
+    >
+      <LogoMark size={size} className="flex-shrink-0" style={{ boxShadow: '0 6px 18px var(--brand-soft)', borderRadius: 9 }} />
+      <span className="font-extrabold tracking-tight text-[1.22rem] truncate">
+        Re<span className="text-brand">claim</span>
+      </span>
+    </Link>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // AppShell
 // ---------------------------------------------------------------------------
@@ -143,7 +185,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { data: jobsData } = useQuery({
     queryKey: ['jobs'],
     queryFn: () => api.jobs(),
-    refetchInterval: 5000,
   });
   const { data: eventsData } = useQuery({
     queryKey: ['events'],
@@ -205,38 +246,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       >
         {/* Brand */}
         <div className="flex items-center gap-[11px] px-5 py-5 border-b border-line-soft">
-          <LogoMark size={30} className="flex-shrink-0" style={{ boxShadow: '0 6px 18px var(--brand-soft)', borderRadius: 9 }} />
-          <span className="font-extrabold tracking-tight text-[1.22rem] flex-1">
-            Re<span className="text-brand">claim</span>
-          </span>
-          {/* Bell */}
-          <button
-            onClick={() => setNotifOpen(true)}
-            className="relative w-7 h-7 flex items-center justify-center rounded-[8px] text-muted-fg hover:text-text hover:bg-surface-2 transition-colors"
-            aria-label="Events"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[15px] h-[15px]">
-              <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>
-            </svg>
-            {unreadCount > 0 && (
-              <span
-                className="absolute -top-0.5 -right-0.5 w-[14px] h-[14px] rounded-full text-[0.58rem] font-bold grid place-items-center"
-                style={{ background: 'var(--brand)', color: 'var(--on-brand)' }}
-              >
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
-            )}
-          </button>
+          <BrandLink />
+          <NotificationBell unreadCount={unreadCount} onClick={() => setNotifOpen(true)} />
         </div>
 
-        {isScanning && (
-          <div className="flex items-center gap-2 px-5 py-[9px] text-[0.75rem] font-medium text-brand border-b border-brand-line" style={{ background: 'var(--brand-soft)' }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 flex-shrink-0 animate-spin" style={{ animationDuration: '1.1s' }}>
-              <path d="M21 12a9 9 0 11-6.219-8.56" strokeLinecap="round"/>
-            </svg>
-            Scanning library…
+        {/* Animate height (grid-rows 0fr↔1fr) instead of mounting/unmounting so
+            the nav below slides smoothly rather than jumping on quick scans. */}
+        <div
+          className="grid transition-[grid-template-rows] duration-200 ease-out"
+          style={{ gridTemplateRows: isScanning ? '1fr' : '0fr' }}
+          aria-hidden={!isScanning}
+        >
+          <div className="overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-[9px] text-[0.75rem] font-medium text-brand border-b border-brand-line" style={{ background: 'var(--brand-soft)' }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 flex-shrink-0 animate-spin" style={{ animationDuration: '1.1s' }}>
+                <path d="M21 12a9 9 0 11-6.219-8.56" strokeLinecap="round"/>
+              </svg>
+              Scanning library…
+            </div>
           </div>
-        )}
+        </div>
 
         {/* Nav */}
         <nav className="flex flex-col gap-[3px] px-3 py-[14px] flex-1">
@@ -305,6 +334,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </aside>
+
+      {/* Mobile header — bell lives in the sidebar on desktop */}
+      <header
+        className="hidden max-sm:flex sticky top-0 z-50 items-center gap-3 px-4 border-b border-line-soft"
+        style={{
+          background: 'var(--surface)',
+          paddingTop: 'calc(12px + env(safe-area-inset-top))',
+          paddingBottom: '12px',
+        }}
+      >
+        <BrandLink size={28} />
+        <NotificationBell unreadCount={unreadCount} onClick={() => setNotifOpen(true)} />
+      </header>
 
       {/* Main */}
       <main className="flex flex-col min-w-0 max-sm:pb-20">

@@ -48,7 +48,7 @@ function VerifyChecks({ json }: { json: string | null }) {
 
 function QueueSkeleton() {
   return (
-    <div className="px-7 py-[26px] w-full pb-14">
+    <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
       <div className="border border-line rounded-[var(--radius)] p-5 mb-[18px]" style={{ background: 'var(--surface)' }}>
         <Skeleton className="h-4 w-24 mb-3" />
         <Skeleton className="h-5 w-64 mb-1" />
@@ -81,7 +81,6 @@ function QueueContent() {
   const { data: jobsAll } = useSuspenseQuery({
     queryKey: ['jobs'],
     queryFn: () => api.jobs(),
-    refetchInterval: 3000,
   });
 
   const { data: progressMap = {} } = useQuery<Record<number, number>>({
@@ -123,17 +122,17 @@ function QueueContent() {
   return (
     <>
       <div
-        className="flex items-center gap-4 px-7 py-[18px] border-b border-line"
+        className="flex flex-col gap-2 px-4 py-[14px] border-b border-line sm:flex-row sm:items-center sm:gap-4 sm:px-7 sm:py-[18px]"
         style={{ background: 'rgba(22,22,22,.82)', backdropFilter: 'blur(10px)' }}
       >
-        <div>
-          <div className="text-[1.38rem] font-bold tracking-tight">Queue &amp; history</div>
+        <div className="min-w-0">
+          <div className="text-title font-bold tracking-tight">Queue &amp; history</div>
           <div className="text-[0.82rem] text-muted-fg mt-px">
             {running.length > 0 ? `${running.length} running · ` : ''}{queued.length} queued
             {` · window ${win.label}`}
           </div>
         </div>
-        <div className="ml-auto">
+        <div className="sm:ml-auto">
           <Badge variant="outline" className="gap-2 text-[0.82rem] font-semibold px-[13px] py-[7px] rounded-[10px] border-line bg-surface">
             <span className={`w-[7px] h-[7px] rounded-full flex-shrink-0 ${win.open ? 'bg-green' : 'bg-muted-dim'}`}
               style={win.open ? { boxShadow: '0 0 0 3px var(--green-soft)' } : undefined}
@@ -143,7 +142,7 @@ function QueueContent() {
         </div>
       </div>
 
-      <div className="px-7 py-[26px] w-full pb-14">
+      <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
         {runningJob && (
           <div
             className="border border-brand-line rounded-[var(--radius)] p-5 mb-[18px]"
@@ -179,7 +178,7 @@ function QueueContent() {
               Queued · {queued.length}
             </div>
             {queued.map((job) => (
-              <div key={job.id} className="flex items-center gap-3.5 px-4 py-[13px] border border-line rounded-[12px] bg-surface mb-2.5">
+              <div key={job.id} className="flex flex-wrap items-center gap-x-3 gap-y-2.5 px-4 py-[13px] border border-line rounded-[12px] bg-surface mb-2.5">
                 <div className="w-7 h-7 rounded-[9px] bg-surface-3 text-muted-fg grid place-items-center font-bold text-[0.82rem] flex-shrink-0">
                   {job.queue_position}
                 </div>
@@ -188,30 +187,32 @@ function QueueContent() {
                   <div className="text-[0.74rem] text-muted-dim font-mono mt-0.5 truncate">{formatBytes(job.original_size_bytes)}</div>
                 </div>
                 {job.forced
-                  ? <Badge className="text-[0.72rem] rounded-[20px] border-transparent text-brand bg-brand-soft">forced</Badge>
-                  : <Badge variant="secondary" className="text-[0.72rem] rounded-[20px] text-muted-fg">queued</Badge>
+                  ? <Badge className="text-[0.72rem] rounded-[20px] border-transparent text-brand bg-brand-soft flex-shrink-0">forced</Badge>
+                  : <Badge variant="secondary" className="text-[0.72rem] rounded-[20px] text-muted-fg flex-shrink-0">queued</Badge>
                 }
-                {!job.forced && (
+                <div className="flex gap-2 basis-full justify-end sm:basis-auto sm:ml-0">
+                  {!job.forced && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => forceMutation.mutate(job.id)}
+                      disabled={forceMutation.isPending}
+                      className="rounded-[11px] text-[0.78rem]"
+                      title="Run now, bypassing the encode window"
+                    >
+                      Run now
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => forceMutation.mutate(job.id)}
-                    disabled={forceMutation.isPending}
-                    className="rounded-[11px] text-[0.78rem]"
-                    title="Run now, bypassing the encode window"
+                    onClick={() => cancelMutation.mutate(job.id)}
+                    disabled={cancelMutation.isPending}
+                    className="rounded-[11px] text-red border-red/30 hover:bg-red-soft hover:text-red"
                   >
-                    Run now
+                    Cancel
                   </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => cancelMutation.mutate(job.id)}
-                  disabled={cancelMutation.isPending}
-                  className="rounded-[11px] text-red border-red/30 hover:bg-red-soft hover:text-red"
-                >
-                  Cancel
-                </Button>
+                </div>
               </div>
             ))}
           </>
@@ -299,11 +300,11 @@ export default function Page() {
       <Suspense fallback={
         <>
           <div
-            className="flex items-center gap-4 px-7 py-[18px] border-b border-line"
+            className="flex items-center gap-4 px-4 py-[14px] border-b border-line sm:px-7 sm:py-[18px]"
             style={{ background: 'rgba(22,22,22,.82)', backdropFilter: 'blur(10px)' }}
           >
             <div>
-              <div className="text-[1.38rem] font-bold tracking-tight">Queue &amp; history</div>
+              <div className="text-title font-bold tracking-tight">Queue &amp; history</div>
               <Skeleton className="h-3 w-40 mt-1.5" />
             </div>
           </div>

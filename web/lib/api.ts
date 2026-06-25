@@ -315,6 +315,17 @@ export const api = {
 /** wsURL builds the WebSocket URL for live progress, honoring the API base. */
 export function wsURL(): string {
   if (typeof window === "undefined") return "";
+  // In dev the app is served by the Next dev server (:3000), whose rewrite proxy
+  // does NOT forward WebSocket upgrades to the Go backend — the socket would just
+  // hang. NEXT_PUBLIC_WS_BASE (set in `make dev`) points the socket straight at
+  // the backend. As a fallback, the Next dev port also routes there directly so
+  // a bare `npm run dev` still gets live updates. Production leaves both unset
+  // and uses the same origin the Go binary serves from.
+  const wsBase = process.env.NEXT_PUBLIC_WS_BASE;
+  if (wsBase) return `${wsBase.replace(/\/+$/, "")}/api/ws`;
+  if (window.location.port === "3000") {
+    return `ws://${window.location.hostname}:8080/api/ws`;
+  }
   const base = BASE || window.location.origin;
   const u = new URL("/api/ws", base);
   u.protocol = u.protocol === "https:" ? "wss:" : "ws:";

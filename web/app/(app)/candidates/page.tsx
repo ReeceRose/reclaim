@@ -216,10 +216,10 @@ function FlatRow({
         <div className="font-semibold text-[0.88rem] truncate">{baseName(item.path)}</div>
         <div className="text-[0.74rem] text-muted-dim truncate font-mono">{dirName(item.path)}</div>
       </div>
-      <div className="w-[80px] flex-shrink-0"><CodecBadge codec={item.video_codec} /></div>
-      <div className="w-[60px] flex-shrink-0 text-[0.82rem] text-muted-fg">{resolutionLabel(item.width, item.height)}</div>
-      <div className="w-[90px] flex-shrink-0 text-right text-[0.82rem] text-muted-fg pr-2 font-mono">{formatBytes(item.size_bytes)}</div>
-      <div className="w-[110px] flex-shrink-0 text-right text-brand font-semibold text-[0.88rem] pr-4 font-mono">{formatBytes(item.predicted_savings_bytes)}</div>
+      <div className="w-[64px] sm:w-[80px] flex-shrink-0"><CodecBadge codec={item.video_codec} /></div>
+      <div className="hidden sm:block w-[60px] flex-shrink-0 text-[0.82rem] text-muted-fg">{resolutionLabel(item.width, item.height)}</div>
+      <div className="hidden sm:block w-[90px] flex-shrink-0 text-right text-[0.82rem] text-muted-fg pr-2 font-mono">{formatBytes(item.size_bytes)}</div>
+      <div className="w-[84px] sm:w-[110px] flex-shrink-0 text-right text-brand font-semibold text-[0.84rem] sm:text-[0.88rem] pr-3 sm:pr-4 font-mono">{formatBytes(item.predicted_savings_bytes)}</div>
     </div>
   );
 }
@@ -639,13 +639,13 @@ export default function Page() {
   const totalCount = data?.pages[0]?.total_count;
 
   return (
-    <div className="flex flex-col min-w-0 h-screen overflow-hidden">
+    <div className="flex flex-col min-w-0 h-screen overflow-hidden max-sm:h-[calc(100dvh_-_4.25rem_-_env(safe-area-inset-bottom))]">
       <div
-        className="flex items-center gap-4 px-7 py-[18px] border-b border-line flex-shrink-0"
+        className="flex flex-col gap-2 px-4 py-[14px] border-b border-line flex-shrink-0 sm:flex-row sm:items-center sm:gap-4 sm:px-7 sm:py-[18px]"
         style={{ background: 'rgba(22,22,22,.82)', backdropFilter: 'blur(10px)' }}
       >
-        <div>
-          <div className="text-[1.38rem] font-bold tracking-tight">Candidate browser</div>
+        <div className="min-w-0">
+          <div className="text-title font-bold tracking-tight">Candidate browser</div>
           <div className="text-[0.82rem] text-muted-fg mt-px">
             {data === undefined
               ? <Skeleton className="h-3 w-52 mt-1" />
@@ -657,7 +657,7 @@ export default function Page() {
           </div>
         </div>
         {profiles[0] && (
-          <Badge variant="outline" className="ml-auto text-[0.82rem] font-semibold px-[13px] py-[7px] rounded-[10px] border-line bg-surface gap-1.5">
+          <Badge variant="outline" className="sm:ml-auto self-start text-[0.82rem] font-semibold px-[13px] py-[7px] rounded-[10px] border-line bg-surface gap-1.5">
             <span className="font-mono text-[0.8rem]">Profile</span>
             {profiles.find((p) => p.is_default)?.name ?? profiles[0].name}
           </Badge>
@@ -666,7 +666,7 @@ export default function Page() {
 
       {/* Filter strip: search on its own line, controls on second line */}
       <div className="border-b border-line-soft flex-shrink-0" style={{ background: 'var(--bg)' }}>
-        <div className="flex items-center gap-2 px-7 py-3">
+        <div className="flex items-center gap-2 px-4 py-3 sm:px-7">
           <div className="flex-1 relative">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[14px] h-[14px] absolute left-[11px] top-1/2 -translate-y-1/2 text-muted-dim pointer-events-none">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -697,7 +697,7 @@ export default function Page() {
             </Button>
           </div>
         </div>
-        <div className="flex items-center gap-2 px-7 pb-3 flex-wrap">
+        <div className="flex items-center gap-2 px-4 pb-3 flex-wrap sm:px-7">
           <Select value={sort} onValueChange={(v) => startTransition(() => setSort(v as SortKey))}>
             <SelectTrigger className="rounded-[11px] bg-surface text-sm h-auto py-[7px] gap-1 min-w-[185px]">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[13px] h-[13px] text-muted-dim flex-shrink-0">
@@ -717,7 +717,7 @@ export default function Page() {
         </div>
       </div>
 
-      <div className={cn('flex-1 overflow-hidden relative px-7 pt-3 pb-3 transition-opacity duration-150', isPending && 'opacity-50')}>
+      <div className={cn('flex-1 overflow-hidden relative px-3 pt-3 pb-3 transition-opacity duration-150 sm:px-7', isPending && 'opacity-50')}>
         {view === 'flat' ? (
           <div className="bg-surface border border-line rounded-[var(--radius)] overflow-hidden flex flex-col h-full">
             <div className="flex items-center text-[0.7rem] uppercase tracking-wider text-muted-fg font-bold bg-surface-2 border-b border-line flex-shrink-0">
@@ -729,10 +729,10 @@ export default function Page() {
                 />
               </div>
               <div className="flex-1 py-3 pr-3">File</div>
-              <div className="w-[80px] py-3">Codec</div>
-              <div className="w-[60px] py-3">Res</div>
-              <div className="w-[90px] py-3 text-right pr-2">Size</div>
-              <div className="w-[110px] py-3 text-right pr-4 text-brand">Est. savings ↓</div>
+              <div className="w-[64px] sm:w-[80px] py-3">Codec</div>
+              <div className="hidden sm:block w-[60px] py-3">Res</div>
+              <div className="hidden sm:block w-[90px] py-3 text-right pr-2">Size</div>
+              <div className="w-[84px] sm:w-[110px] py-3 text-right pr-3 sm:pr-4 text-brand">Est. savings ↓</div>
             </div>
 
             {data === undefined ? (
@@ -746,10 +746,10 @@ export default function Page() {
                       <Skeleton className="h-4 w-48 mb-1.5" />
                       <Skeleton className="h-3 w-64" />
                     </div>
-                    <Skeleton className="w-[80px] h-5 rounded-[7px] flex-shrink-0" />
-                    <Skeleton className="w-[60px] h-3 flex-shrink-0 mx-1" />
-                    <Skeleton className="w-[90px] h-3 flex-shrink-0 mr-2" />
-                    <Skeleton className="w-[110px] h-4 flex-shrink-0 mr-4" />
+                    <Skeleton className="w-[64px] sm:w-[80px] h-5 rounded-[7px] flex-shrink-0" />
+                    <Skeleton className="hidden sm:block w-[60px] h-3 flex-shrink-0 mx-1" />
+                    <Skeleton className="hidden sm:block w-[90px] h-3 flex-shrink-0 mr-2" />
+                    <Skeleton className="w-[84px] sm:w-[110px] h-4 flex-shrink-0 mr-3 sm:mr-4" />
                   </div>
                 ))}
               </div>
@@ -810,13 +810,13 @@ export default function Page() {
 
       {selectedIds.size > 0 && (
         <div
-          className="mx-7 mb-3 flex items-center gap-4 rounded-[13px] px-[18px] py-[13px] border border-brand-line sticky bottom-3"
+          className="mx-3 mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[13px] px-4 py-[13px] border border-brand-line sticky bottom-3 sm:mx-7 sm:px-[18px]"
           style={{ background: 'var(--surface-2)', boxShadow: '0 10px 30px rgba(0,0,0,.35)' }}
         >
           <div className="font-bold">
             <b className="text-brand">{formatInt(selectedIds.size)}</b> selected
           </div>
-          <div className="text-muted-fg text-[0.85rem]">
+          <div className="text-muted-fg text-[0.85rem] hidden sm:block">
             ≈ <span className="text-brand font-semibold">{formatBytes(totalSavings)}</span> estimated recoverable
           </div>
           <div className="ml-auto flex gap-2.5 items-center">

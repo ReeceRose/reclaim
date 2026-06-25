@@ -204,7 +204,7 @@ function SettingsSkeleton() {
     <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
       <div className="grid grid-cols-2 gap-[18px] mb-[18px] max-sm:grid-cols-1">
         {[0, 1].map((i) => (
-          <div key={i} className="border border-line rounded-[var(--radius)] p-5" style={{ background: 'var(--surface)' }}>
+          <div key={i} className="border border-line rounded-(--radius) p-5" style={{ background: 'var(--surface)' }}>
             <Skeleton className="h-3 w-24 mb-5" />
             {[0, 1, 2].map((j) => (
               <div key={j} className="mb-4">
@@ -216,7 +216,7 @@ function SettingsSkeleton() {
           </div>
         ))}
       </div>
-      <div className="border border-line rounded-[var(--radius)] p-5" style={{ background: 'var(--surface)' }}>
+      <div className="border border-line rounded-(--radius) p-5" style={{ background: 'var(--surface)' }}>
         <div className="flex items-center mb-4">
           <Skeleton className="h-3 w-36" />
           <Skeleton className="ml-auto h-8 w-28 rounded-[11px]" />
@@ -327,7 +327,7 @@ function SettingsContent() {
 
       <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
         <div className="grid grid-cols-2 gap-[18px] mb-[18px] max-sm:grid-cols-1">
-          <div className="border border-line rounded-[var(--radius)] p-5" style={{ background: 'var(--surface)' }}>
+          <div className="border border-line rounded-(--radius) p-5" style={{ background: 'var(--surface)' }}>
             <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Encoding</div>
             <div className="mb-4">
               <Label className="text-[0.8rem] font-semibold mb-1.5 block">
@@ -399,7 +399,7 @@ function SettingsContent() {
             </Button>
           </div>
 
-          <div className="border border-line rounded-[var(--radius)] p-5" style={{ background: 'var(--surface)' }}>
+          <div className="border border-line rounded-(--radius) p-5" style={{ background: 'var(--surface)' }}>
             <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Account</div>
             <div className="mb-4">
               <Label className="text-[0.8rem] font-semibold mb-1.5 block">Username</Label>
@@ -435,7 +435,7 @@ function SettingsContent() {
           </div>
         </div>
 
-        <div className="border border-line rounded-[var(--radius)] p-5" style={{ background: 'var(--surface)' }}>
+        <div className="border border-line rounded-(--radius) p-5" style={{ background: 'var(--surface)' }}>
           <div className="flex items-center mb-4">
             <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold">Transcode profiles</div>
             <Button
@@ -463,7 +463,7 @@ function SettingsContent() {
                     <span className="ml-2 text-[0.66rem] font-bold uppercase tracking-wider text-brand">Default</span>
                   )}
                 </div>
-                <div className="text-[0.78rem] text-muted-fg font-mono mt-0.5 break-words">
+                <div className="text-[0.78rem] text-muted-fg font-mono mt-0.5 wrap-break-word">
                   libx265 · CRF {p.crf} · preset {p.preset}
                   {p.extra_args && ` · ${p.extra_args}`}
                 </div>

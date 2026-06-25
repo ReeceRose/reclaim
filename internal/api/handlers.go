@@ -50,6 +50,15 @@ func (s *Server) handleStats(c *echo.Context) error {
 			"predicted_savings_bytes": rs.PredictedSavingsBytes,
 		})
 	}
+	libs := make([]map[string]any, 0, len(ov.ByLibrary))
+	for _, ls := range ov.ByLibrary {
+		libs = append(libs, map[string]any{
+			"library_type":            ls.LibraryType,
+			"file_count":              ls.FileCount,
+			"total_bytes":             ls.TotalBytes,
+			"predicted_savings_bytes": ls.PredictedSavingsBytes,
+		})
+	}
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"total_files":             ov.TotalFiles,
@@ -57,6 +66,7 @@ func (s *Server) handleStats(c *echo.Context) error {
 		"total_recoverable_bytes": ov.TotalRecoverableBytes,
 		"by_codec":                codecs,
 		"by_resolution":           res,
+		"by_library":              libs,
 	})
 }
 

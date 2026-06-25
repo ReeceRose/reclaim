@@ -15,6 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { FilterSelect } from '@/components/filter-select';
+import { useFileDetail } from '@/components/file-detail-sheet';
+import { codecFilterOptions, libraryFilterOptions, resolutionFilterOptions } from '@/lib/filter-options';
 
 const PAGE_SIZE = 100;
 
@@ -27,25 +29,6 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'mtime_asc', label: 'Oldest file' },
   { value: 'codec', label: 'Source codec' },
 ];
-
-const CODEC_OPTIONS = [
-  { value: 'h264', label: 'H.264' },
-  { value: 'hevc', label: 'HEVC' },
-  { value: 'mpeg2', label: 'MPEG-2' },
-  { value: 'vc1', label: 'VC-1' },
-];
-
-const RESOLUTION_OPTIONS = [
-  { value: 'uhd', label: '4K' },
-  { value: 'hd', label: 'HD' },
-  { value: 'sd', label: 'SD' },
-];
-
-const LIBRARY_OPTIONS = [
-  { value: 'movies', label: 'Movies' },
-  { value: 'tv', label: 'TV' },
-];
-
 
 const CODEC_COLORS: Record<string, string> = {
   h264: 'text-gold',
@@ -152,7 +135,7 @@ function ConfirmDialog({
             {preview.map((f) => (
               <div key={f.id} className="flex justify-between gap-3 py-[7px] border-b border-line-soft last:border-b-0">
                 <span className="truncate text-muted-fg">{baseName(f.path)}</span>
-                <span className="text-brand font-medium flex-shrink-0">-{formatBytes(f.predicted_savings_bytes)}</span>
+                <span className="text-brand font-medium shrink-0">-{formatBytes(f.predicted_savings_bytes)}</span>
               </div>
             ))}
             {more > 0 && <div className="text-[0.78rem] text-muted-dim pt-2">…and {more} more</div>}
@@ -162,7 +145,7 @@ function ConfirmDialog({
             className="flex items-start gap-[9px] text-[0.8rem] text-muted-fg mt-4 rounded-[11px] px-[13px] py-[11px] border"
             style={{ background: 'var(--green-soft)', borderColor: 'color-mix(in srgb, var(--green) 26%, transparent)' }}
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-green flex-shrink-0 mt-px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-green shrink-0 mt-px">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
             </svg>
             <div>
@@ -193,18 +176,20 @@ function FlatRow({
   item,
   selected,
   onToggle,
+  onOpen,
 }: {
   item: MediaFile;
   selected: boolean;
   onToggle: (id: number) => void;
+  onOpen: (file: MediaFile) => void;
 }) {
   return (
     <div
       className={`flex items-center gap-0 border-b border-line-soft hover:bg-surface-2 cursor-pointer transition-colors ${selected ? 'bg-brand-soft' : ''}`}
       style={{ height: 52 }}
-      onClick={() => onToggle(item.id)}
+      onClick={() => onOpen(item)}
     >
-      <div className="w-[52px] flex justify-center flex-shrink-0">
+      <div className="w-[52px] flex justify-center shrink-0">
         <Checkbox
           checked={selected}
           onCheckedChange={() => onToggle(item.id)}
@@ -216,30 +201,40 @@ function FlatRow({
         <div className="font-semibold text-[0.88rem] truncate">{baseName(item.path)}</div>
         <div className="text-[0.74rem] text-muted-dim truncate font-mono">{dirName(item.path)}</div>
       </div>
-      <div className="w-[64px] sm:w-[80px] flex-shrink-0"><CodecBadge codec={item.video_codec} /></div>
-      <div className="hidden sm:block w-[60px] flex-shrink-0 text-[0.82rem] text-muted-fg">{resolutionLabel(item.width, item.height)}</div>
-      <div className="hidden sm:block w-[90px] flex-shrink-0 text-right text-[0.82rem] text-muted-fg pr-2 font-mono">{formatBytes(item.size_bytes)}</div>
-      <div className="w-[84px] sm:w-[110px] flex-shrink-0 text-right text-brand font-semibold text-[0.84rem] sm:text-[0.88rem] pr-3 sm:pr-4 font-mono">{formatBytes(item.predicted_savings_bytes)}</div>
+      <div className="w-[64px] sm:w-[80px] shrink-0"><CodecBadge codec={item.video_codec} /></div>
+      <div className="hidden sm:block w-[60px] shrink-0 text-[0.82rem] text-muted-fg">{resolutionLabel(item.width, item.height)}</div>
+      <div className="hidden sm:block w-[90px] shrink-0 text-right text-[0.82rem] text-muted-fg pr-2 font-mono">{formatBytes(item.size_bytes)}</div>
+      <div className="w-[84px] sm:w-[110px] shrink-0 text-right text-brand font-semibold text-[0.84rem] sm:text-[0.88rem] pr-3 sm:pr-4 font-mono">{formatBytes(item.predicted_savings_bytes)}</div>
     </div>
   );
 }
 
-function EpisodeRow({ ep, selected, onToggle }: { ep: Episode; selected: boolean; onToggle: (id: number) => void }) {
+function EpisodeRow({
+  ep,
+  selected,
+  onToggle,
+  onOpen,
+}: {
+  ep: Episode;
+  selected: boolean;
+  onToggle: (id: number) => void;
+  onOpen: (file: MediaFile) => void;
+}) {
   return (
     <div
       className={`flex items-center gap-[10px] px-4 py-[10px] pl-[42px] border-b border-line-soft hover:bg-surface-2 cursor-pointer transition-colors ${selected ? 'bg-brand-soft' : ''}`}
-      onClick={() => onToggle(ep.id)}
+      onClick={() => onOpen(ep)}
     >
       <Checkbox
         checked={selected}
         onCheckedChange={() => onToggle(ep.id)}
         onClick={(e) => e.stopPropagation()}
-        className="size-[17px] rounded-[5px] flex-shrink-0"
+        className="size-[17px] rounded-[5px] shrink-0"
       />
       <div className="flex-1 min-w-0">
         <div className="text-sm truncate">{baseName(ep.path)}</div>
       </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex items-center gap-2 shrink-0">
         <CodecBadge codec={ep.video_codec} />
         <span className="text-[0.78rem] text-muted-fg font-mono">{formatBytes(ep.size_bytes)}</span>
         <span className="text-brand font-semibold text-[0.82rem] font-mono">-{formatBytes(ep.predicted_savings_bytes)}</span>
@@ -254,6 +249,7 @@ function SeasonEpisodes({
   filters,
   selectedIds,
   onToggle,
+  onOpen,
   onEpisodesLoaded,
 }: {
   seriesTitle: string;
@@ -261,6 +257,7 @@ function SeasonEpisodes({
   filters: CandidateFilters;
   selectedIds: Set<number>;
   onToggle: (id: number) => void;
+  onOpen: (file: MediaFile) => void;
   onEpisodesLoaded: (files: MediaFile[]) => void;
 }) {
   const { data, isLoading } = useQuery({
@@ -283,7 +280,7 @@ function SeasonEpisodes({
   return (
     <>
       {(data?.episodes ?? []).map((ep) => (
-        <EpisodeRow key={ep.id} ep={ep} selected={selectedIds.has(ep.id)} onToggle={onToggle} />
+        <EpisodeRow key={ep.id} ep={ep} selected={selectedIds.has(ep.id)} onToggle={onToggle} onOpen={onOpen} />
       ))}
     </>
   );
@@ -291,16 +288,16 @@ function SeasonEpisodes({
 
 function GroupedSkeleton() {
   return (
-    <div className="bg-surface border border-line rounded-[var(--radius)] overflow-hidden">
+    <div className="bg-surface border border-line rounded-(--radius) overflow-hidden">
       {[0, 1, 2, 3].map((i) => (
         <div key={i} className="flex items-center gap-[11px] px-4 py-[13px] border-b border-line-soft">
-          <Skeleton className="w-[17px] h-[17px] rounded-[5px] flex-shrink-0" />
-          <Skeleton className="w-[18px] h-[18px] flex-shrink-0 rounded" />
+          <Skeleton className="w-[17px] h-[17px] rounded-[5px] shrink-0" />
+          <Skeleton className="w-[18px] h-[18px] shrink-0 rounded" />
           <div className="flex-1 min-w-0">
             <Skeleton className="h-4 w-48 mb-1.5" />
             <Skeleton className="h-3 w-64" />
           </div>
-          <div className="text-right flex-shrink-0">
+          <div className="text-right shrink-0">
             <Skeleton className="h-3 w-20 mb-1 ml-auto" />
             <Skeleton className="h-4 w-16 ml-auto" />
           </div>
@@ -314,12 +311,14 @@ function GroupedContent({
   selectedIds,
   onToggle,
   onToggleSeries,
+  onOpen,
   filters,
   onEpisodesLoaded,
 }: {
   selectedIds: Set<number>;
   onToggle: (id: number) => void;
   onToggleSeries: (ids: number[]) => void;
+  onOpen: (file: MediaFile) => void;
   filters: CandidateFilters;
   onEpisodesLoaded: (files: MediaFile[]) => void;
 }) {
@@ -392,7 +391,7 @@ function GroupedContent({
   }
 
   return (
-    <div className="bg-surface border border-line rounded-[var(--radius)] overflow-hidden">
+    <div className="bg-surface border border-line rounded-(--radius) overflow-hidden">
       {data.series.map((s) => {
         const expanded = expandedSeries.has(s.title);
         const selState = seriesSelState(s);
@@ -407,9 +406,9 @@ function GroupedContent({
                 checked={selState === 'all' ? true : selState === 'partial' ? 'indeterminate' : false}
                 onCheckedChange={() => onToggleSeries(allIds)}
                 onClick={(e) => e.stopPropagation()}
-                className="size-[17px] rounded-[5px] flex-shrink-0"
+                className="size-[17px] rounded-[5px] shrink-0"
               />
-              <span className={`w-[18px] h-[18px] flex-shrink-0 grid place-items-center text-muted-fg transition-transform ${expanded ? 'rotate-90' : ''}`}>
+              <span className={`w-[18px] h-[18px] shrink-0 grid place-items-center text-muted-fg transition-transform ${expanded ? 'rotate-90' : ''}`}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3"><path d="M9 18l6-6-6-6"/></svg>
               </span>
               <div className="flex-1 min-w-0">
@@ -421,7 +420,7 @@ function GroupedContent({
                   {s.season_count} seasons · {formatInt(s.candidate_count)} candidates · {formatBytes(s.total_bytes)}
                 </div>
               </div>
-              <div className="text-right flex-shrink-0">
+              <div className="text-right shrink-0">
                 <div className="text-[0.78rem] text-muted-fg">{formatBytes(s.total_bytes)}</div>
                 <div className="text-[0.92rem] font-semibold text-brand">{formatBytes(s.predicted_savings_bytes)}</div>
               </div>
@@ -439,7 +438,7 @@ function GroupedContent({
                         className="flex items-center gap-[10px] px-4 py-[9px] pl-[18px] text-[0.76rem] font-semibold text-muted-fg bg-surface-2 border-b border-line-soft cursor-pointer"
                         onClick={() => toggleSeasonExpand(seasonKey)}
                       >
-                        <span className={`w-[18px] h-[18px] flex-shrink-0 grid place-items-center transition-transform ${seasonExpanded ? 'rotate-90' : ''}`}>
+                        <span className={`w-[18px] h-[18px] shrink-0 grid place-items-center transition-transform ${seasonExpanded ? 'rotate-90' : ''}`}>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3"><path d="M9 18l6-6-6-6"/></svg>
                         </span>
                         Season {se.season}
@@ -453,6 +452,7 @@ function GroupedContent({
                           filters={filters}
                           selectedIds={selectedIds}
                           onToggle={onToggle}
+                          onOpen={onOpen}
                           onEpisodesLoaded={onEpisodesLoaded}
                         />
                       )}
@@ -471,7 +471,7 @@ function GroupedContent({
             Movies
           </div>
           {movies.map((f) => (
-            <FlatRow key={f.id} item={f} selected={selectedIds.has(f.id)} onToggle={onToggle} />
+            <FlatRow key={f.id} item={f} selected={selectedIds.has(f.id)} onToggle={onToggle} onOpen={onOpen} />
           ))}
           {(hasMoreMovies || isFetchingMovies) && (
             <div className="px-4 py-3 text-center border-t border-line-soft">
@@ -496,6 +496,7 @@ function GroupedView(props: {
   selectedIds: Set<number>;
   onToggle: (id: number) => void;
   onToggleSeries: (ids: number[]) => void;
+  onOpen: (file: MediaFile) => void;
   filters: CandidateFilters;
   onEpisodesLoaded: (files: MediaFile[]) => void;
 }) {
@@ -508,6 +509,7 @@ function GroupedView(props: {
 
 export default function Page() {
   const qc = useQueryClient();
+  const { openFile } = useFileDetail();
   const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -521,6 +523,21 @@ export default function Page() {
   const fileMapRef = useRef<Map<number, MediaFile>>(new Map());
   const parentRef = useRef<HTMLDivElement>(null);
 
+  const { data: stats } = useQuery({
+    queryKey: ['stats'],
+    queryFn: api.stats,
+    staleTime: 30_000,
+  });
+  const codecOptions = useMemo(() => codecFilterOptions(stats, { excludeHEVC: true }), [stats]);
+  const resolutionOptions = useMemo(() => resolutionFilterOptions(stats), [stats]);
+  const libraryOptions = useMemo(() => libraryFilterOptions(stats), [stats]);
+
+  // Clamp to options that actually exist so a stale selection (e.g. after a
+  // rescan drops a codec) reads as "All" without a setState-in-effect.
+  const effectiveCodec = codec && codecOptions.some((o) => o.value === codec) ? codec : '';
+  const effectiveResolution = resolution && resolutionOptions.some((o) => o.value === resolution) ? resolution : '';
+  const effectiveLibrary = library && libraryOptions.some((o) => o.value === library) ? library : '';
+
   useEffect(() => {
     const t = setTimeout(() => startTransition(() => setDebouncedSearch(search)), 300);
     return () => clearTimeout(t);
@@ -528,9 +545,9 @@ export default function Page() {
 
   const filters: CandidateFilters = {
     sort,
-    video_codec: codec || undefined,
-    resolution_band: resolution || undefined,
-    library_type: library || undefined,
+    video_codec: effectiveCodec || undefined,
+    resolution_band: effectiveResolution || undefined,
+    library_type: effectiveLibrary || undefined,
     search: debouncedSearch || undefined,
   };
 
@@ -641,7 +658,7 @@ export default function Page() {
   return (
     <div className="flex flex-col min-w-0 h-screen overflow-hidden max-sm:h-[calc(100dvh_-_4.25rem_-_env(safe-area-inset-bottom))]">
       <div
-        className="flex flex-col gap-2 px-4 py-[14px] border-b border-line flex-shrink-0 sm:flex-row sm:items-center sm:gap-4 sm:px-7 sm:py-[18px]"
+        className="flex flex-col gap-2 px-4 py-[14px] border-b border-line shrink-0 sm:flex-row sm:items-center sm:gap-4 sm:px-7 sm:py-[18px]"
         style={{ background: 'rgba(22,22,22,.82)', backdropFilter: 'blur(10px)' }}
       >
         <div className="min-w-0">
@@ -665,7 +682,7 @@ export default function Page() {
       </div>
 
       {/* Filter strip: search on its own line, controls on second line */}
-      <div className="border-b border-line-soft flex-shrink-0" style={{ background: 'var(--bg)' }}>
+      <div className="border-b border-line-soft shrink-0" style={{ background: 'var(--bg)' }}>
         <div className="flex items-center gap-2 px-4 py-3 sm:px-7">
           <div className="flex-1 relative">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[14px] h-[14px] absolute left-[11px] top-1/2 -translate-y-1/2 text-muted-dim pointer-events-none">
@@ -678,7 +695,7 @@ export default function Page() {
               className="rounded-[11px] pl-[34px] text-sm"
             />
           </div>
-          <div className="inline-flex bg-surface border border-line rounded-[11px] p-[3px] gap-[2px] flex-shrink-0">
+          <div className="inline-flex bg-surface border border-line rounded-[11px] p-[3px] gap-[2px] shrink-0">
             <Button
               variant="ghost"
               size="sm"
@@ -700,10 +717,10 @@ export default function Page() {
         <div className="flex items-center gap-2 px-4 pb-3 flex-wrap sm:px-7">
           <Select value={sort} onValueChange={(v) => startTransition(() => setSort(v as SortKey))}>
             <SelectTrigger className="rounded-[11px] bg-surface text-sm h-auto py-[7px] gap-1 min-w-[185px]">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[13px] h-[13px] text-muted-dim flex-shrink-0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[13px] h-[13px] text-muted-dim shrink-0">
                 <path d="M3 8h18M6 12h12M10 16h4"/>
               </svg>
-              <span className="text-xs text-muted-dim flex-shrink-0">Sort</span>
+              <span className="text-xs text-muted-dim shrink-0">Sort</span>
               <span className="text-muted-dim mx-px">·</span>
               <SelectValue />
             </SelectTrigger>
@@ -711,16 +728,16 @@ export default function Page() {
               {SORT_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
           </Select>
-          <FilterSelect label="Codec" value={codec} options={CODEC_OPTIONS} onChange={(v) => startTransition(() => setCodec(v))} className="min-w-[120px]" />
-          <FilterSelect label="Res" value={resolution} options={RESOLUTION_OPTIONS} onChange={(v) => startTransition(() => setResolution(v))} className="min-w-[100px]" />
-          <FilterSelect label="Library" value={library} options={LIBRARY_OPTIONS} onChange={(v) => startTransition(() => setLibrary(v))} className="min-w-[130px]" />
+          <FilterSelect label="Codec" value={effectiveCodec} options={codecOptions} onChange={(v) => startTransition(() => setCodec(v))} className="min-w-[120px]" />
+          <FilterSelect label="Res" value={effectiveResolution} options={resolutionOptions} onChange={(v) => startTransition(() => setResolution(v))} className="min-w-[100px]" />
+          <FilterSelect label="Library" value={effectiveLibrary} options={libraryOptions} onChange={(v) => startTransition(() => setLibrary(v))} className="min-w-[130px]" />
         </div>
       </div>
 
       <div className={cn('flex-1 overflow-hidden relative px-3 pt-3 pb-3 transition-opacity duration-150 sm:px-7', isPending && 'opacity-50')}>
         {view === 'flat' ? (
-          <div className="bg-surface border border-line rounded-[var(--radius)] overflow-hidden flex flex-col h-full">
-            <div className="flex items-center text-[0.7rem] uppercase tracking-wider text-muted-fg font-bold bg-surface-2 border-b border-line flex-shrink-0">
+          <div className="bg-surface border border-line rounded-(--radius) overflow-hidden flex flex-col h-full">
+            <div className="flex items-center text-[0.7rem] uppercase tracking-wider text-muted-fg font-bold bg-surface-2 border-b border-line shrink-0">
               <div className="w-[52px] flex justify-center py-3">
                 <Checkbox
                   checked={allSelected}
@@ -739,17 +756,17 @@ export default function Page() {
               <div className="flex-1 overflow-auto">
                 {Array.from({ length: 10 }).map((_, i) => (
                   <div key={i} className="flex items-center gap-0 border-b border-line-soft px-0" style={{ height: 52 }}>
-                    <div className="w-[52px] flex justify-center flex-shrink-0">
+                    <div className="w-[52px] flex justify-center shrink-0">
                       <Skeleton className="w-[17px] h-[17px] rounded-[5px]" />
                     </div>
                     <div className="flex-1 min-w-0 pr-3">
                       <Skeleton className="h-4 w-48 mb-1.5" />
                       <Skeleton className="h-3 w-64" />
                     </div>
-                    <Skeleton className="w-[64px] sm:w-[80px] h-5 rounded-[7px] flex-shrink-0" />
-                    <Skeleton className="hidden sm:block w-[60px] h-3 flex-shrink-0 mx-1" />
-                    <Skeleton className="hidden sm:block w-[90px] h-3 flex-shrink-0 mr-2" />
-                    <Skeleton className="w-[84px] sm:w-[110px] h-4 flex-shrink-0 mr-3 sm:mr-4" />
+                    <Skeleton className="w-[64px] sm:w-[80px] h-5 rounded-[7px] shrink-0" />
+                    <Skeleton className="hidden sm:block w-[60px] h-3 shrink-0 mx-1" />
+                    <Skeleton className="hidden sm:block w-[90px] h-3 shrink-0 mr-2" />
+                    <Skeleton className="w-[84px] sm:w-[110px] h-4 shrink-0 mr-3 sm:mr-4" />
                   </div>
                 ))}
               </div>
@@ -783,6 +800,7 @@ export default function Page() {
                         item={allItems[vRow.index]}
                         selected={selectedIds.has(allItems[vRow.index].id)}
                         onToggle={toggleId}
+                        onOpen={(file) => openFile(file.id, file)}
                       />
                     ) : (
                       <div className="flex items-center justify-center h-full text-muted-dim text-sm">
@@ -801,6 +819,7 @@ export default function Page() {
               selectedIds={selectedIds}
               onToggle={toggleId}
               onToggleSeries={toggleSeries}
+              onOpen={(file) => openFile(file.id, file)}
               filters={filters}
               onEpisodesLoaded={registerLoadedFiles}
             />

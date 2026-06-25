@@ -19,9 +19,9 @@ import {
 const WATERMARK_KEY = 'reclaim_last_seen_event_id';
 
 const SEVERITY_DOT: Record<string, string> = {
-  info: 'bg-[var(--green)]',
+  info: 'bg-(--green)',
   warn: 'bg-yellow-400',
-  error: 'bg-[var(--red)]',
+  error: 'bg-(--red)',
 };
 
 function ExpandableMetadata({ metadata }: { metadata: Record<string, unknown> | null }) {
@@ -54,13 +54,13 @@ function ExpandableMetadata({ metadata }: { metadata: Record<string, unknown> | 
 function EventRow({ event, onDelete, deleting }: { event: AppEvent; onDelete: (id: number) => void; deleting: boolean }) {
   return (
     <div className="group flex gap-3 px-6 py-3.5 border-b border-line-soft last:border-0">
-      <div className="pt-[5px] flex-shrink-0">
+      <div className="pt-[5px] shrink-0">
         <span className={`block w-2 h-2 rounded-full ${SEVERITY_DOT[event.severity] ?? 'bg-muted-dim'}`} />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <p className="text-[0.85rem] leading-snug text-text break-words">{event.message}</p>
-          <div className="flex items-center gap-1 flex-shrink-0">
+          <p className="text-[0.85rem] leading-snug text-text wrap-break-word">{event.message}</p>
+          <div className="flex items-center gap-1 shrink-0">
             <span className="text-[0.7rem] text-muted-dim whitespace-nowrap">
               {relativeTime(event.created_at)}
             </span>
@@ -88,7 +88,7 @@ function EventListSkeleton() {
     <div className="px-6 py-4 space-y-4">
       {Array.from({ length: 6 }).map((_, i) => (
         <div key={i} className="flex gap-3">
-          <Skeleton className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" />
+          <Skeleton className="w-2 h-2 rounded-full mt-1.5 shrink-0" />
           <div className="flex-1 space-y-1.5">
             <Skeleton className="h-3.5 w-[80%]" />
             <Skeleton className="h-3 w-[40%]" />

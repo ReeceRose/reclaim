@@ -192,10 +192,21 @@ func newStaticHandler(fsys fs.FS) http.Handler {
 			upath = "index.html"
 		}
 		if f, err := fsys.Open(upath); err == nil {
-			defer f.Close()
-			if info, err := f.Stat(); err == nil && !info.IsDir() {
+			info, err := f.Stat()
+			if err == nil && !info.IsDir() {
+				defer f.Close()
 				serveFSFile(w, r, info, f)
 				return
+			}
+			f.Close()
+			// A directory with trailingSlash:true export (e.g. /candidates/)
+			// resolves to <dir>/index.html. Serve it before falling back to the
+			// root shell, otherwise a hard reload of a sub-route renders the home
+			// page instead of the requested page.
+			if err == nil && info.IsDir() {
+				if idx := path.Join(upath, "index.html"); serveNamedHTML(w, r, fsys, idx) {
+					return
+				}
 			}
 		}
 		serveIndexHTML(w, r, fsys)
@@ -203,18 +214,25 @@ func newStaticHandler(fsys fs.FS) http.Handler {
 }
 
 func serveIndexHTML(w http.ResponseWriter, r *http.Request, fsys fs.FS) {
-	f, err := fsys.Open("index.html")
-	if err != nil {
+	if !serveNamedHTML(w, r, fsys, "index.html") {
 		http.NotFound(w, r)
-		return
+	}
+}
+
+// serveNamedHTML serves a specific file from the embedded FS. It reports whether
+// the file was found and served; callers use the result to decide on fallbacks.
+func serveNamedHTML(w http.ResponseWriter, r *http.Request, fsys fs.FS, name string) bool {
+	f, err := fsys.Open(name)
+	if err != nil {
+		return false
 	}
 	defer f.Close()
 	info, err := f.Stat()
-	if err != nil {
-		http.NotFound(w, r)
-		return
+	if err != nil || info.IsDir() {
+		return false
 	}
 	serveFSFile(w, r, info, f)
+	return true
 }
 
 func serveFSFile(w http.ResponseWriter, r *http.Request, info fs.FileInfo, f fs.File) {

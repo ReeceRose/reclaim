@@ -11,7 +11,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
     >
       <div className="w-full max-w-[380px] text-center">
         <div className="flex items-center justify-center gap-3 mb-2">
-          <LogoMark size={38} className="flex-shrink-0" style={{ boxShadow: '0 6px 18px var(--brand-soft)', borderRadius: 11 }} />
+          <LogoMark size={38} className="shrink-0" style={{ boxShadow: '0 6px 18px var(--brand-soft)', borderRadius: 11 }} />
           <div className="text-[1.7rem] font-extrabold tracking-tight">
             Re<span className="text-brand">claim</span>
           </div>

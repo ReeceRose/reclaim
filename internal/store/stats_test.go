@@ -10,6 +10,7 @@ import (
 func normalize(ls *LibraryStats) *LibraryStats {
 	sort.Slice(ls.ByCodec, func(i, j int) bool { return ls.ByCodec[i].Codec < ls.ByCodec[j].Codec })
 	sort.Slice(ls.ByResolution, func(i, j int) bool { return ls.ByResolution[i].Band < ls.ByResolution[j].Band })
+	sort.Slice(ls.ByLibrary, func(i, j int) bool { return ls.ByLibrary[i].LibraryType < ls.ByLibrary[j].LibraryType })
 	return ls
 }
 

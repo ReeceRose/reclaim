@@ -306,9 +306,9 @@ func (m *Media) UpdatePredictedSavingsByCodec(ctx context.Context, codec string,
 func loadStatRow(ctx context.Context, q ctxRowQuerier, id int64) (*MediaFile, error) {
 	f := &MediaFile{ID: id}
 	err := q.QueryRowContext(ctx,
-		"SELECT size_bytes, predicted_savings_bytes, video_codec, height, status FROM media_files WHERE id = ?",
+		"SELECT size_bytes, predicted_savings_bytes, video_codec, height, library_type, status FROM media_files WHERE id = ?",
 		id,
-	).Scan(&f.SizeBytes, &f.PredictedSavingsBytes, &f.VideoCodec, &f.Height, &f.Status)
+	).Scan(&f.SizeBytes, &f.PredictedSavingsBytes, &f.VideoCodec, &f.Height, &f.LibraryType, &f.Status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

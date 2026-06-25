@@ -57,7 +57,7 @@ function DashboardSkeleton() {
         </div>
       </div>
       <div className="grid grid-cols-[1.55fr_1fr] gap-5 max-sm:grid-cols-1">
-        <div className="border border-line rounded-[var(--radius)] p-5" style={{ background: 'var(--surface)' }}>
+        <div className="border border-line rounded-(--radius) p-5" style={{ background: 'var(--surface)' }}>
           <Skeleton className="h-3 w-32 mb-5" />
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className="flex items-center gap-3 mb-4">
@@ -67,7 +67,7 @@ function DashboardSkeleton() {
             </div>
           ))}
         </div>
-        <div className="border border-line rounded-[var(--radius)] p-5" style={{ background: 'var(--surface)' }}>
+        <div className="border border-line rounded-(--radius) p-5" style={{ background: 'var(--surface)' }}>
           <Skeleton className="h-3 w-24 mb-5" />
           {[0, 1, 2].map((i) => (
             <div key={i} className="flex items-center gap-3 mb-4">
@@ -228,7 +228,7 @@ function DashboardContent() {
 
       {/* Charts */}
       <div className="grid grid-cols-[1.55fr_1fr] gap-5 max-sm:grid-cols-1">
-        <div className="border border-line rounded-[var(--radius)] p-5" style={{ background: 'var(--surface)' }}>
+        <div className="border border-line rounded-(--radius) p-5" style={{ background: 'var(--surface)' }}>
           <div className="text-xs uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Codec breakdown</div>
           {stats.by_codec.map((c) => (
             <div key={c.codec} className="flex items-center gap-3 mb-3.5 last:mb-0 text-sm">
@@ -257,7 +257,7 @@ function DashboardContent() {
             </div>
           ))}
         </div>
-        <div className="border border-line rounded-[var(--radius)] p-5" style={{ background: 'var(--surface)' }}>
+        <div className="border border-line rounded-(--radius) p-5" style={{ background: 'var(--surface)' }}>
           <div className="text-xs uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Resolution</div>
           {stats.by_resolution.map((r) => (
             <div key={r.band} className="flex items-center gap-3 mb-3.5 last:mb-0 text-sm">

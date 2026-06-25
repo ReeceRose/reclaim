@@ -3,29 +3,19 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { api, type CandidateFilters } from '@/lib/api';
 import { formatBytes, formatInt } from '@/lib/format';
-import { useState, Suspense } from 'react';
+import { useState, Suspense, useMemo } from 'react';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FilterSelect } from '@/components/filter-select';
-
-const CODEC_OPTIONS = [
-  { value: 'h264', label: 'H.264' },
-  { value: 'mpeg2', label: 'MPEG-2' },
-  { value: 'vc1', label: 'VC-1' },
-];
-
-const LIBRARY_OPTIONS = [
-  { value: 'movies', label: 'Movies' },
-  { value: 'tv', label: 'TV' },
-];
+import { codecFilterOptions, libraryFilterOptions } from '@/lib/filter-options';
 
 function DryRunSkeleton() {
   return (
     <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
-      <div className="border border-line rounded-[var(--radius)] p-5 mb-[18px]" style={{ background: 'var(--surface)' }}>
+      <div className="border border-line rounded-(--radius) p-5 mb-[18px]" style={{ background: 'var(--surface)' }}>
         <Skeleton className="h-3 w-24 mb-4" />
         <div className="flex items-center gap-[10px] flex-wrap">
           <Skeleton className="h-9 w-32 rounded-[11px]" />
@@ -55,6 +45,19 @@ function DryRunContent() {
   });
   const profiles = profilesData.items ?? [];
 
+  const { data: stats } = useQuery({
+    queryKey: ['stats'],
+    queryFn: api.stats,
+    staleTime: 30_000,
+  });
+  const codecOptions = useMemo(() => codecFilterOptions(stats, { excludeHEVC: true }), [stats]);
+  const libraryOptions = useMemo(() => libraryFilterOptions(stats), [stats]);
+
+  // Clamp to options that actually exist so a stale selection (e.g. after a
+  // rescan drops a codec) reads as "All" without a setState-in-effect.
+  const effectiveCodec = codec && codecOptions.some((o) => o.value === codec) ? codec : '';
+  const effectiveLibrary = library && libraryOptions.some((o) => o.value === library) ? library : '';
+
   const { data: result, isFetching } = useQuery({
     queryKey: ['dry-run', queryFilters, profileId],
     queryFn: () => api.dryRun({
@@ -66,7 +69,7 @@ function DryRunContent() {
   });
 
   function handleCalculate() {
-    setQueryFilters({ video_codec: codec || undefined, library_type: library || undefined });
+    setQueryFilters({ video_codec: effectiveCodec || undefined, library_type: effectiveLibrary || undefined });
   }
 
   const total = result?.total_bytes ?? 0;
@@ -77,20 +80,24 @@ function DryRunContent() {
 
   return (
       <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
-        <div className="border border-line rounded-[var(--radius)] p-5 mb-[18px]" style={{ background: 'var(--surface)' }}>
+        <div className="border border-line rounded-(--radius) p-5 mb-[18px]" style={{ background: 'var(--surface)' }}>
           <div className="text-xs uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Filter a set</div>
           <div className="flex items-center gap-[10px] flex-wrap">
-            <FilterSelect label="Codec" value={codec} options={CODEC_OPTIONS} onChange={setCodec} />
-            <FilterSelect label="Library" value={library} options={LIBRARY_OPTIONS} onChange={setLibrary} />
+            <FilterSelect label="Codec" value={effectiveCodec} options={codecOptions} onChange={setCodec} />
+            <FilterSelect label="Library" value={effectiveLibrary} options={libraryOptions} onChange={setLibrary} />
             {profiles.length > 0 && (
               <Select
                 value={String(profileId ?? profiles[0]?.id ?? '')}
                 onValueChange={(v) => setProfileId(v ? Number(v) : null)}
               >
                 <SelectTrigger className="rounded-[11px] text-[0.84rem] h-auto py-[9px] gap-1 transition-colors border-[color-mix(in_srgb,var(--brand)_45%,transparent)] bg-[color-mix(in_srgb,var(--brand)_7%,transparent)]">
-                  <span className="text-[0.78rem] flex-shrink-0 text-brand/60">Profile</span>
-                  <span className="text-muted-dim mx-px">·</span>
-                  <span className="font-medium text-brand">{selectedProfile?.name}</span>
+                  <span className="text-[0.78rem] shrink-0 text-brand/60">Profile</span>
+                  <SelectValue>
+                    <>
+                      <span className="text-muted-dim mx-px">·</span>
+                      <span className="font-medium text-brand">{selectedProfile?.name}</span>
+                    </>
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {profiles.map((p) => (

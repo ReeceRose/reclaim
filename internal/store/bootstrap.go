@@ -36,22 +36,34 @@ func (s *Store) bootstrapIfNeeded(ctx context.Context) error {
 	return nil
 }
 
-// needsRebuild reports whether library_stats is empty while active media exists.
+// needsRebuild reports whether library_stats is empty or missing expected
+// dimensions while active media exists.
 func (s *Stats) needsRebuild(ctx context.Context) (bool, error) {
-	var statRows int
-	if err := s.r.QueryRowContext(ctx, `SELECT COUNT(*) FROM library_stats`).Scan(&statRows); err != nil {
-		return false, err
-	}
-	if statRows > 0 {
-		return false, nil
-	}
 	var activeMedia int
 	if err := s.r.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM media_files WHERE status = 'active'`,
 	).Scan(&activeMedia); err != nil {
 		return false, err
 	}
-	return activeMedia > 0, nil
+	if activeMedia == 0 {
+		return false, nil
+	}
+
+	var statRows int
+	if err := s.r.QueryRowContext(ctx, `SELECT COUNT(*) FROM library_stats`).Scan(&statRows); err != nil {
+		return false, err
+	}
+	if statRows == 0 {
+		return true, nil
+	}
+
+	var libRows int
+	if err := s.r.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM library_stats WHERE dimension = ?`, dimLibrary,
+	).Scan(&libRows); err != nil {
+		return false, err
+	}
+	return libRows == 0, nil
 }
 
 // needsSavingsBackfill reports whether probed non-HEVC rows still carry the

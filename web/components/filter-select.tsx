@@ -1,5 +1,7 @@
+'use client';
+
 import { cn } from '@/lib/utils';
-import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export function FilterSelect({
   label,
@@ -27,15 +29,17 @@ export function FilterSelect({
           className,
         )}
       >
-        <span className={cn('text-[0.78rem] flex-shrink-0', active ? 'text-brand/60' : 'text-muted-dim')}>{label}</span>
-        {active ? (
-          <>
-            <span className="text-muted-dim mx-px">·</span>
-            <span className="font-medium text-brand">{selectedLabel}</span>
-          </>
-        ) : (
-          <span className="text-muted-fg">All</span>
-        )}
+        <span className={cn('text-[0.78rem] shrink-0', active ? 'text-brand/60' : 'text-muted-dim')}>{label}</span>
+        <SelectValue>
+          {active ? (
+            <>
+              <span className="text-muted-dim mx-px">·</span>
+              <span className="font-medium text-brand">{selectedLabel}</span>
+            </>
+          ) : (
+            <span className="text-muted-fg">All</span>
+          )}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="_all">All</SelectItem>

@@ -9,6 +9,7 @@ import { useWS } from '@/hooks/use-ws';
 import { formatInt, windowInfo } from '@/lib/format';
 import { toast } from 'sonner';
 import { NotificationPanel, useUnreadCount } from '@/components/notification-panel';
+import { FileDetailProvider } from '@/components/file-detail-sheet';
 import { LogoMark } from '@/components/logo';
 
 // ---------------------------------------------------------------------------
@@ -43,7 +44,7 @@ function WindowArc({ start, end, isOpen }: { start: string; end: string; isOpen:
   const ny = (CY + R * Math.sin(nowRad)).toFixed(2);
 
   return (
-    <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} className="flex-shrink-0">
+    <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} className="shrink-0">
       <circle cx={CX} cy={CY} r={R} fill="none" stroke="var(--line)" strokeWidth={SW} />
       <path
         d={`M ${x1} ${y1} A ${R} ${R} 0 ${largeArc} 1 ${x2} ${y2}`}
@@ -68,7 +69,7 @@ const NAV_ITEMS = [
     label: 'Overview',
     group: 'Library',
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[18px] h-[18px] flex-shrink-0">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[18px] h-[18px] shrink-0">
         <rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/>
         <rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>
       </svg>
@@ -79,7 +80,7 @@ const NAV_ITEMS = [
     label: 'Candidates',
     group: 'Library',
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[18px] h-[18px] flex-shrink-0">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[18px] h-[18px] shrink-0">
         <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
         <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
       </svg>
@@ -90,7 +91,7 @@ const NAV_ITEMS = [
     label: 'Dry-run',
     group: 'Library',
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[18px] h-[18px] flex-shrink-0">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[18px] h-[18px] shrink-0">
         <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
       </svg>
     ),
@@ -100,7 +101,7 @@ const NAV_ITEMS = [
     label: 'Queue',
     group: 'Encoding',
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[18px] h-[18px] flex-shrink-0">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[18px] h-[18px] shrink-0">
         <polygon points="5 3 19 12 5 21 5 3"/>
       </svg>
     ),
@@ -110,7 +111,7 @@ const NAV_ITEMS = [
     label: 'Settings',
     group: 'Encoding',
     icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[18px] h-[18px] flex-shrink-0">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[18px] h-[18px] shrink-0">
         <circle cx="12" cy="12" r="3"/>
         <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
       </svg>
@@ -128,7 +129,7 @@ function NotificationBell({
   return (
     <button
       onClick={onClick}
-      className="relative w-7 h-7 flex items-center justify-center rounded-[8px] text-muted-fg hover:text-text hover:bg-surface-2 transition-colors flex-shrink-0"
+      className="relative w-7 h-7 flex items-center justify-center rounded-[8px] text-muted-fg hover:text-text hover:bg-surface-2 transition-colors shrink-0"
       aria-label="Events"
     >
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[15px] h-[15px]">
@@ -152,7 +153,7 @@ function BrandLink({ size = 30, className = '' }: { size?: number; className?: s
       href="/"
       className={`flex items-center gap-[11px] min-w-0 flex-1 rounded-[10px] transition-opacity hover:opacity-90 ${className}`}
     >
-      <LogoMark size={size} className="flex-shrink-0" style={{ boxShadow: '0 6px 18px var(--brand-soft)', borderRadius: 9 }} />
+      <LogoMark size={size} className="shrink-0" style={{ boxShadow: '0 6px 18px var(--brand-soft)', borderRadius: 9 }} />
       <span className="font-extrabold tracking-tight text-[1.22rem] truncate">
         Re<span className="text-brand">claim</span>
       </span>
@@ -254,6 +255,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
+    <FileDetailProvider>
     <div className="grid min-h-screen grid-cols-[230px_1fr] max-sm:grid-cols-1">
       {/* Sidebar */}
       <aside
@@ -275,7 +277,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           <div className="overflow-hidden">
             <div className="flex items-center gap-2 px-5 py-[9px] text-[0.75rem] font-medium text-brand border-b border-brand-line" style={{ background: 'var(--brand-soft)' }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 flex-shrink-0 animate-spin" style={{ animationDuration: '1.1s' }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 shrink-0 animate-spin" style={{ animationDuration: '1.1s' }}>
                 <path d="M21 12a9 9 0 11-6.219-8.56" strokeLinecap="round"/>
               </svg>
               <div className="min-w-0">
@@ -341,7 +343,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
           <div className="flex items-center gap-[10px] text-[0.84rem]">
             <div
-              className="w-[30px] h-[30px] rounded-full grid place-items-center font-bold text-[0.8rem] text-on-brand flex-shrink-0"
+              className="w-[30px] h-[30px] rounded-full grid place-items-center font-bold text-[0.8rem] text-on-brand shrink-0"
               style={{ background: 'linear-gradient(145deg, var(--brand), var(--green))' }}
             >
               {initials}
@@ -405,5 +407,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         })}
       </nav>
     </div>
+    </FileDetailProvider>
   );
 }

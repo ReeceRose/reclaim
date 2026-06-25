@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Suspense } from 'react';
+import { useFileDetail } from '@/components/file-detail-sheet';
 
 // jobName renders the originating file name, falling back to the temp output
 // path and finally a synthetic label if the media row was deleted.
@@ -49,7 +50,7 @@ function VerifyChecks({ json }: { json: string | null }) {
 function QueueSkeleton() {
   return (
     <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
-      <div className="border border-line rounded-[var(--radius)] p-5 mb-[18px]" style={{ background: 'var(--surface)' }}>
+      <div className="border border-line rounded-(--radius) p-5 mb-[18px]" style={{ background: 'var(--surface)' }}>
         <Skeleton className="h-4 w-24 mb-3" />
         <Skeleton className="h-5 w-64 mb-1" />
         <Skeleton className="h-3 w-40 mb-3" />
@@ -62,7 +63,7 @@ function QueueSkeleton() {
       <Skeleton className="h-3 w-20 mb-3" />
       {[0, 1, 2].map((i) => (
         <div key={i} className="flex items-center gap-3.5 px-4 py-[13px] border border-line rounded-[12px] bg-surface mb-2.5">
-          <Skeleton className="w-7 h-7 rounded-[9px] flex-shrink-0" />
+          <Skeleton className="w-7 h-7 rounded-[9px] shrink-0" />
           <div className="flex-1 min-w-0">
             <Skeleton className="h-4 w-48 mb-1.5" />
             <Skeleton className="h-3 w-24" />
@@ -77,6 +78,7 @@ function QueueSkeleton() {
 
 function QueueContent() {
   const qc = useQueryClient();
+  const { openFile } = useFileDetail();
 
   const { data: jobsAll } = useSuspenseQuery({
     queryKey: ['jobs'],
@@ -134,7 +136,7 @@ function QueueContent() {
         </div>
         <div className="sm:ml-auto">
           <Badge variant="outline" className="gap-2 text-[0.82rem] font-semibold px-[13px] py-[7px] rounded-[10px] border-line bg-surface">
-            <span className={`w-[7px] h-[7px] rounded-full flex-shrink-0 ${win.open ? 'bg-green' : 'bg-muted-dim'}`}
+            <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${win.open ? 'bg-green' : 'bg-muted-dim'}`}
               style={win.open ? { boxShadow: '0 0 0 3px var(--green-soft)' } : undefined}
             />
             Window {win.open ? 'open' : 'closed'} · {win.detail}
@@ -145,7 +147,7 @@ function QueueContent() {
       <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
         {runningJob && (
           <div
-            className="border border-brand-line rounded-[var(--radius)] p-5 mb-[18px]"
+            className="border border-brand-line rounded-(--radius) p-5 mb-[18px]"
             style={{ background: 'radial-gradient(120% 140% at 0% 0%, var(--brand-soft), transparent 50%), var(--surface)' }}
           >
             <div className="flex items-center gap-3 mb-1.5">
@@ -155,8 +157,20 @@ function QueueContent() {
               </span>
               <span className="text-muted-fg text-[0.8rem]">libx265 · CRF 26 · preset medium</span>
             </div>
-            <div className="font-semibold text-[0.88rem]">{jobName(runningJob)}</div>
-            <div className="text-[0.74rem] text-muted-dim font-mono mt-0.5">{dirName(runningJob.source_path ?? runningJob.output_path ?? '')}</div>
+            <button
+              type="button"
+              onClick={() => openFile(runningJob.media_file_id)}
+              className="font-semibold text-[0.88rem] text-left hover:text-brand transition-colors"
+            >
+              {jobName(runningJob)}
+            </button>
+            <button
+              type="button"
+              onClick={() => openFile(runningJob.media_file_id)}
+              className="text-left text-[0.74rem] text-muted-dim font-mono mt-0.5 hover:text-brand transition-colors"
+            >
+              {dirName(runningJob.source_path ?? runningJob.output_path ?? '')}
+            </button>
             <div className="h-[11px] bg-surface-2 rounded-[7px] overflow-hidden my-3 shadow-[inset_0_0_0_1px_var(--line)]">
               <div
                 className="h-full rounded-[7px] transition-[width_.4s]"
@@ -179,16 +193,20 @@ function QueueContent() {
             </div>
             {queued.map((job) => (
               <div key={job.id} className="flex flex-wrap items-center gap-x-3 gap-y-2.5 px-4 py-[13px] border border-line rounded-[12px] bg-surface mb-2.5">
-                <div className="w-7 h-7 rounded-[9px] bg-surface-3 text-muted-fg grid place-items-center font-bold text-[0.82rem] flex-shrink-0">
+                <div className="w-7 h-7 rounded-[9px] bg-surface-3 text-muted-fg grid place-items-center font-bold text-[0.82rem] shrink-0">
                   {job.queue_position}
                 </div>
-                <div className="flex-1 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => openFile(job.media_file_id)}
+                  className="flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
+                >
                   <div className="font-semibold text-[0.88rem] truncate">{jobName(job)}</div>
                   <div className="text-[0.74rem] text-muted-dim font-mono mt-0.5 truncate">{formatBytes(job.original_size_bytes)}</div>
-                </div>
+                </button>
                 {job.forced
-                  ? <Badge className="text-[0.72rem] rounded-[20px] border-transparent text-brand bg-brand-soft flex-shrink-0">forced</Badge>
-                  : <Badge variant="secondary" className="text-[0.72rem] rounded-[20px] text-muted-fg flex-shrink-0">queued</Badge>
+                  ? <Badge className="text-[0.72rem] rounded-[20px] border-transparent text-brand bg-brand-soft shrink-0">forced</Badge>
+                  : <Badge variant="secondary" className="text-[0.72rem] rounded-[20px] text-muted-fg shrink-0">queued</Badge>
                 }
                 <div className="flex gap-2 basis-full justify-end sm:basis-auto sm:ml-0">
                   {!job.forced && (
@@ -232,7 +250,11 @@ function QueueContent() {
                   className="flex flex-wrap items-start gap-3.5 px-4 py-[13px] border rounded-[12px] bg-surface mb-2.5"
                   style={{ borderColor: failed ? 'color-mix(in srgb, var(--red) 35%, transparent)' : 'var(--line)' }}
                 >
-                  <div className="flex-1 min-w-[60%]">
+                  <button
+                    type="button"
+                    onClick={() => openFile(job.media_file_id)}
+                    className="flex-1 min-w-[60%] text-left hover:opacity-80 transition-opacity"
+                  >
                     <div className="font-semibold text-sm">{jobName(job)}</div>
                     <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">
                       <span className="text-xs text-muted-dim font-mono">
@@ -254,8 +276,8 @@ function QueueContent() {
                         <span className="font-mono text-[0.72rem]">{job.output_path}</span>
                       </div>
                     )}
-                  </div>
-                  <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+                  </button>
+                  <div className="ml-auto flex items-center gap-2 shrink-0">
                     {job.completed_at && (
                       <span className="text-xs text-muted-dim">{relativeTime(job.completed_at)}</span>
                     )}

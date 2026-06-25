@@ -73,12 +73,20 @@ export interface ResolutionStat {
   predicted_savings_bytes: number;
 }
 
+export interface LibraryStat {
+  library_type: string;
+  file_count: number;
+  total_bytes: number;
+  predicted_savings_bytes: number;
+}
+
 export interface Stats {
   total_files: number;
   total_bytes: number;
   total_recoverable_bytes: number;
   by_codec: CodecStat[];
   by_resolution: ResolutionStat[];
+  by_library: LibraryStat[];
 }
 
 export interface MediaFile {
@@ -290,6 +298,7 @@ export const api = {
     request<GroupedSeasonEpisodes>("GET", `/api/candidates/grouped/episodes${buildQuery(filters)}`),
   dryRun: (params: { ids?: string } & CandidateFilters) =>
     request<DryRunResult>("GET", `/api/dry-run${buildQuery(params)}`),
+  file: (id: number) => request<MediaFile>("GET", `/api/files/${id}`),
 
   // Scanning
   scan: () => request<{ started: boolean; kind: string }>("POST", "/api/scan"),

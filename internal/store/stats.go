@@ -19,6 +19,7 @@ const (
 	dimTotal      = "total"
 	dimCodec      = "codec"
 	dimResolution = "resolution"
+	dimLibrary    = "library"
 )
 
 // Resolution band values in library_stats and candidate filters.
@@ -45,6 +46,14 @@ type ResolutionStat struct {
 	PredictedSavingsBytes int64
 }
 
+// LibraryStat is the per-library-type aggregate slice of the library.
+type LibraryStat struct {
+	LibraryType           string
+	FileCount             int64
+	TotalBytes            int64
+	PredictedSavingsBytes int64
+}
+
 // LibraryStats is the precomputed overview the dashboard renders.
 type LibraryStats struct {
 	TotalFiles            int64
@@ -52,6 +61,7 @@ type LibraryStats struct {
 	TotalRecoverableBytes int64
 	ByCodec               []CodecStat
 	ByResolution          []ResolutionStat
+	ByLibrary             []LibraryStat
 }
 
 type Stats struct {
@@ -114,6 +124,27 @@ func (s *Stats) Overview(ctx context.Context) (*LibraryStats, error) {
 		return nil, err
 	}
 
+	libRows, err := s.r.QueryContext(ctx, `
+		SELECT bucket, file_count, total_bytes, predicted_savings_bytes
+		FROM library_stats WHERE dimension = ?
+		ORDER BY total_bytes DESC, bucket`,
+		dimLibrary,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer libRows.Close()
+	for libRows.Next() {
+		var l LibraryStat
+		if err := libRows.Scan(&l.LibraryType, &l.FileCount, &l.TotalBytes, &l.PredictedSavingsBytes); err != nil {
+			return nil, err
+		}
+		out.ByLibrary = append(out.ByLibrary, l)
+	}
+	if err := libRows.Err(); err != nil {
+		return nil, err
+	}
+
 	return out, nil
 }
 
@@ -153,6 +184,12 @@ func (s *Stats) Recompute(ctx context.Context) error {
 		        COUNT(*), COALESCE(SUM(size_bytes), 0), COALESCE(SUM(predicted_savings_bytes), 0)
 		 FROM media_files WHERE status = 'active'
 		 GROUP BY 2`,
+
+		`INSERT INTO library_stats (dimension, bucket, file_count, total_bytes, predicted_savings_bytes)
+		 SELECT 'library', library_type,
+		        COUNT(*), COALESCE(SUM(size_bytes), 0), COALESCE(SUM(predicted_savings_bytes), 0)
+		 FROM media_files WHERE status = 'active'
+		 GROUP BY library_type`,
 	}
 	for _, q := range stmts {
 		if _, err := tx.ExecContext(ctx, q); err != nil {
@@ -188,10 +225,15 @@ func contributionsFor(f *MediaFile) []statBucket {
 	if f.VideoCodec != nil && *f.VideoCodec != "" {
 		codec = *f.VideoCodec
 	}
+	lib := resBandUnknown
+	if f.LibraryType != "" {
+		lib = f.LibraryType
+	}
 	return []statBucket{
 		{dimTotal, ""},
 		{dimCodec, codec},
 		{dimResolution, resolutionBand(f.Height)},
+		{dimLibrary, lib},
 	}
 }
 

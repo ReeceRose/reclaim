@@ -22,10 +22,14 @@ import (
 	"reclaim/internal/store"
 )
 
-// Broadcaster is the WS hub slice the scanner pushes scan events to. Satisfied
-// by api.Hub; an interface so the scanner is testable without a real hub.
+// Broadcaster is the WS hub slice the scanner pushes scan + event notifications
+// to. Satisfied by api.Hub; an interface so the scanner is testable without a
+// real hub.
 type Broadcaster interface {
 	Broadcast(event string, data any)
+	ScanStarted(kind string)
+	ScanCompleted(data map[string]any)
+	ScanFailed(errMsg string)
 }
 
 // CandidatesInvalidator is notified when media or job state changes affect the
@@ -40,6 +44,20 @@ const (
 	TriggerScheduled = "scheduled"
 	TriggerManual    = "manual"
 )
+
+// Scan kinds sent in scan_started WS payloads and POST /api/scan responses.
+const (
+	ScanKindIncremental = "incremental"
+	ScanKindFull        = "full"
+)
+
+// ScanKind returns the wire kind for a scan given whether it is forced (full).
+func ScanKind(force bool) string {
+	if force {
+		return ScanKindFull
+	}
+	return ScanKindIncremental
+}
 
 var mediaExtensions = map[string]struct{}{
 	".mkv": {}, ".mp4": {}, ".avi": {}, ".m4v": {},
@@ -191,6 +209,32 @@ func New(st *store.Store, cfg *config.Config, opts ...Option) (*Scanner, error) 
 // ("startup", "scheduled", "manual"). force skips the (size, mtime) equality
 // check and re-probes every file.
 func (s *Scanner) Scan(ctx context.Context, trigger string, force bool) (*store.ScanRun, error) {
+	kind := ScanKind(force)
+	if s.hub != nil {
+		s.hub.ScanStarted(kind)
+	}
+
+	run, err := s.scan(ctx, trigger, force)
+
+	if s.hub != nil {
+		if err != nil {
+			s.hub.ScanFailed(err.Error())
+		} else {
+			s.hub.ScanCompleted(map[string]any{
+				"scan_run_id":   run.ID,
+				"files_scanned": run.FilesScanned,
+				"files_added":   run.FilesAdded,
+				"files_updated": run.FilesUpdated,
+				"files_moved":   run.FilesMoved,
+				"files_removed": run.FilesRemoved,
+				"errors":        run.Errors,
+			})
+		}
+	}
+	return run, err
+}
+
+func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.ScanRun, error) {
 	startedAt := time.Now().Unix()
 	runID, err := s.store.Scans.Create(ctx, trigger, startedAt)
 	if err != nil {

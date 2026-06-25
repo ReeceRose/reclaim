@@ -25,11 +25,25 @@ const (
 	wsSendBuffer = 32
 )
 
+// WebSocket scan lifecycle event names.
+const (
+	WSEventScanStarted   = "scan_started"
+	WSEventScanCompleted = "scan_completed"
+	WSEventScanFailed    = "scan_failed"
+)
+
 // Hub is the broadcast fan-out for live job + scan progress. A dropped-slow
 // client is disconnected rather than allowed to block the broadcaster.
+//
+// activeScans tracks overlapping scans (startup + manual can run concurrently).
+// Clients that connect mid-scan receive a retained scan_started on registration.
 type Hub struct {
 	mu      sync.RWMutex
 	clients map[*wsClient]struct{}
+
+	scanMu      sync.Mutex
+	activeScans int
+	scanKind    string // kind of the first in-flight scan; shown to late joiners
 }
 
 func NewHub() *Hub {
@@ -63,10 +77,60 @@ func (h *Hub) ClientCount() int {
 	return len(h.clients)
 }
 
+// ScanStarted marks a scan in flight and broadcasts scan_started. Safe to call
+// from multiple overlapping scans; the latch clears only when the last ends.
+func (h *Hub) ScanStarted(kind string) {
+	h.scanMu.Lock()
+	if h.activeScans == 0 {
+		h.scanKind = kind
+	}
+	h.activeScans++
+	h.scanMu.Unlock()
+	h.Broadcast(WSEventScanStarted, map[string]any{"kind": kind})
+}
+
+// ScanCompleted decrements the in-flight counter and broadcasts scan_completed.
+func (h *Hub) ScanCompleted(data map[string]any) {
+	h.scanMu.Lock()
+	if h.activeScans > 0 {
+		h.activeScans--
+	}
+	h.scanMu.Unlock()
+	h.Broadcast(WSEventScanCompleted, data)
+}
+
+// ScanFailed decrements the in-flight counter and broadcasts scan_failed.
+func (h *Hub) ScanFailed(errMsg string) {
+	h.scanMu.Lock()
+	if h.activeScans > 0 {
+		h.activeScans--
+	}
+	h.scanMu.Unlock()
+	h.Broadcast(WSEventScanFailed, map[string]any{"error": errMsg})
+}
+
 func (h *Hub) register(cl *wsClient) {
 	h.mu.Lock()
 	h.clients[cl] = struct{}{}
 	h.mu.Unlock()
+
+	// Retained message: late joiners still see the scanning banner.
+	h.scanMu.Lock()
+	active := h.activeScans > 0
+	kind := h.scanKind
+	h.scanMu.Unlock()
+	if !active {
+		return
+	}
+	payload, err := json.Marshal(Event{Event: WSEventScanStarted, Data: map[string]any{"kind": kind}})
+	if err != nil {
+		return
+	}
+	select {
+	case cl.send <- payload:
+	default:
+		// Client hasn't started reading yet; best-effort — they'll catch scan_completed.
+	}
 }
 
 func (h *Hub) unregister(cl *wsClient) {

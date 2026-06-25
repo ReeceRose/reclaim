@@ -156,32 +156,16 @@ func (s *Server) handleFullScan(c *echo.Context) error {
 }
 
 // triggerScan kicks off a scan in the background and returns 202. Scan lifecycle
-// is pushed over the WS hub so the UI can show progress without polling. The
-// request context is not used for the scan itself (it would cancel on return).
+// is pushed over the WS hub by the scanner itself so startup and manual scans
+// share the same path. The request context is not used for the scan itself (it
+// would cancel on return).
 func (s *Server) triggerScan(c *echo.Context, force bool) error {
 	if s.scanner == nil {
 		return c.JSON(http.StatusServiceUnavailable, errorBody("scanner unavailable"))
 	}
-	kind := "incremental"
-	if force {
-		kind = "full"
-	}
-	s.hub.Broadcast("scan_started", map[string]any{"kind": kind})
+	kind := scanner.ScanKind(force)
 	go func() {
-		run, err := s.scanner.Scan(context.Background(), scanner.TriggerManual, force)
-		if err != nil {
-			s.hub.Broadcast("scan_failed", map[string]any{"error": err.Error()})
-			return
-		}
-		s.hub.Broadcast("scan_completed", map[string]any{
-			"scan_run_id":   run.ID,
-			"files_scanned": run.FilesScanned,
-			"files_added":   run.FilesAdded,
-			"files_updated": run.FilesUpdated,
-			"files_moved":   run.FilesMoved,
-			"files_removed": run.FilesRemoved,
-			"errors":        run.Errors,
-		})
+		_, _ = s.scanner.Scan(context.Background(), scanner.TriggerManual, force)
 	}()
 	return c.JSON(http.StatusAccepted, map[string]any{"started": true, "kind": kind})
 }

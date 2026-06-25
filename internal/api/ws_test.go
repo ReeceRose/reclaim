@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"reclaim/internal/scanner"
 )
 
 func TestWebSocketReceivesScanEvents(t *testing.T) {
@@ -50,9 +52,45 @@ func TestWebSocketReceivesScanEvents(t *testing.T) {
 
 	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	got := readEventTypes(t, conn, 2)
-	if !got["scan_started"] {
+	if !got[WSEventScanStarted] {
 		t.Errorf("did not receive scan_started; got %v", got)
 	}
+	if !got[WSEventScanCompleted] {
+		t.Errorf("did not receive scan_completed; got %v", got)
+	}
+}
+
+func TestWebSocketLateConnectReceivesRetainedScanStarted(t *testing.T) {
+	srv, h, st, _ := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+
+	ts := httptest.NewServer(h)
+	defer ts.Close()
+
+	// Simulate a scan already in flight before any client connects.
+	srv.Hub().ScanStarted(scanner.ScanKindIncremental)
+
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/api/ws"
+	header := http.Header{}
+	header.Set("Cookie", cookie.String())
+
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if err != nil {
+		body := ""
+		if resp != nil {
+			body = resp.Status
+		}
+		t.Fatalf("ws dial: %v (%s)", err, body)
+	}
+	defer conn.Close()
+
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	got := readEventTypes(t, conn, 1)
+	if !got[WSEventScanStarted] {
+		t.Fatalf("late connect did not receive retained scan_started; got %v", got)
+	}
+
+	srv.Hub().ScanCompleted(map[string]any{"files_scanned": 0})
 }
 
 func TestWebSocketRejectsUnauthenticated(t *testing.T) {

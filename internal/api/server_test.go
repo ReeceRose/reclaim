@@ -13,15 +13,33 @@ import (
 	"time"
 
 	"reclaim/internal/config"
+	"reclaim/internal/scanner"
 	"reclaim/internal/store"
 )
 
 // fakeScanner satisfies ScanTrigger without touching the filesystem.
-type fakeScanner struct{ calls int32 }
+type fakeScanner struct {
+	calls int32
+	hub   *Hub
+}
 
-func (f *fakeScanner) Scan(_ context.Context, _ string, _ bool) (*store.ScanRun, error) {
+func (f *fakeScanner) Scan(_ context.Context, _ string, force bool) (*store.ScanRun, error) {
 	atomic.AddInt32(&f.calls, 1)
-	return &store.ScanRun{ID: 1, FilesScanned: 3, FilesAdded: 1}, nil
+	kind := scanner.ScanKind(force)
+	run := &store.ScanRun{ID: 1, FilesScanned: 3, FilesAdded: 1}
+	if f.hub != nil {
+		f.hub.ScanStarted(kind)
+		f.hub.ScanCompleted(map[string]any{
+			"scan_run_id":   run.ID,
+			"files_scanned": run.FilesScanned,
+			"files_added":   run.FilesAdded,
+			"files_updated": run.FilesUpdated,
+			"files_moved":   run.FilesMoved,
+			"files_removed": run.FilesRemoved,
+			"errors":        run.Errors,
+		})
+	}
+	return run, nil
 }
 
 func testConfig() *config.Config {
@@ -52,6 +70,7 @@ func newTestServer(t *testing.T, disableAuth bool) (*Server, http.Handler, *stor
 		TVPath:      "/media/tv",
 		DisableAuth: disableAuth,
 	})
+	fs.hub = srv.Hub()
 	return srv, srv.Handler(), st, fs
 }
 

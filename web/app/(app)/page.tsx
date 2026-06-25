@@ -2,7 +2,7 @@
 
 import { useSuspenseQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { formatBytes, formatInt } from '@/lib/format';
+import { formatBytes, formatInt, formatPct } from '@/lib/format';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -202,13 +202,12 @@ function DashboardContent() {
             <div className="h-full" style={{ width: `${hevcPct}%`, background: 'color-mix(in srgb, var(--green) 32%, transparent)' }} />
           </div>
           <div className="flex gap-5 mt-3 text-xs text-muted-fg flex-wrap">
-            <span className="flex items-center gap-[7px]"><span className="w-[10px] h-[10px] rounded-[4px] bg-brand inline-block" />Reclaimable · {formatBytes(recoverable)}</span>
-            <span className="flex items-center gap-[7px]"><span className="w-[10px] h-[10px] rounded-[4px] bg-surface-3 inline-block" />After encode · {formatBytes(kept)}</span>
-            <span className="flex items-center gap-[7px]"><span className="w-[10px] h-[10px] rounded-[4px] inline-block" style={{ background: 'color-mix(in srgb, var(--green) 45%, transparent)' }} />Already HEVC · {formatBytes(hevcBytes)}</span>
+            <span className="flex items-center gap-[7px]"><span className="w-[10px] h-[10px] rounded-[4px] bg-brand inline-block" />Reclaimable · {formatBytes(recoverable)} · {reclaimPct}%</span>
+            <span className="flex items-center gap-[7px]"><span className="w-[10px] h-[10px] rounded-[4px] bg-surface-3 inline-block" />After encode · {formatBytes(kept)} · {keptPct}%</span>
+            <span className="flex items-center gap-[7px]"><span className="w-[10px] h-[10px] rounded-[4px] inline-block" style={{ background: 'color-mix(in srgb, var(--green) 45%, transparent)' }} />Already HEVC · {formatBytes(hevcBytes)} · {hevcPct}%</span>
           </div>
         </div>
 
-        {/* Inline stats — inside the hero, separated by a thin rule */}
         <div className="mt-6 pt-5 border-t border-line-soft grid grid-cols-3 gap-4 max-sm:grid-cols-1">
           <div>
             <div className="text-xs text-muted-fg uppercase tracking-wider font-bold">Total files</div>
@@ -217,10 +216,12 @@ function DashboardContent() {
           <div>
             <div className="text-xs text-muted-fg uppercase tracking-wider font-bold">Candidates</div>
             <div className="text-stat font-bold tracking-tight mt-1 text-brand">{formatInt(candidateCount)}</div>
+            <div className="text-xs text-muted-dim mt-0.5">{formatPct(candidateCount, stats.total_files)} of library</div>
           </div>
           <div>
             <div className="text-xs text-muted-fg uppercase tracking-wider font-bold">Already HEVC</div>
             <div className="text-stat font-bold tracking-tight mt-1 text-green">{formatInt(hevcCount)}</div>
+            <div className="text-xs text-muted-dim mt-0.5">{formatPct(hevcCount, stats.total_files)} of library</div>
           </div>
         </div>
       </div>
@@ -250,7 +251,9 @@ function DashboardContent() {
               <div className="flex-1 h-[10px] bg-surface-2 rounded-[6px] overflow-hidden">
                 <div className="h-full rounded-[6px]" style={{ width: `${Math.round((c.file_count / maxCodecFiles) * 100)}%`, background: codecColor(c.codec) }} />
               </div>
-              <div className="w-[104px] text-right text-muted-fg text-xs">{formatInt(c.file_count)} · {formatBytes(c.total_bytes)}</div>
+              <div className="w-[148px] text-right text-muted-fg text-xs tnum">
+                {formatInt(c.file_count)} ({formatPct(c.file_count, stats.total_files)}) · {formatBytes(c.total_bytes)} ({formatPct(c.total_bytes, total)})
+              </div>
             </div>
           ))}
         </div>
@@ -262,7 +265,7 @@ function DashboardContent() {
               <div className="flex-1 h-[10px] bg-surface-2 rounded-[6px] overflow-hidden">
                 <div className="h-full rounded-[6px] bg-sky" style={{ width: `${Math.round((r.file_count / maxResFiles) * 100)}%` }} />
               </div>
-              <div className="w-[104px] text-right text-muted-fg text-xs">{formatInt(r.file_count)}</div>
+              <div className="w-[104px] text-right text-muted-fg text-xs tnum">{formatInt(r.file_count)} ({formatPct(r.file_count, stats.total_files)})</div>
             </div>
           ))}
         </div>

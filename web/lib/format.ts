@@ -20,6 +20,12 @@ export function formatInt(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+/** formatPct renders part/total as a percentage string. */
+export function formatPct(part: number, total: number, digits = 0): string {
+  if (total <= 0) return "0%";
+  return `${((part / total) * 100).toFixed(digits)}%`;
+}
+
 /** relativeTime renders a unix-seconds timestamp as "18 min ago". */
 export function relativeTime(unixSeconds: number | null | undefined): string {
   if (!unixSeconds) return "never";

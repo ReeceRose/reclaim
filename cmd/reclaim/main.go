@@ -83,10 +83,12 @@ func main() {
 
 	// Wire the WS hub into the scanner so scan_completed events are broadcast.
 	sc.SetBroadcaster(apiSrv.Hub())
+	sc.SetCandidateInvalidator(apiSrv)
 
 	// Worker executes encodes within the window and pushes progress over the
 	// server's WS hub; the API drives it to cancel running jobs.
-	wk := worker.New(db, live, apiSrv.Hub(), []string{cfg.MoviesPath, cfg.TVPath})
+	wk := worker.New(db, live, apiSrv.Hub(), []string{cfg.MoviesPath, cfg.TVPath},
+		worker.WithCandidateInvalidator(apiSrv))
 	apiSrv.SetCanceller(wk)
 
 	// Start scanner and worker after all wiring is complete.

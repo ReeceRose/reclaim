@@ -61,6 +61,7 @@ type Server struct {
 	hub          *Hub
 	loginLimiter *rateLimiter
 	canceller    JobCanceller
+	candCache    *candidateCache
 }
 
 func New(d Deps) *Server {
@@ -74,6 +75,7 @@ func New(d Deps) *Server {
 		staticFS:     d.StaticFS,
 		hub:          NewHub(),
 		loginLimiter: newRateLimiter(),
+		candCache:    newCandidateCache(),
 	}
 	if d.Store != nil {
 		s.auth = d.Store.Settings

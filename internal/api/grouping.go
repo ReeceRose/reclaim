@@ -65,13 +65,18 @@ func (s *Server) handleGroupedCandidates(c *echo.Context) error {
 
 	tvFilter := filter
 	tvFilter.LibraryType = store.LibraryTypeTV
+	cacheKey := filterCacheKey(tvFilter)
+	if series, ok := s.candCache.getGrouped(cacheKey); ok {
+		return c.JSON(http.StatusOK, map[string]any{"series": series})
+	}
+
 	files, err := s.store.Media.AllCandidates(c.Request().Context(), tvFilter)
 	if err != nil {
 		return badRequest(c, err.Error())
 	}
-	return c.JSON(http.StatusOK, map[string]any{
-		"series": s.groupTVSummaries(files),
-	})
+	series := s.groupTVSummaries(files)
+	s.candCache.putGrouped(cacheKey, series)
+	return c.JSON(http.StatusOK, map[string]any{"series": series})
 }
 
 // handleGroupedSeasonEpisodes returns the episode rows for one TV series season.
@@ -89,6 +94,11 @@ func (s *Server) handleGroupedSeasonEpisodes(c *echo.Context) error {
 	filter := parseCandidateFilter(c)
 	filter.LibraryType = store.LibraryTypeTV
 
+	cacheKey := seasonEpisodesCacheKey(filter, series, season)
+	if episodes, ok := s.candCache.getEpisodes(cacheKey); ok {
+		return c.JSON(http.StatusOK, map[string]any{"episodes": episodes})
+	}
+
 	prefix := filepath.Join(s.tvPath, series)
 	if s.tvPath != "" && !strings.HasSuffix(prefix, string(filepath.Separator)) {
 		prefix += string(filepath.Separator)
@@ -99,6 +109,7 @@ func (s *Server) handleGroupedSeasonEpisodes(c *echo.Context) error {
 	}
 
 	episodes := s.buildSeasonEpisodes(files, series, season)
+	s.candCache.putEpisodes(cacheKey, episodes)
 	return c.JSON(http.StatusOK, map[string]any{"episodes": episodes})
 }
 

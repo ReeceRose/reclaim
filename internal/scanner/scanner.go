@@ -28,6 +28,12 @@ type Broadcaster interface {
 	Broadcast(event string, data any)
 }
 
+// CandidatesInvalidator is notified when media or job state changes affect the
+// candidate list. Satisfied by api.Server.
+type CandidatesInvalidator interface {
+	InvalidateCandidates()
+}
+
 // Scan trigger values passed to Scan and recorded in scan_runs.
 const (
 	TriggerStartup   = "startup"
@@ -56,6 +62,7 @@ type Scanner struct {
 	store *store.Store
 	roots map[string]string // mountPath -> libraryType
 	hub   Broadcaster       // nil-safe; set via SetBroadcaster
+	invalidate CandidatesInvalidator // nil-safe; set via SetCandidateInvalidator
 
 	probeFunc    ProbeFunc
 	scanInterval time.Duration
@@ -93,6 +100,15 @@ func WithProbeFunc(fn ProbeFunc) Option {
 // SetBroadcaster wires the hub after construction. Used in main.go where the
 // API server (and its hub) is created after the scanner.
 func (s *Scanner) SetBroadcaster(b Broadcaster) { s.hub = b }
+
+// SetCandidateInvalidator wires cache invalidation after construction.
+func (s *Scanner) SetCandidateInvalidator(inv CandidatesInvalidator) { s.invalidate = inv }
+
+func (s *Scanner) invalidateCandidates() {
+	if s.invalidate != nil {
+		s.invalidate.InvalidateCandidates()
+	}
+}
 
 // WithDebounceDur overrides the debounce window (use in tests to avoid 30s waits).
 // The remove debounce is set to dur+5s so creates settle before vanished checks run.
@@ -375,6 +391,7 @@ func (s *Scanner) Scan(ctx context.Context, trigger string, force bool) (*store.
 		"removed", run.FilesRemoved,
 		"errors", run.Errors,
 	)
+	s.invalidateCandidates()
 	return run, nil
 }
 
@@ -596,7 +613,9 @@ func (s *Scanner) probeSingleFile(ctx context.Context, path string) {
 	}
 
 	lt := s.libraryTypeFor(path)
-	s.probeAndStore(ctx, path, lt, info.Size(), info.ModTime().Unix(), rec)
+	if _, id, _ := s.probeAndStore(ctx, path, lt, info.Size(), info.ModTime().Unix(), rec); id >= 0 {
+		s.invalidateCandidates()
+	}
 }
 
 // checkVanishedFile handles a file that no longer exists on disk: if another
@@ -610,7 +629,9 @@ func (s *Scanner) checkVanishedFile(ctx context.Context, path string) {
 		return
 	}
 	if f.Fingerprint == "" {
-		_ = s.store.Media.MarkMissing(ctx, f.ID)
+		if err := s.store.Media.MarkMissing(ctx, f.ID); err == nil {
+			s.invalidateCandidates()
+		}
 		return
 	}
 
@@ -618,12 +639,16 @@ func (s *Scanner) checkVanishedFile(ctx context.Context, path string) {
 	if err == nil {
 		if merr := s.store.Media.RecordMove(ctx, f.ID, newFile.ID, newFile.Path); merr != nil {
 			slog.Error("scanner: watcher record move", "from", path, "to", newFile.Path, "err", merr)
+		} else {
+			s.invalidateCandidates()
 		}
 		return
 	}
 
 	if merr := s.store.Media.MarkMissing(ctx, f.ID); merr != nil {
 		slog.Error("scanner: watcher mark missing", "path", path, "err", merr)
+	} else {
+		s.invalidateCandidates()
 	}
 }
 

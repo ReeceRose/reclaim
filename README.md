@@ -7,6 +7,8 @@
 
 Self-hosted codec audit and re-encode tool for homelabs. Point it at the same movie and TV folders Plex, Jellyfin, or Emby already use, rank files by predicted HEVC savings, and manually queue overnight `ffmpeg` jobs.
 
+**Website:** [reclaim.reecerose.com](https://reclaim.reecerose.com)
+
 Single container: Go API + embedded web UI + ffmpeg/ffprobe. No database server, Redis, or sidecar services.
 
 ---

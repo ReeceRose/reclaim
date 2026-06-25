@@ -36,6 +36,18 @@ npm run build     # static export to web/out/ (used by embed.go)
 npm run lint
 ```
 
+### Landing page (landing/)
+
+Separate marketing site deployed to Vercel (not embedded in the Go binary):
+
+```bash
+cd landing
+npm run dev       # Next.js dev server on :3000
+npm run build
+```
+
+Production: https://reclaim.reecerose.com — config in `landing/lib/site.ts`.
+
 ### Generating fake media for dev
 
 Populate `.dev/tv/` and `.dev/movies/` with tiny ffmpeg test-source videos:

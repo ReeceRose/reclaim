@@ -4,6 +4,7 @@ import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { api, type CandidateFilters } from '@/lib/api';
 import { formatBytes, formatInt } from '@/lib/format';
 import { useState, Suspense, useMemo } from 'react';
+import { buildQueryString, useQueryParam, useQueryParams } from '@/hooks/use-query-params';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,11 +33,20 @@ function DryRunSkeleton() {
 }
 
 function DryRunContent() {
-  const [codec, setCodec] = useState('');
-  const [library, setLibrary] = useState('');
-  const [profileId, setProfileId] = useState<number | null>(null);
+  const { get } = useQueryParams();
+  const [codec, setCodec] = useQueryParam('codec');
+  const [library, setLibrary] = useQueryParam('library');
+  const [profileRaw, setProfileRaw] = useQueryParam('profile');
+  const profileId = profileRaw ? Number(profileRaw) : null;
+  const setProfileId = (id: number | null) => setProfileRaw(id != null ? String(id) : '');
 
-  const [queryFilters, setQueryFilters] = useState<CandidateFilters | null>(null);
+  const [queryFilters, setQueryFilters] = useState<CandidateFilters | null>(() => {
+    if (!get('codec') && !get('library') && !get('profile')) return null;
+    return {
+      video_codec: get('codec') || undefined,
+      library_type: get('library') || undefined,
+    };
+  });
 
   const { data: profilesData } = useSuspenseQuery({
     queryKey: ['profiles'],
@@ -71,6 +81,14 @@ function DryRunContent() {
   function handleCalculate() {
     setQueryFilters({ video_codec: effectiveCodec || undefined, library_type: effectiveLibrary || undefined });
   }
+
+  const candidatesHref = useMemo(() => {
+    const qs = buildQueryString({
+      codec: queryFilters?.video_codec,
+      library: queryFilters?.library_type,
+    });
+    return qs ? `/candidates?${qs}` : '/candidates';
+  }, [queryFilters]);
 
   const total = result?.total_bytes ?? 0;
   const savings = result?.predicted_savings_bytes ?? 0;
@@ -200,7 +218,7 @@ function DryRunContent() {
                   className="rounded-[11px]"
                   style={{ background: 'linear-gradient(145deg, var(--brand), var(--brand-2))', boxShadow: '0 4px 14px var(--brand-soft)' }}
                 >
-                  <Link href="/candidates">Review &amp; queue this set →</Link>
+                  <Link href={candidatesHref}>Review &amp; queue this set →</Link>
                 </Button>
               </div>
             </div>

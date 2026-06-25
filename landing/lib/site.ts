@@ -6,7 +6,7 @@ export const site = {
   url: "https://reclaim.reecerose.com",
   tagline: "Reclaim disk space from your media library — safely.",
   description:
-    "Self-hosted codec audit and re-encode tool for homelabs. Point it at the movie and TV folders Plex, Jellyfin, or Emby already use, rank files by predicted HEVC savings, and manually queue overnight ffmpeg jobs.",
+    "Self-hosted codec audit and re-encode tool for homelabs. Point it at the movie and TV folders Plex, Jellyfin, or Emby already use, rank files by predicted HEVC savings, see which are better re-downloaded than re-encoded, and manually queue overnight ffmpeg jobs.",
   repo: "https://github.com/reecerose/reclaim",
   docker: "ghcr.io/reecerose/reclaim:latest",
   docsBase: "https://github.com/reecerose/reclaim/blob/main/docs",

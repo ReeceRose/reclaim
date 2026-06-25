@@ -150,9 +150,11 @@ export function Hero() {
 
           <p className="mt-5 max-w-xl text-base leading-relaxed text-muted-fg sm:text-lg">
             Point it at the same movie and TV folders Plex, Jellyfin, or Emby
-            already use. Reclaim ranks files by predicted HEVC savings and lets
-            you manually queue overnight <span className="font-mono text-text">ffmpeg</span>{" "}
-            re-encodes — replacing files in place only after verification.
+            already use. Reclaim audits every file by codec, bitrate, and size, then
+            ranks what&apos;s worth re-encoding. Queue the wins as overnight{" "}
+            <span className="font-mono text-text">ffmpeg</span> jobs — and see the
+            files better re-downloaded than re-encoded. Originals are replaced only
+            after verification.
           </p>
 
           <div className="mt-7 flex flex-wrap items-center gap-3">

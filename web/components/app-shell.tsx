@@ -76,6 +76,17 @@ const NAV_ITEMS = [
     ),
   },
   {
+    path: '/library',
+    label: 'Library',
+    group: 'Library',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[18px] h-[18px] shrink-0">
+        <path d="M3 6h18"/><path d="M3 12h18"/><path d="M3 18h18"/>
+        <path d="M7 6v12"/>
+      </svg>
+    ),
+  },
+  {
     path: '/candidates',
     label: 'Candidates',
     group: 'Library',

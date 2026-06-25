@@ -3,11 +3,12 @@
 import { useInfiniteQuery, useQuery, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api, type MediaFile, type CandidateFilters, type Profile, type Episode, type SeriesGroup } from '@/lib/api';
-import { formatBytes, formatInt, resolutionLabel, baseName, dirName } from '@/lib/format';
+import { formatBytes, formatInt, formatCoverage, resolutionLabel, baseName, dirName } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { useRef, useState, useEffect, useMemo, useCallback, useTransition, Suspense } from 'react';
+import { parseQueryEnum, useQueryParam, useQueryParams } from '@/hooks/use-query-params';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,7 +22,6 @@ import { codecFilterOptions, libraryFilterOptions, resolutionFilterOptions } fro
 const PAGE_SIZE = 100;
 
 type SortKey = 'savings_desc' | 'size_desc' | 'mtime_asc' | 'codec';
-type ViewMode = 'flat' | 'grouped';
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'savings_desc', label: 'Predicted savings' },
@@ -417,7 +417,7 @@ function GroupedContent({
                   <Badge className="text-[0.7rem] rounded text-sky border-[rgba(51,177,255,.32)] bg-[rgba(51,177,255,.1)]">TV</Badge>
                 </div>
                 <div className="text-[0.76rem] text-muted-fg mt-0.5">
-                  {s.season_count} seasons · {formatInt(s.candidate_count)} candidates · {formatBytes(s.total_bytes)}
+                  {s.season_count} seasons · {formatCoverage(s.file_count, s.candidate_count)} · {formatBytes(s.total_bytes)}
                 </div>
               </div>
               <div className="text-right shrink-0">
@@ -442,6 +442,7 @@ function GroupedContent({
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3"><path d="M9 18l6-6-6-6"/></svg>
                         </span>
                         Season {se.season}
+                        <span className="text-muted-dim">{formatCoverage(se.file_count, se.candidate_count)}</span>
                         {seasonSelCount > 0 && <span className="text-brand">({seasonSelCount} sel)</span>}
                         <span className="ml-auto text-brand font-semibold">{formatBytes(se.predicted_savings_bytes)}</span>
                       </div>
@@ -507,17 +508,20 @@ function GroupedView(props: {
   );
 }
 
-export default function Page() {
+function CandidatesPage() {
   const qc = useQueryClient();
   const { openFile } = useFileDetail();
   const [isPending, startTransition] = useTransition();
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [sort, setSort] = useState<SortKey>('savings_desc');
-  const [codec, setCodec] = useState('');
-  const [resolution, setResolution] = useState('');
-  const [library, setLibrary] = useState('');
-  const [view, setView] = useState<ViewMode>('flat');
+  const { get, set: setQuery } = useQueryParams();
+  const [search, setSearch] = useState(() => get('q') ?? '');
+  const [debouncedSearch, setDebouncedSearch] = useState(() => get('q') ?? '');
+  const [sortRaw, setSortRaw] = useQueryParam('sort', 'savings_desc');
+  const sort = parseQueryEnum(sortRaw, SORT_OPTIONS.map((o) => o.value), 'savings_desc');
+  const [codec, setCodec] = useQueryParam('codec');
+  const [resolution, setResolution] = useQueryParam('res');
+  const [library, setLibrary] = useQueryParam('library');
+  const [viewRaw, setViewRaw] = useQueryParam('view', 'flat');
+  const view = parseQueryEnum(viewRaw, ['flat', 'grouped'] as const, 'flat');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const fileMapRef = useRef<Map<number, MediaFile>>(new Map());
@@ -538,10 +542,21 @@ export default function Page() {
   const effectiveResolution = resolution && resolutionOptions.some((o) => o.value === resolution) ? resolution : '';
   const effectiveLibrary = library && libraryOptions.some((o) => o.value === library) ? library : '';
 
+  const qFromUrl = get('q') ?? '';
   useEffect(() => {
-    const t = setTimeout(() => startTransition(() => setDebouncedSearch(search)), 300);
+    setSearch(qFromUrl);
+    setDebouncedSearch(qFromUrl);
+  }, [qFromUrl]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      startTransition(() => {
+        setDebouncedSearch(search);
+        setQuery({ q: search || null });
+      });
+    }, 300);
     return () => clearTimeout(t);
-  }, [search]);
+  }, [search, setQuery]);
 
   const filters: CandidateFilters = {
     sort,
@@ -699,7 +714,7 @@ export default function Page() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setView('flat')}
+              onClick={() => setViewRaw('flat')}
               className={cn('rounded-[8px] text-xs font-semibold h-auto py-[7px] px-[13px]', view === 'flat' ? 'bg-brand-soft text-brand hover:bg-brand-soft hover:text-brand' : 'text-muted-fg')}
             >
               Flat
@@ -707,7 +722,7 @@ export default function Page() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setView('grouped')}
+              onClick={() => setViewRaw('grouped')}
               className={cn('rounded-[8px] text-xs font-semibold h-auto py-[7px] px-[13px]', view === 'grouped' ? 'bg-brand-soft text-brand hover:bg-brand-soft hover:text-brand' : 'text-muted-fg')}
             >
               By series
@@ -715,7 +730,7 @@ export default function Page() {
           </div>
         </div>
         <div className="flex items-center gap-2 px-4 pb-3 flex-wrap sm:px-7">
-          <Select value={sort} onValueChange={(v) => startTransition(() => setSort(v as SortKey))}>
+          <Select value={sort} onValueChange={(v) => startTransition(() => setSortRaw(v))}>
             <SelectTrigger className="rounded-[11px] bg-surface text-sm h-auto py-[7px] gap-1 min-w-[185px]">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[13px] h-[13px] text-muted-dim shrink-0">
                 <path d="M3 8h18M6 12h12M10 16h4"/>
@@ -863,5 +878,24 @@ export default function Page() {
         }}
       />
     </div>
+  );
+}
+
+function CandidatesSkeleton() {
+  return (
+    <div className="flex flex-col min-w-0 h-screen overflow-hidden max-sm:h-[calc(100dvh_-_4.25rem_-_env(safe-area-inset-bottom))]">
+      <div className="px-4 py-[14px] border-b border-line sm:px-7 sm:py-[18px]">
+        <Skeleton className="h-7 w-48 mb-2" />
+        <Skeleton className="h-3 w-52" />
+      </div>
+    </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<CandidatesSkeleton />}>
+      <CandidatesPage />
+    </Suspense>
   );
 }

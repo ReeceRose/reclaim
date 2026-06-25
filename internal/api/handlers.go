@@ -120,7 +120,7 @@ func (s *Server) handleCandidates(c *echo.Context) error {
 
 	items := make([]mediaFileDTO, 0, len(files))
 	for i := range files {
-		items = append(items, toMediaFileDTO(&files[i]))
+		items = append(items, toMediaFileDTOWithState(&files[i], string(store.CandidateStateCandidate)))
 	}
 
 	resp := map[string]any{"items": items}
@@ -154,7 +154,11 @@ func (s *Server) handleFileDetail(c *echo.Context) error {
 	if err != nil {
 		return serverError(c, err)
 	}
-	return c.JSON(http.StatusOK, toMediaFileDTO(f))
+	states, err := s.store.Media.CandidateStates(c.Request().Context(), []store.MediaFile{*f})
+	if err != nil {
+		return serverError(c, err)
+	}
+	return c.JSON(http.StatusOK, toMediaFileDTOWithState(f, string(states[f.ID])))
 }
 
 func (s *Server) handleScan(c *echo.Context) error {

@@ -29,6 +29,7 @@ type episodeDTO struct {
 
 type seasonSummary struct {
 	Season                int     `json:"season"`
+	FileCount             int     `json:"file_count"`
 	CandidateCount        int     `json:"candidate_count"`
 	TotalBytes            int64   `json:"total_bytes"`
 	PredictedSavingsBytes int64   `json:"predicted_savings_bytes"`
@@ -38,10 +39,11 @@ type seasonSummary struct {
 type seriesSummary struct {
 	Title                 string          `json:"title"`
 	LibraryType           string          `json:"library_type"`
-	CandidateCount        int           `json:"candidate_count"`
-	SeasonCount           int           `json:"season_count"`
-	TotalBytes            int64         `json:"total_bytes"`
-	PredictedSavingsBytes int64         `json:"predicted_savings_bytes"`
+	FileCount             int             `json:"file_count"`
+	CandidateCount        int             `json:"candidate_count"`
+	SeasonCount           int             `json:"season_count"`
+	TotalBytes            int64           `json:"total_bytes"`
+	PredictedSavingsBytes int64           `json:"predicted_savings_bytes"`
 	Seasons               []seasonSummary `json:"seasons"`
 }
 
@@ -70,11 +72,18 @@ func (s *Server) handleGroupedCandidates(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]any{"series": series})
 	}
 
-	files, err := s.store.Media.AllCandidates(c.Request().Context(), tvFilter)
+	candidates, err := s.store.Media.AllCandidates(c.Request().Context(), tvFilter)
 	if err != nil {
 		return badRequest(c, err.Error())
 	}
-	series := s.groupTVSummaries(files)
+	allFiles, err := s.store.Media.AllFiles(c.Request().Context(), store.FileFilter{
+		LibraryType: store.LibraryTypeTV,
+		Search:      filter.Search,
+	})
+	if err != nil {
+		return badRequest(c, err.Error())
+	}
+	series := s.groupTVSummaries(candidates, allFiles)
 	s.candCache.putGrouped(cacheKey, series)
 	return c.JSON(http.StatusOK, map[string]any{"series": series})
 }
@@ -114,9 +123,26 @@ func (s *Server) handleGroupedSeasonEpisodes(c *echo.Context) error {
 }
 
 // groupTVSummaries aggregates TV candidates into series → season summaries.
-// files is expected pre-sorted by predicted savings desc; series ordering
-// follows total predicted savings.
-func (s *Server) groupTVSummaries(files []store.MediaFile) []seriesSummary {
+// candidates is expected pre-sorted by predicted savings desc; series ordering
+// follows total predicted savings. allFiles supplies per-season file totals
+// (active episodes only, search-scoped) so the UI can show coverage.
+func (s *Server) groupTVSummaries(candidates []store.MediaFile, allFiles []store.MediaFile) []seriesSummary {
+	type seasonKey struct {
+		title  string
+		season int
+	}
+	seasonFiles := make(map[seasonKey]int)
+	seriesFiles := make(map[string]int)
+	for i := range allFiles {
+		f := &allFiles[i]
+		if f.Status != store.MediaStatusActive {
+			continue
+		}
+		title, season, _ := parseTVInfo(f.Path, s.tvPath)
+		seasonFiles[seasonKey{title, season}]++
+		seriesFiles[title]++
+	}
+
 	type seasonAcc struct {
 		season int
 		ids    []int64
@@ -134,8 +160,8 @@ func (s *Server) groupTVSummaries(files []store.MediaFile) []seriesSummary {
 	bySeries := make(map[string]*seriesAcc)
 	var seriesOrder []string
 
-	for i := range files {
-		f := &files[i]
+	for i := range candidates {
+		f := &candidates[i]
 		title, season, _ := parseTVInfo(f.Path, s.tvPath)
 		acc, ok := bySeries[title]
 		if !ok {
@@ -168,8 +194,13 @@ func (s *Server) groupTVSummaries(files []store.MediaFile) []seriesSummary {
 		sort.Ints(acc.order)
 		for _, sn := range acc.order {
 			sa := acc.seasons[sn]
+			fileCount := seasonFiles[seasonKey{acc.title, sn}]
+			if fileCount == 0 {
+				fileCount = len(sa.ids)
+			}
 			sg.Seasons = append(sg.Seasons, seasonSummary{
 				Season:                sn,
+				FileCount:             fileCount,
 				CandidateCount:        len(sa.ids),
 				TotalBytes:            sa.bytes,
 				PredictedSavingsBytes: sa.saving,
@@ -178,6 +209,10 @@ func (s *Server) groupTVSummaries(files []store.MediaFile) []seriesSummary {
 			sg.CandidateCount += len(sa.ids)
 			sg.TotalBytes += sa.bytes
 			sg.PredictedSavingsBytes += sa.saving
+		}
+		sg.FileCount = seriesFiles[acc.title]
+		if sg.FileCount == 0 {
+			sg.FileCount = sg.CandidateCount
 		}
 		sg.SeasonCount = len(sg.Seasons)
 		out = append(out, sg)
@@ -193,7 +228,7 @@ func (s *Server) buildSeasonEpisodes(files []store.MediaFile, seriesTitle string
 		if title != seriesTitle || sn != season {
 			continue
 		}
-		ep := episodeDTO{mediaFileDTO: toMediaFileDTO(f), Season: season}
+		ep := episodeDTO{mediaFileDTO: toMediaFileDTOWithState(f, string(store.CandidateStateCandidate)), Season: season}
 		if episode >= 0 {
 			e := episode
 			ep.Episode = &e
@@ -221,12 +256,12 @@ func (s *Server) groupCandidates(files []store.MediaFile) ([]seriesSummary, []me
 	for i := range files {
 		f := &files[i]
 		if f.LibraryType != store.LibraryTypeTV {
-			movies = append(movies, toMediaFileDTO(f))
+			movies = append(movies, toMediaFileDTOWithState(f, string(store.CandidateStateCandidate)))
 			continue
 		}
 		tv = append(tv, *f)
 	}
-	return s.groupTVSummaries(tv), movies
+	return s.groupTVSummaries(tv, nil), movies
 }
 
 // parseTVInfo derives (series title, season, episode) from a TV file path.

@@ -26,6 +26,11 @@ export function formatPct(part: number, total: number, digits = 0): string {
   return `${((part / total) * 100).toFixed(digits)}%`;
 }
 
+/** formatCoverage renders files, candidates, and the candidate share of the season. */
+export function formatCoverage(files: number, candidates: number): string {
+  return `${formatInt(files)} files · ${formatInt(candidates)} candidates · ${formatPct(candidates, files)}`;
+}
+
 /** relativeTime renders a unix-seconds timestamp as "18 min ago". */
 export function relativeTime(unixSeconds: number | null | undefined): string {
   if (!unixSeconds) return "never";

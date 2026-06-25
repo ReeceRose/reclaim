@@ -2,6 +2,8 @@ import {
   ArrowRight,
   BarChart3,
   Clock,
+  Download,
+  Eye,
   ExternalLink,
   FolderSearch,
   HardDrive,
@@ -25,6 +27,18 @@ const features = [
     title: "Rank by savings",
     body: "Sorts candidates by predicted HEVC savings. After enough completed jobs, estimates switch from seed values to your observed results.",
     accent: "var(--sky)",
+  },
+  {
+    icon: Eye,
+    title: "Browse every file",
+    body: "The Library view shows all scanned files, including already-HEVC, skipped, and missing items, with a clear reason each one is or isn't a candidate.",
+    accent: "var(--green)",
+  },
+  {
+    icon: Download,
+    title: "Re-encode or re-download",
+    body: "Not every file is worth re-encoding. Per-file codec, bitrate, and resolution help you spot the bloated or low-quality rips better replaced from a cleaner source.",
+    accent: "var(--rose)",
   },
   {
     icon: ListOrdered,
@@ -60,8 +74,8 @@ const steps = [
   },
   {
     n: "02",
-    title: "Rank",
-    body: "Files are sorted by predicted HEVC savings. Filter by codec, resolution, library type, or search by path.",
+    title: "Rank & review",
+    body: "Files are sorted by predicted HEVC savings. Review each one's codec and bitrate to decide what's worth re-encoding — and what's better re-downloaded.",
   },
   {
     n: "03",
@@ -78,6 +92,7 @@ const steps = [
 const does = [
   "Scans mounted library folders directly",
   "Ranks candidates by estimated savings",
+  "Helps spot files better re-downloaded than re-encoded",
   "Replaces files in-place after verification",
   "Runs encodes in a configurable overnight window",
 ];

@@ -109,7 +109,17 @@ export interface MediaFile {
   last_probed_at: number | null;
   probe_error: string | null;
   status: string;
+  candidate_state: CandidateState;
 }
+
+export type CandidateState =
+  | 'candidate'
+  | 'already_hevc'
+  | 'probe_failed'
+  | 'unknown_codec'
+  | 'queued'
+  | 'completed'
+  | 'missing';
 
 export interface KeysetCursor {
   after_savings: number;
@@ -122,6 +132,11 @@ export interface CandidatesPage {
   total_count?: number;
 }
 
+export interface FilesPage {
+  items: MediaFile[];
+  total_count?: number;
+}
+
 export interface Episode extends MediaFile {
   season: number;
   episode: number | null;
@@ -129,15 +144,18 @@ export interface Episode extends MediaFile {
 
 export interface SeasonGroup {
   season: number;
+  file_count: number;
   candidate_count: number;
   total_bytes: number;
   predicted_savings_bytes: number;
   episode_ids: number[];
+  eligible_ids: number[];
 }
 
 export interface SeriesGroup {
   title: string;
   library_type: string;
+  file_count: number;
   candidate_count: number;
   season_count: number;
   total_bytes: number;
@@ -147,6 +165,30 @@ export interface SeriesGroup {
 
 export interface GroupedCandidates {
   series: SeriesGroup[];
+}
+
+export interface LibrarySeasonGroup {
+  season: number;
+  file_count: number;
+  eligible_count: number;
+  total_bytes: number;
+  predicted_savings_bytes: number;
+  episode_ids: number[];
+}
+
+export interface LibrarySeriesGroup {
+  title: string;
+  library_type: string;
+  file_count: number;
+  eligible_count: number;
+  season_count: number;
+  total_bytes: number;
+  predicted_savings_bytes: number;
+  seasons: LibrarySeasonGroup[];
+}
+
+export interface GroupedFiles {
+  series: LibrarySeriesGroup[];
 }
 
 export interface GroupedSeasonEpisodes {
@@ -260,6 +302,11 @@ export interface CandidateFilters {
   search?: string;
 }
 
+export interface FileFilters extends CandidateFilters {
+  status?: string;
+  candidate_state?: CandidateState | '';
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildQuery(params: Record<string, any>): string {
   const q = new URLSearchParams();
@@ -290,6 +337,12 @@ export const api = {
 
   // Read side
   stats: () => request<Stats>("GET", "/api/stats"),
+  files: (filters: FileFilters & { limit?: number; offset?: number }) =>
+    request<FilesPage>("GET", `/api/files${buildQuery(filters)}`),
+  groupedFiles: (filters: FileFilters) =>
+    request<GroupedFiles>("GET", `/api/files/grouped${buildQuery(filters)}`),
+  groupedFileEpisodes: (filters: FileFilters & { series: string; season: number }) =>
+    request<GroupedSeasonEpisodes>("GET", `/api/files/grouped/episodes${buildQuery(filters)}`),
   candidates: (filters: CandidateFilters & { limit?: number; offset?: number; after_savings?: number; after_id?: number }) =>
     request<CandidatesPage>("GET", `/api/candidates${buildQuery(filters)}`),
   groupedCandidates: (filters: CandidateFilters) =>

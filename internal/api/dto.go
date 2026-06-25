@@ -41,9 +41,14 @@ type mediaFileDTO struct {
 	LastProbedAt          *int64   `json:"last_probed_at"`
 	ProbeError            *string  `json:"probe_error"`
 	Status                string   `json:"status"`
+	CandidateState        string   `json:"candidate_state"`
 }
 
 func toMediaFileDTO(f *store.MediaFile) mediaFileDTO {
+	return toMediaFileDTOWithState(f, "")
+}
+
+func toMediaFileDTOWithState(f *store.MediaFile, candidateState string) mediaFileDTO {
 	return mediaFileDTO{
 		ID:                    f.ID,
 		Path:                  f.Path,
@@ -64,6 +69,7 @@ func toMediaFileDTO(f *store.MediaFile) mediaFileDTO {
 		LastProbedAt:          f.LastProbedAt,
 		ProbeError:            f.ProbeError,
 		Status:                f.Status,
+		CandidateState:        candidateState,
 	}
 }
 

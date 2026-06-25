@@ -49,11 +49,31 @@ function DetailSection({ title, children }: { title: string; children: React.Rea
   );
 }
 
+function candidateStateReason(file: MediaFile): string | null {
+  switch (file.candidate_state) {
+    case 'already_hevc':
+      return 'This file is already HEVC/H.265, so Reclaim does not queue it for another HEVC encode.';
+    case 'probe_failed':
+      return 'ffprobe could not read this file successfully. Fix the source file or rescan after the probe issue is resolved.';
+    case 'unknown_codec':
+      return 'Reclaim could not identify a source video codec for this file.';
+    case 'queued':
+      return 'This file already has an active encode job.';
+    case 'completed':
+      return 'This file has already completed an encode job.';
+    case 'missing':
+      return 'This file was seen before, but is currently missing from disk or outside the configured library roots.';
+    default:
+      return null;
+  }
+}
+
 function FileDetailContent({ file }: { file: MediaFile }) {
   const resolution =
     file.width && file.height
       ? `${file.width}×${file.height} (${resolutionLabel(file.width, file.height)})`
       : resolutionLabel(file.width, file.height);
+  const notCandidateReason = candidateStateReason(file);
 
   return (
     <div className="flex-1 overflow-auto px-6 py-5">
@@ -85,6 +105,13 @@ function FileDetailContent({ file }: { file: MediaFile }) {
           <div className="text-[1.1rem] font-bold font-mono mt-0.5 text-brand">{formatBytes(file.predicted_savings_bytes)}</div>
         </div>
       </div>
+
+      {notCandidateReason && (
+        <div className="mb-5 rounded-[11px] border border-line px-3 py-3" style={{ background: 'var(--surface-2)' }}>
+          <div className="text-[0.7rem] uppercase tracking-wider text-muted-fg">Why not a candidate?</div>
+          <div className="text-[0.82rem] text-muted-fg mt-1 leading-relaxed">{notCandidateReason}</div>
+        </div>
+      )}
 
       <DetailSection title="Video">
         <DetailRow label="Codec" value={file.video_codec} mono />

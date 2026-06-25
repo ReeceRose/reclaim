@@ -15,6 +15,7 @@ const SCAN_POLL_MS = 2_000;
 function invalidateScanData(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['stats'] });
   qc.invalidateQueries({ queryKey: ['candidates'] });
+  qc.invalidateQueries({ queryKey: ['library'] });
 }
 
 export function useWS() {
@@ -51,6 +52,7 @@ export function useWS() {
           qc.invalidateQueries({ queryKey: ['jobs'] });
           qc.invalidateQueries({ queryKey: ['stats'] });
           qc.invalidateQueries({ queryKey: ['candidates'] });
+          qc.invalidateQueries({ queryKey: ['library'] });
           qc.invalidateQueries({ queryKey: ['events'] });
         }
         hasConnected = true;
@@ -106,6 +108,7 @@ export function useWS() {
           qc.invalidateQueries({ queryKey: ['jobs'] });
           if (JOB_MUTATE_EVENTS.has(event)) {
             qc.invalidateQueries({ queryKey: ['candidates'] });
+            qc.invalidateQueries({ queryKey: ['library'] });
             qc.invalidateQueries({ queryKey: ['stats'] });
           }
         } else if (event === 'job_progress') {

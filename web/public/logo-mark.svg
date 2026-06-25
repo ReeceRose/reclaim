@@ -1,0 +1,20 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Reclaim">
+  <defs>
+    <linearGradient id="reclaim-tile" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4589ff"/>
+      <stop offset="1" stop-color="#2e6ce0"/>
+    </linearGradient>
+    <linearGradient id="reclaim-gloss" x1="32" y1="2" x2="32" y2="34" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="18" fill="url(#reclaim-tile)"/>
+  <rect width="64" height="64" rx="18" fill="url(#reclaim-gloss)"/>
+  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="17.25" fill="none" stroke="#ffffff" stroke-opacity="0.16"/>
+  <g stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M18 21 L32 29 L46 21" stroke-width="4.5"/>
+    <path d="M21 32 H43" stroke-width="5.5"/>
+    <path d="M18 43 L32 35 L46 43" stroke-width="4.5"/>
+  </g>
+</svg>

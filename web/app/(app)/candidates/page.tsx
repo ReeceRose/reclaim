@@ -21,11 +21,12 @@ import { codecFilterOptions, libraryFilterOptions, resolutionFilterOptions } fro
 
 const PAGE_SIZE = 100;
 
-type SortKey = 'savings_desc' | 'size_desc' | 'mtime_asc' | 'codec';
+type SortKey = 'savings_desc' | 'size_desc' | 'mtime_desc' | 'mtime_asc' | 'codec';
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'savings_desc', label: 'Predicted savings' },
   { value: 'size_desc', label: 'Largest file' },
+  { value: 'mtime_desc', label: 'Newest file' },
   { value: 'mtime_asc', label: 'Oldest file' },
   { value: 'codec', label: 'Source codec' },
 ];

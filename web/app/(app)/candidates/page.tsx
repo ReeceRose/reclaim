@@ -671,7 +671,7 @@ function CandidatesPage() {
   const totalCount = data?.pages[0]?.total_count;
 
   return (
-    <div className="flex flex-col min-w-0 h-screen overflow-hidden max-sm:h-[calc(100dvh_-_4.25rem_-_env(safe-area-inset-bottom))]">
+    <div className="flex flex-col min-w-0 h-screen overflow-hidden max-sm:h-full">
       <div
         className="flex flex-col gap-2 px-4 py-[14px] border-b border-line shrink-0 sm:flex-row sm:items-center sm:gap-4 sm:px-7 sm:py-[18px]"
         style={{ background: 'rgba(22,22,22,.82)', backdropFilter: 'blur(10px)' }}
@@ -883,7 +883,7 @@ function CandidatesPage() {
 
 function CandidatesSkeleton() {
   return (
-    <div className="flex flex-col min-w-0 h-screen overflow-hidden max-sm:h-[calc(100dvh_-_4.25rem_-_env(safe-area-inset-bottom))]">
+    <div className="flex flex-col min-w-0 h-screen overflow-hidden max-sm:h-full">
       <div className="px-4 py-[14px] border-b border-line sm:px-7 sm:py-[18px]">
         <Skeleton className="h-7 w-48 mb-2" />
         <Skeleton className="h-3 w-52" />

@@ -428,7 +428,7 @@ function SettingsContent() {
               Media mounts{' '}
               <span className="font-mono text-[0.72rem] text-muted-dim bg-surface-2 border border-line rounded-[6px] px-[7px] py-[2px] ml-1">read-only · set via env</span>
             </Label>
-            <div className="font-mono text-[0.75rem] text-muted-dim">
+            <div className="font-mono text-[0.75rem] text-muted-dim break-all">
               {settings.movies_path && <div>{settings.movies_path} · rw</div>}
               {settings.tv_path && <div>{settings.tv_path} · rw</div>}
             </div>

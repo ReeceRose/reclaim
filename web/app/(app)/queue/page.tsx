@@ -150,7 +150,7 @@ function QueueContent() {
             className="border border-brand-line rounded-(--radius) p-5 mb-[18px]"
             style={{ background: 'radial-gradient(120% 140% at 0% 0%, var(--brand-soft), transparent 50%), var(--surface)' }}
           >
-            <div className="flex items-center gap-3 mb-1.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1.5">
               <span className="flex items-center gap-1.5 text-[0.68rem] font-bold tracking-widest uppercase text-brand">
                 <span className="w-[7px] h-[7px] rounded-full bg-brand animate-pulse" />
                 Encoding

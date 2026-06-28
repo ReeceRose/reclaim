@@ -176,7 +176,7 @@ function DashboardContent() {
         <div className="flex items-end justify-between gap-6 flex-wrap">
           <div>
             <div
-              className="text-hero font-extrabold leading-none tracking-tight text-brand"
+              className="text-[2.8rem] sm:text-hero font-extrabold leading-none tracking-tight text-brand"
               style={{ textShadow: '0 4px 26px var(--brand-soft)' }}
             >
               {formatBytes(recoverable, 1).replace(' ', '')}
@@ -232,7 +232,7 @@ function DashboardContent() {
           <div className="text-xs uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Codec breakdown</div>
           {stats.by_codec.map((c) => (
             <div key={c.codec} className="flex items-center gap-3 mb-3.5 last:mb-0 text-sm">
-              <div className="min-w-[78px] font-semibold flex items-center gap-1.5 flex-wrap">
+              <div className="min-w-[78px] shrink-0 font-semibold flex items-center gap-1.5 flex-wrap">
                 <Badge
                   className={`font-mono text-xs rounded-[7px] font-semibold ${codecClass(c.codec)}`}
                   style={{ borderColor: `color-mix(in srgb, ${codecColor(c.codec)} 30%, transparent)`, background: `color-mix(in srgb, ${codecColor(c.codec)} 10%, transparent)` }}
@@ -251,8 +251,8 @@ function DashboardContent() {
               <div className="flex-1 h-[10px] bg-surface-2 rounded-[6px] overflow-hidden">
                 <div className="h-full rounded-[6px]" style={{ width: `${Math.round((c.file_count / maxCodecFiles) * 100)}%`, background: codecColor(c.codec) }} />
               </div>
-              <div className="w-[148px] text-right text-muted-fg text-xs tnum">
-                {formatInt(c.file_count)} ({formatPct(c.file_count, stats.total_files)}) · {formatBytes(c.total_bytes)} ({formatPct(c.total_bytes, total)})
+              <div className="w-[112px] sm:w-[148px] shrink-0 text-right text-muted-fg text-xs tnum">
+                {formatInt(c.file_count)}<span className="hidden sm:inline"> ({formatPct(c.file_count, stats.total_files)})</span> · {formatBytes(c.total_bytes)}<span className="hidden sm:inline"> ({formatPct(c.total_bytes, total)})</span>
               </div>
             </div>
           ))}
@@ -261,11 +261,11 @@ function DashboardContent() {
           <div className="text-xs uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Resolution</div>
           {stats.by_resolution.map((r) => (
             <div key={r.band} className="flex items-center gap-3 mb-3.5 last:mb-0 text-sm">
-              <div className="w-[78px] font-semibold">{r.band}</div>
+              <div className="w-[64px] sm:w-[78px] shrink-0 font-semibold">{r.band}</div>
               <div className="flex-1 h-[10px] bg-surface-2 rounded-[6px] overflow-hidden">
                 <div className="h-full rounded-[6px] bg-sky" style={{ width: `${Math.round((r.file_count / maxResFiles) * 100)}%` }} />
               </div>
-              <div className="w-[104px] text-right text-muted-fg text-xs tnum">{formatInt(r.file_count)} ({formatPct(r.file_count, stats.total_files)})</div>
+              <div className="w-[92px] sm:w-[104px] shrink-0 text-right text-muted-fg text-xs tnum">{formatInt(r.file_count)} ({formatPct(r.file_count, stats.total_files)})</div>
             </div>
           ))}
         </div>

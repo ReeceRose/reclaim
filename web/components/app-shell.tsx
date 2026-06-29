@@ -267,7 +267,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <FileDetailProvider>
-    <div className="grid min-h-screen grid-cols-[230px_1fr] max-sm:grid-cols-1">
+    <div className="grid grid-cols-[230px_1fr] sm:min-h-screen max-sm:grid-cols-1 max-sm:grid-rows-[auto_1fr] max-sm:h-[100dvh]">
       {/* Sidebar */}
       <aside
         className="flex flex-col sticky top-0 h-screen border-r border-line max-sm:hidden"
@@ -381,7 +381,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
 
       {/* Main */}
-      <main className="flex flex-col min-w-0 max-sm:pb-20">
+      <main className="flex flex-col min-w-0 max-sm:min-h-0 max-sm:overflow-y-auto max-sm:pb-20">
         {children}
       </main>
 

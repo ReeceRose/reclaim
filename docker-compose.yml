@@ -23,6 +23,8 @@ services:
       TZ: America/New_York
       SCAN_INTERVAL: 24h
       PROBE_CONCURRENCY: "4"
+      # Optional: enables TMDB posters, backdrops, and metadata
+      # TMDB_API_KEY: your_api_key_here
       # Auth escape hatches — uncomment only when needed, never leave enabled
       # DISABLE_AUTH: "true"
       # RESET_AUTH: "true"

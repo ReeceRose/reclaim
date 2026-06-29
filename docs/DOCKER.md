@@ -46,6 +46,9 @@ On Unraid, map `/data` to `appdata`. The repo Compose file uses a named volume f
 | `SCAN_INTERVAL` | `24h` | Diff-based rescan interval (Go duration) |
 | `PROBE_CONCURRENCY` | `4` | Parallel `ffprobe` calls during scans |
 | `SCAN_ANCHOR` | `00:00` | Daily scan anchor time (`HH:MM`) |
+| `TMDB_API_KEY` | unset | Optional TMDB API key for movie/TV posters, backdrops, and metadata |
+
+To enable artwork and metadata fetching, create a TMDB API key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) and set `TMDB_API_KEY` on the container. Restart Reclaim after changing it, then run a scan or refresh metadata from the UI.
 
 ### Optional (recovery only)
 
@@ -124,6 +127,8 @@ ENCODE_WINDOW_START=00:00
 ENCODE_WINDOW_END=06:00
 SCAN_INTERVAL=24h
 PROBE_CONCURRENCY=4
+# Optional: enables TMDB posters, backdrops, and metadata
+TMDB_API_KEY=your_api_key_here
 ```
 
 **Extra Parameters** (optional, adds Docker health check):
@@ -158,6 +163,7 @@ docker run -d \
   -e ENCODE_WINDOW_END=06:00 \
   -e SCAN_INTERVAL=24h \
   -e PROBE_CONCURRENCY=4 \
+  -e TMDB_API_KEY=your_api_key_here \
   --health-cmd="wget -qO- http://127.0.0.1:8080/healthz || exit 1" \
   --health-interval=30s \
   --health-timeout=5s \

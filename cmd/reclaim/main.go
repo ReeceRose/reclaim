@@ -9,16 +9,27 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-	_ "time/tzdata" // embed IANA timezone database for distroless/scratch images
+	_ "time/tzdata"
 
 	"reclaim/internal/api"
 	"reclaim/internal/config"
+	"reclaim/internal/metadata"
 	"reclaim/internal/scanner"
 	"reclaim/internal/startup"
 	"reclaim/internal/store"
 	"reclaim/internal/worker"
 	"reclaim/web"
 )
+
+type scanBroadcaster struct {
+	*api.Hub
+	trigger func()
+}
+
+func (sb *scanBroadcaster) ScanCompleted(data map[string]any) {
+	sb.Hub.ScanCompleted(data)
+	sb.trigger()
+}
 
 func main() {
 	cfg, err := config.Load()
@@ -58,9 +69,9 @@ func main() {
 
 	slog.Info("startup checks passed")
 
-	// Live holds the runtime-mutable settings (encode window, probe concurrency,
-	// scan interval) so PUT /api/settings takes effect without a restart.
 	live := config.NewLive(cfg)
+
+	metaFetcher := metadata.New(db, cfg.MoviesPath, cfg.TVPath)
 
 	sc, err := scanner.New(db, cfg, scanner.WithLiveConfig(live))
 	if err != nil {
@@ -72,28 +83,29 @@ func main() {
 	defer cancel()
 
 	apiSrv := api.New(api.Deps{
-		Store:       db,
-		Scanner:     sc,
-		Live:        live,
-		MoviesPath:  cfg.MoviesPath,
-		TVPath:      cfg.TVPath,
-		DisableAuth: cfg.DisableAuth,
-		StaticFS:    web.FS(),
+		Store:           db,
+		Scanner:         sc,
+		Live:            live,
+		MoviesPath:      cfg.MoviesPath,
+		TVPath:          cfg.TVPath,
+		DisableAuth:     cfg.DisableAuth,
+		StaticFS:        web.FS(),
+		MetadataFetcher: metaFetcher,
 	})
 
-	// Wire the WS hub into the scanner so scan_completed events are broadcast.
-	sc.SetBroadcaster(apiSrv.Hub())
+	sc.SetBroadcaster(&scanBroadcaster{
+		Hub:     apiSrv.Hub(),
+		trigger: metaFetcher.Trigger,
+	})
 	sc.SetCandidateInvalidator(apiSrv)
 
-	// Worker executes encodes within the window and pushes progress over the
-	// server's WS hub; the API drives it to cancel running jobs.
 	wk := worker.New(db, live, apiSrv.Hub(), []string{cfg.MoviesPath, cfg.TVPath},
 		worker.WithCandidateInvalidator(apiSrv))
 	apiSrv.SetCanceller(wk)
 
-	// Start scanner and worker after all wiring is complete.
 	go sc.Start(ctx)
 	go wk.Run(ctx)
+	go metaFetcher.Start(ctx)
 
 	handler := apiSrv.Handler()
 
@@ -114,7 +126,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	cancel() // stop scanner
+	cancel()
 
 	shutCtx, shutCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutCancel()

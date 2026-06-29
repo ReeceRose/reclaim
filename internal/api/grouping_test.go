@@ -3,6 +3,7 @@ package api
 import (
 	"testing"
 
+	"reclaim/internal/media"
 	"reclaim/internal/store"
 )
 
@@ -20,9 +21,9 @@ func TestParseTVInfo(t *testing.T) {
 		{"/media/tv/Some Show/specials/clip.mkv", "Some Show", -1, -1},
 	}
 	for _, c := range cases {
-		title, season, episode := parseTVInfo(c.path, tvRoot)
+		title, season, episode := media.ParseTVInfo(c.path, tvRoot)
 		if title != c.wantTitle || season != c.wantSeason || episode != c.wantEpisode {
-			t.Errorf("parseTVInfo(%q) = (%q, %d, %d), want (%q, %d, %d)",
+			t.Errorf("media.ParseTVInfo(%q) = (%q, %d, %d), want (%q, %d, %d)",
 				c.path, title, season, episode, c.wantTitle, c.wantSeason, c.wantEpisode)
 		}
 	}

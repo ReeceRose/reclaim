@@ -42,6 +42,8 @@ type mediaFileDTO struct {
 	ProbeError            *string  `json:"probe_error"`
 	Status                string   `json:"status"`
 	CandidateState        string   `json:"candidate_state"`
+	PosterPath            *string  `json:"poster_path"`
+	BackdropPath          *string  `json:"backdrop_path"`
 }
 
 func toMediaFileDTO(f *store.MediaFile) mediaFileDTO {

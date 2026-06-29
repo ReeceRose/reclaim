@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { useRef, useState, useEffect, useMemo, useCallback, useTransition, Suspense } from 'react';
+import { useRouter } from 'next/navigation';
 import { parseQueryEnum, useQueryParam, useQueryParams } from '@/hooks/use-query-params';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
@@ -16,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { FilterSelect } from '@/components/filter-select';
-import { useFileDetail } from '@/components/file-detail-sheet';
+import { BROWSE_ROUTES } from '@/app/(app)/browse/browse';
 import { codecFilterOptions, libraryFilterOptions, resolutionFilterOptions } from '@/lib/filter-options';
 
 const PAGE_SIZE = 100;
@@ -537,7 +538,7 @@ function GroupedView(props: {
 
 function CandidatesPage() {
   const qc = useQueryClient();
-  const { openFile } = useFileDetail();
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const { get, set: setQuery } = useQueryParams();
   const [search, setSearch] = useState(() => get('q') ?? '');
@@ -841,7 +842,7 @@ function CandidatesPage() {
                         item={allItems[vRow.index]}
                         selected={selectedIds.has(allItems[vRow.index].id)}
                         onToggle={toggleId}
-                        onOpen={(file) => openFile(file.id, file)}
+                        onOpen={(file) => router.push(BROWSE_ROUTES.FILE(file.id))}
                       />
                     ) : (
                       <div className="flex items-center justify-center h-full text-muted-dim text-sm">
@@ -860,7 +861,7 @@ function CandidatesPage() {
               selectedIds={selectedIds}
               onToggle={toggleId}
               onToggleSeries={toggleSeries}
-              onOpen={(file) => openFile(file.id, file)}
+              onOpen={(file) => router.push(BROWSE_ROUTES.FILE(file.id))}
               filters={filters}
               onEpisodesLoaded={registerLoadedFiles}
             />

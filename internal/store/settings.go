@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,7 +41,7 @@ func (s *Settings) ValidateLogin(username, password string) bool {
 	if err != nil || !storedUser.Valid || !hash.Valid {
 		return false
 	}
-	if storedUser.String != username {
+	if storedUser.String != strings.ToLower(username) {
 		bcrypt.CompareHashAndPassword([]byte(hash.String), []byte(password))
 		return false
 	}
@@ -89,7 +90,7 @@ func (s *Settings) CompleteSetup(ctx context.Context, username, plaintext string
 	_, err = s.w.ExecContext(ctx, `
 		UPDATE settings SET auth_username = ?, auth_password_hash = ?, setup_completed_at = ?
 		WHERE id = 1`,
-		username, string(hash), time.Now().Unix(),
+		strings.ToLower(username), string(hash), time.Now().Unix(),
 	)
 	return err
 }
@@ -105,7 +106,7 @@ func (s *Settings) ChangeCredentials(ctx context.Context, username, plaintext st
 	}
 	_, err = s.w.ExecContext(ctx, `
 		UPDATE settings SET auth_username = ?, auth_password_hash = ? WHERE id = 1`,
-		username, string(hash),
+		strings.ToLower(username), string(hash),
 	)
 	return err
 }
@@ -141,5 +142,19 @@ func (s *Settings) ensureSecret(ctx context.Context) error {
 		"UPDATE settings SET session_secret = ? WHERE id = 1",
 		base64.StdEncoding.EncodeToString(buf),
 	)
+	return err
+}
+
+func (s *Settings) GetTMDBKey(ctx context.Context) (string, error) {
+	var key sql.NullString
+	err := s.r.QueryRowContext(ctx, "SELECT tmdb_api_key FROM settings WHERE id = 1").Scan(&key)
+	if err != nil {
+		return "", err
+	}
+	return key.String, nil
+}
+
+func (s *Settings) SetTMDBKey(ctx context.Context, key string) error {
+	_, err := s.w.ExecContext(ctx, "UPDATE settings SET tmdb_api_key = ? WHERE id = 1", key)
 	return err
 }

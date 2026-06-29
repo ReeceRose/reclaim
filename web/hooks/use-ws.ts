@@ -16,6 +16,7 @@ function invalidateScanData(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ['stats'] });
   qc.invalidateQueries({ queryKey: ['candidates'] });
   qc.invalidateQueries({ queryKey: ['library'] });
+  qc.invalidateQueries({ queryKey: ['browse'] });
 }
 
 export function useWS() {
@@ -53,6 +54,7 @@ export function useWS() {
           qc.invalidateQueries({ queryKey: ['stats'] });
           qc.invalidateQueries({ queryKey: ['candidates'] });
           qc.invalidateQueries({ queryKey: ['library'] });
+          qc.invalidateQueries({ queryKey: ['browse'] });
           qc.invalidateQueries({ queryKey: ['events'] });
         }
         hasConnected = true;

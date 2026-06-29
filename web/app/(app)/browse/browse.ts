@@ -2,6 +2,7 @@ export const BROWSE_ROUTES = {
   ROOT: '/browse',
   TV_SHOW: (title: string) => `/browse/tv?show=${encodeURIComponent(title)}`,
   MOVIE: (id: number) => `/browse/movies?id=${id}`,
+  FILE: (id: number) => `/browse/file?id=${id}`,
 } as const;
 
 export const QUERY_PARAMS = {

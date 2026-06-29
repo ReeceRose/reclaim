@@ -130,6 +130,15 @@ func (s *Scanner) invalidateCandidates() {
 	}
 }
 
+func (s *Scanner) tvRoot() string {
+	for path, lt := range s.roots {
+		if lt == store.LibraryTypeTV {
+			return path
+		}
+	}
+	return ""
+}
+
 // WithDebounceDur overrides the debounce window (use in tests to avoid 30s waits).
 // The remove debounce is set to dur+5s so creates settle before vanished checks run.
 func WithDebounceDur(dur time.Duration) Option {
@@ -533,6 +542,16 @@ func (s *Scanner) probeAndStore(
 		Status:      store.MediaStatusActive,
 	}
 
+	if libraryType == store.LibraryTypeTV {
+		title, season, _ := media.ParseTVInfo(path, s.tvRoot())
+		if title != "" {
+			f.SeriesTitle = &title
+		}
+		if season >= 0 {
+			f.SeasonNumber = &season
+		}
+	}
+
 	if result != nil {
 		now := time.Now().Unix()
 		f.VideoCodec = result.VideoCodec
@@ -599,8 +618,12 @@ func (s *Scanner) Start(ctx context.Context) {
 	timer := time.NewTimer(durationUntilNext(time.Now(), s.scanIntervalFn(), s.scanAnchorFn()))
 	defer timer.Stop()
 
-	// Initial scan on startup.
+	// Initial scan on startup. Backfill series metadata first so the browse
+	// page shows all TV shows immediately, even for files not yet re-probed.
 	go func() {
+		if err := s.store.Media.BackfillSeriesMeta(ctx, s.tvRoot()); err != nil {
+			slog.Warn("scanner: series meta backfill failed", "err", err)
+		}
 		if _, err := s.Scan(ctx, TriggerStartup, false); err != nil {
 			slog.Error("scanner: startup scan failed", "err", err)
 		}

@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { api, type LibrarySeriesGroup, type MediaFile } from '@/lib/api';
@@ -8,7 +8,6 @@ import { baseName, formatBytes, formatInt, resolutionLabel } from '@/lib/format'
 import { cn } from '@/lib/utils';
 import { parseQueryEnum, useQueryParam } from '@/hooks/use-query-params';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -47,6 +46,11 @@ function sortShows(shows: LibrarySeriesGroup[], sort: TVSortValue): LibrarySerie
   return s;
 }
 
+function tmdbPosterURL(path: string | null | undefined, size: string): string | undefined {
+  if (!path) return undefined;
+  return `https://image.tmdb.org/t/p/${size}${path}`;
+}
+
 // ── Shared UI ─────────────────────────────────────────────────────────────────
 
 export function CodecBadge({ codec }: { codec: string | null }) {
@@ -83,22 +87,36 @@ export function EncodeHealthBar({ fileCount, eligibleCount, height = 3 }: {
 function ShowCard({ show, onClick }: { show: LibrarySeriesGroup; onClick: () => void }) {
   const letter = show.title.replace(/^(the |a |an )/i, '').charAt(0).toUpperCase();
   const fullyConverted = show.eligible_count === 0;
+  const posterURL = tmdbPosterURL(show.poster_path, 'w342');
 
   return (
     <div
       onClick={onClick}
       className="relative bg-surface border border-line rounded-[14px] overflow-hidden cursor-pointer hover:border-[var(--brand-line)] transition-[border-color] group"
     >
-      <div
-        className="absolute right-1 bottom-0 font-black select-none pointer-events-none leading-none opacity-[0.045]"
-        style={{ fontSize: '5.5rem' }}
-        aria-hidden
-      >
-        {letter}
+      <div className="relative h-[160px] overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+        {posterURL ? (
+          <img
+            src={posterURL}
+            alt={show.title}
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <span
+              className="font-black select-none pointer-events-none leading-none opacity-[0.12]"
+              style={{ fontSize: '5.5rem' }}
+              aria-hidden
+            >
+              {letter}
+            </span>
+          </div>
+        )}
       </div>
 
-      <div className="relative px-[14px] pt-[14px] pb-[13px] flex flex-col gap-[6px] min-h-[130px]">
-        <div className="font-bold text-[0.92rem] leading-snug line-clamp-2 pr-5">{show.title}</div>
+      <div className="px-[14px] pt-[10px] pb-[13px] flex flex-col gap-[6px]">
+        <div className="font-bold text-[0.92rem] leading-snug line-clamp-2">{show.title}</div>
         <div className="text-[0.72rem] text-muted-dim">
           {show.season_count} {show.season_count === 1 ? 'season' : 'seasons'} · {formatInt(show.file_count)} files
         </div>
@@ -120,13 +138,32 @@ function MovieCard({ file, onClick }: { file: MediaFile; onClick: () => void }) 
   const title = baseName(file.path).replace(/\.[^/.]+$/, '');
   const isConverted = file.candidate_state === 'already_hevc' || file.candidate_state === 'completed';
   const isCandidate = file.candidate_state === 'candidate';
+  const posterURL = tmdbPosterURL(file.poster_path, 'w342');
 
   return (
     <div
       onClick={onClick}
       className="relative bg-surface border border-line rounded-[14px] overflow-hidden cursor-pointer hover:border-[var(--brand-line)] transition-[border-color]"
     >
-      <div className="px-[14px] pt-[14px] pb-[13px] flex flex-col gap-[6px] min-h-[110px]">
+      <div className="relative h-[160px] overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+        {posterURL ? (
+          <img
+            src={posterURL}
+            alt={title}
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center gap-[6px] flex-wrap px-3">
+            <CodecBadge codec={file.video_codec} />
+            {file.width && file.height && (
+              <span className="text-[0.7rem] text-muted-dim">{resolutionLabel(file.width, file.height)}</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="px-[14px] pt-[10px] pb-[13px] flex flex-col gap-[6px]">
         <div className="font-bold text-[0.88rem] leading-snug line-clamp-2">{title}</div>
         <div className="flex items-center gap-[6px] flex-wrap">
           <CodecBadge codec={file.video_codec} />
@@ -155,7 +192,8 @@ function MovieCard({ file, onClick }: { file: MediaFile; onClick: () => void }) 
 function CardSkeleton() {
   return (
     <div className="bg-surface border border-line rounded-[14px] overflow-hidden">
-      <div className="px-[14px] pt-[14px] pb-[13px] flex flex-col gap-[6px] min-h-[130px]">
+      <Skeleton className="h-[160px] w-full rounded-none" />
+      <div className="px-[14px] pt-[10px] pb-[13px] flex flex-col gap-[6px]">
         <Skeleton className="h-4 w-3/4" />
         <Skeleton className="h-3 w-1/2 mt-0.5" />
         <Skeleton className="h-3 w-1/3" />
@@ -170,6 +208,7 @@ function CardSkeleton() {
 
 function TVContent({ search, sort }: { search: string; sort: TVSortValue }) {
   const router = useRouter();
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
     queryKey: ['browse', LIBRARY_TYPE.TV, search],
@@ -183,6 +222,17 @@ function TVContent({ search, sort }: { search: string; sort: TVSortValue }) {
     },
     placeholderData: (prev) => prev,
   });
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) void fetchNextPage(); },
+      { rootMargin: '200px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const rawShows = useMemo(() => data?.pages.flatMap((p) => p.series) ?? [], [data]);
   const shows = useMemo(() => sortShows(rawShows, sort), [rawShows, sort]);
@@ -213,11 +263,10 @@ function TVContent({ search, sort }: { search: string; sort: TVSortValue }) {
         </div>
       )}
 
-      {hasNextPage && (
-        <div className="mt-5 text-center">
-          <Button variant="outline" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()} className="rounded-[11px]">
-            {isFetchingNextPage ? 'Loading…' : 'Load more'}
-          </Button>
+      <div ref={sentinelRef} className="h-px" />
+      {isFetchingNextPage && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-3">
+          {Array.from({ length: 4 }).map((_, i) => <CardSkeleton key={i} />)}
         </div>
       )}
     </>
@@ -226,6 +275,7 @@ function TVContent({ search, sort }: { search: string; sort: TVSortValue }) {
 
 function MoviesContent({ search, sort }: { search: string; sort: MovieSortValue }) {
   const router = useRouter();
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
     queryKey: ['browse', LIBRARY_TYPE.MOVIES, search, sort],
@@ -237,6 +287,17 @@ function MoviesContent({ search, sort }: { search: string; sort: MovieSortValue 
       : undefined,
     placeholderData: (prev) => prev,
   });
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) void fetchNextPage(); },
+      { rootMargin: '200px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const movies = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
   const totalCount = data?.pages[0]?.total_count;
@@ -266,11 +327,10 @@ function MoviesContent({ search, sort }: { search: string; sort: MovieSortValue 
         </div>
       )}
 
-      {hasNextPage && (
-        <div className="mt-5 text-center">
-          <Button variant="outline" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()} className="rounded-[11px]">
-            {isFetchingNextPage ? 'Loading…' : 'Load more'}
-          </Button>
+      <div ref={sentinelRef} className="h-px" />
+      {isFetchingNextPage && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-3">
+          {Array.from({ length: 4 }).map((_, i) => <CardSkeleton key={i} />)}
         </div>
       )}
     </>

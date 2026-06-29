@@ -38,6 +38,7 @@ type Store struct {
 	Settings *Settings
 	Stats    *Stats
 	Events   *Events
+	Metadata *Metadata
 
 	w *sql.DB
 	r *sql.DB
@@ -73,6 +74,7 @@ func Open(path string) (*Store, error) {
 		Settings: &Settings{r: r, w: w},
 		Stats:    &Stats{r: r, w: w},
 		Events:   &Events{r: r, w: w},
+		Metadata: &Metadata{r: r, w: w},
 	}
 
 	if err := runMigrations(w); err != nil {

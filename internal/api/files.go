@@ -9,6 +9,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"reclaim/internal/media"
 	"reclaim/internal/store"
 )
 
@@ -31,6 +32,8 @@ type librarySeriesSummary struct {
 	TotalBytes            int64                  `json:"total_bytes"`
 	PredictedSavingsBytes int64                  `json:"predicted_savings_bytes"`
 	Seasons               []librarySeasonSummary `json:"seasons"`
+	PosterPath            *string                `json:"poster_path"`
+	BackdropPath          *string                `json:"backdrop_path"`
 }
 
 func parseFileFilter(c *echo.Context) store.FileFilter {
@@ -65,11 +68,12 @@ func (s *Server) handleFiles(c *echo.Context) error {
 		q.Offset = n
 	}
 
-	files, err := s.store.Media.Files(c.Request().Context(), q)
+	ctx := c.Request().Context()
+	files, err := s.store.Media.Files(ctx, q)
 	if err != nil {
 		return badRequest(c, err.Error())
 	}
-	states, err := s.store.Media.CandidateStates(c.Request().Context(), files)
+	states, err := s.store.Media.CandidateStates(ctx, files)
 	if err != nil {
 		return serverError(c, err)
 	}
@@ -79,9 +83,24 @@ func (s *Server) handleFiles(c *echo.Context) error {
 		items = append(items, toMediaFileDTOWithState(&files[i], string(states[files[i].ID])))
 	}
 
+	if q.Filter.LibraryType == store.LibraryTypeMovies && s.store.Metadata != nil {
+		keys := make([]string, len(files))
+		for i := range files {
+			keys[i] = media.MovieKey(files[i].Path, s.moviesPath)
+		}
+		if metaMap, err := s.store.Metadata.GetBatch(ctx, keys); err == nil {
+			for i := range items {
+				if m, ok := metaMap[keys[i]]; ok {
+					items[i].PosterPath = m.PosterPath
+					items[i].BackdropPath = m.BackdropPath
+				}
+			}
+		}
+	}
+
 	resp := map[string]any{"items": items}
 	if q.Offset == 0 {
-		if total, err := s.store.Media.CountFiles(c.Request().Context(), q.Filter); err == nil {
+		if total, err := s.store.Media.CountFiles(ctx, q.Filter); err == nil {
 			resp["total_count"] = total
 		}
 	}
@@ -99,22 +118,77 @@ func (s *Server) handleGroupedFiles(c *echo.Context) error {
 		return err
 	}
 
-	tvFilter := filter
-	tvFilter.LibraryType = store.LibraryTypeTV
-	acc := newLibraryTVAccumulator()
-	if err := s.scanTVLibraryFiles(c.Request().Context(), tvFilter, func(files []store.MediaFile, states map[int64]store.CandidateState) error {
-		acc.add(files, states, s.tvPath)
-		return nil
-	}); err != nil {
+	ctx := c.Request().Context()
+	rows, err := s.store.Media.TVSeriesGroups(ctx, filter.Search, limit, offset)
+	if err != nil {
+		return serverError(c, err)
+	}
+	total, err := s.store.Media.CountTVSeries(ctx, filter.Search)
+	if err != nil {
 		return serverError(c, err)
 	}
 
-	all := acc.summaries()
-	resp := map[string]any{
-		"series":      slicePage(all, offset, limit),
-		"total_count": len(all),
+	series := make([]librarySeriesSummary, 0, len(rows))
+	for _, r := range rows {
+		series = append(series, librarySeriesSummary{
+			Title:                 r.Title,
+			LibraryType:           store.LibraryTypeTV,
+			FileCount:             r.FileCount,
+			EligibleCount:         r.EligibleCount,
+			SeasonCount:           r.SeasonCount,
+			TotalBytes:            r.TotalBytes,
+			PredictedSavingsBytes: r.PredictedSavingsBytes,
+		})
 	}
-	return c.JSON(http.StatusOK, resp)
+
+	if s.store.Metadata != nil && len(series) > 0 {
+		titles := make([]string, len(series))
+		for i := range series {
+			titles[i] = series[i].Title
+		}
+		if metaMap, err := s.store.Metadata.GetBatch(ctx, titles); err == nil {
+			for i := range series {
+				if m, ok := metaMap[series[i].Title]; ok {
+					series[i].PosterPath = m.PosterPath
+					series[i].BackdropPath = m.BackdropPath
+				}
+			}
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"series":      series,
+		"total_count": total,
+	})
+}
+
+func (s *Server) handleGroupedFileSeasons(c *echo.Context) error {
+	series := strings.TrimSpace(c.QueryParam("series"))
+	if series == "" {
+		return badRequest(c, "series is required")
+	}
+	seasons, err := s.store.Media.TVShowSeasons(c.Request().Context(), series)
+	if err != nil {
+		return serverError(c, err)
+	}
+	type seasonDTO struct {
+		Season                int   `json:"season"`
+		FileCount             int   `json:"file_count"`
+		EligibleCount         int   `json:"eligible_count"`
+		TotalBytes            int64 `json:"total_bytes"`
+		PredictedSavingsBytes int64 `json:"predicted_savings_bytes"`
+	}
+	out := make([]seasonDTO, 0, len(seasons))
+	for _, s := range seasons {
+		out = append(out, seasonDTO{
+			Season:                s.Season,
+			FileCount:             s.FileCount,
+			EligibleCount:         s.EligibleCount,
+			TotalBytes:            s.TotalBytes,
+			PredictedSavingsBytes: s.PredictedSavingsBytes,
+		})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"seasons": out})
 }
 
 func (s *Server) handleGroupedFileEpisodes(c *echo.Context) error {
@@ -163,88 +237,12 @@ func (s *Server) handleGroupedFileEpisodes(c *echo.Context) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
-func (s *Server) groupLibraryTVSummaries(files []store.MediaFile, states map[int64]store.CandidateState) []librarySeriesSummary {
-	type seasonAcc struct {
-		season      int
-		ids         []int64
-		eligibleIDs []int64
-		bytes       int64
-		saving      int64
-		eligible    int
-	}
-	type seriesAcc struct {
-		title   string
-		lib     string
-		seasons map[int]*seasonAcc
-		order   []int
-		bytes   int64
-	}
-
-	bySeries := make(map[string]*seriesAcc)
-	var seriesOrder []string
-
-	for i := range files {
-		f := &files[i]
-		title, season, _ := parseTVInfo(f.Path, s.tvPath)
-		acc, ok := bySeries[title]
-		if !ok {
-			acc = &seriesAcc{title: title, lib: f.LibraryType, seasons: map[int]*seasonAcc{}}
-			bySeries[title] = acc
-			seriesOrder = append(seriesOrder, title)
-		}
-		acc.bytes += f.SizeBytes
-
-		sa, ok := acc.seasons[season]
-		if !ok {
-			sa = &seasonAcc{season: season}
-			acc.seasons[season] = sa
-			acc.order = append(acc.order, season)
-		}
-		sa.ids = append(sa.ids, f.ID)
-		sa.bytes += f.SizeBytes
-		if states[f.ID] == store.CandidateStateCandidate {
-			sa.eligible++
-			sa.eligibleIDs = append(sa.eligibleIDs, f.ID)
-			sa.saving += f.PredictedSavingsBytes
-		}
-	}
-
-	sortByTitle := func(a, b int) bool { return seriesOrder[a] < seriesOrder[b] }
-	sort.SliceStable(seriesOrder, sortByTitle)
-
-	out := make([]librarySeriesSummary, 0, len(seriesOrder))
-	for _, title := range seriesOrder {
-		acc := bySeries[title]
-		sg := librarySeriesSummary{Title: acc.title, LibraryType: acc.lib}
-
-		sort.Ints(acc.order)
-		for _, sn := range acc.order {
-			sa := acc.seasons[sn]
-			sg.Seasons = append(sg.Seasons, librarySeasonSummary{
-				Season:                sn,
-				FileCount:             len(sa.ids),
-				EligibleCount:         sa.eligible,
-				TotalBytes:            sa.bytes,
-				PredictedSavingsBytes: sa.saving,
-				EpisodeIDs:            sa.ids,
-				EligibleIDs:           sa.eligibleIDs,
-			})
-			sg.FileCount += len(sa.ids)
-			sg.EligibleCount += sa.eligible
-			sg.TotalBytes += sa.bytes
-			sg.PredictedSavingsBytes += sa.saving
-		}
-		sg.SeasonCount = len(sg.Seasons)
-		out = append(out, sg)
-	}
-	return out
-}
 
 func (s *Server) buildLibrarySeasonEpisodes(files []store.MediaFile, states map[int64]store.CandidateState, seriesTitle string, season int) []episodeDTO {
 	eps := make([]episodeDTO, 0)
 	for i := range files {
 		f := &files[i]
-		title, sn, episode := parseTVInfo(f.Path, s.tvPath)
+		title, sn, episode := media.ParseTVInfo(f.Path, s.tvPath)
 		if title != seriesTitle || sn != season {
 			continue
 		}

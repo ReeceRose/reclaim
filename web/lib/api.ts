@@ -110,6 +110,8 @@ export interface MediaFile {
   probe_error: string | null;
   status: string;
   candidate_state: CandidateState;
+  poster_path?: string | null;
+  backdrop_path?: string | null;
 }
 
 export type CandidateState =
@@ -186,6 +188,8 @@ export interface LibrarySeriesGroup {
   total_bytes: number;
   predicted_savings_bytes: number;
   seasons: LibrarySeasonGroup[];
+  poster_path?: string | null;
+  backdrop_path?: string | null;
 }
 
 export interface GroupedFiles {
@@ -240,6 +244,14 @@ export interface Settings {
   probe_concurrency: number;
   movies_path: string;
   tv_path: string;
+  tmdb_api_key?: string | null;
+}
+
+export interface MetadataSearchResult {
+  tmdb_id: number;
+  title: string;
+  year: number;
+  poster_url: string;
 }
 
 export interface QueuedItem {
@@ -346,6 +358,8 @@ export const api = {
     request<GroupedFiles>("GET", `/api/files/grouped${buildQuery(filters)}`),
   groupedFileEpisodes: (filters: FileFilters & { series: string; season: number; limit?: number; offset?: number }) =>
     request<GroupedSeasonEpisodes>("GET", `/api/files/grouped/episodes${buildQuery(filters)}`),
+  groupedFileSeasons: (series: string) =>
+    request<{ seasons: LibrarySeasonGroup[] }>("GET", `/api/files/grouped/seasons${buildQuery({ series })}`),
   candidates: (filters: CandidateFilters & { limit?: number; offset?: number; after_savings?: number; after_id?: number }) =>
     request<CandidatesPage>("GET", `/api/candidates${buildQuery(filters)}`),
   groupedCandidates: (filters: CandidateFilters & { limit?: number; offset?: number }) =>
@@ -388,8 +402,16 @@ export const api = {
 
   // Settings
   settings: () => request<Settings>("GET", "/api/settings"),
-  updateSettings: (s: Partial<Pick<Settings, "encode_window_start" | "encode_window_end" | "scan_interval" | "scan_anchor" | "probe_concurrency">>) =>
+  updateSettings: (s: Partial<Pick<Settings, "encode_window_start" | "encode_window_end" | "scan_interval" | "scan_anchor" | "probe_concurrency" | "tmdb_api_key">>) =>
     request<Settings>("PUT", "/api/settings", s),
+
+  // Metadata
+  searchMetadata: (query: string, type: 'tv' | 'movie') =>
+    request<{ results: MetadataSearchResult[] }>("GET", `/api/metadata/search${buildQuery({ query, type })}`),
+  overrideMetadata: (key: string, mediaType: string, posterUrl: string | null, backdropUrl: string | null) =>
+    request<{ status: string }>("PUT", "/api/metadata", { key, media_type: mediaType, poster_url: posterUrl, backdrop_url: backdropUrl }),
+  refreshMetadata: (key?: string, mediaType?: string) =>
+    request<{ status: string }>("POST", "/api/metadata/refresh", key && mediaType ? { key, media_type: mediaType } : {}),
 };
 
 /** wsURL builds the WebSocket URL for live progress, honoring the API base. */

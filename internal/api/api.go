@@ -30,15 +30,23 @@ type JobCanceller interface {
 	Cancel(jobID int64) bool
 }
 
+// MetadataFetcher is the background TMDB metadata fetcher. Trigger enqueues a
+// re-fetch run; RefreshKey force-refreshes a single entry.
+type MetadataFetcher interface {
+	Trigger()
+	RefreshKey(ctx context.Context, key, mediaType string) error
+}
+
 // Deps are the wired dependencies the API needs. main.go builds this; tests
 // build a partial one with fakes.
 type Deps struct {
-	Store       *store.Store
-	Scanner     ScanTrigger
-	Live        *config.Live
-	MoviesPath  string
-	TVPath      string
-	DisableAuth bool
+	Store           *store.Store
+	Scanner         ScanTrigger
+	Live            *config.Live
+	MoviesPath      string
+	TVPath          string
+	DisableAuth     bool
+	MetadataFetcher MetadataFetcher
 
 	// StaticFS is the embedded frontend (Next.js static export). When nil, no
 	// static routes are mounted — handy for API-only tests.
@@ -62,6 +70,7 @@ type Server struct {
 	loginLimiter *rateLimiter
 	canceller    JobCanceller
 	candCache    *candidateCache
+	metaFetcher  MetadataFetcher
 }
 
 func New(d Deps) *Server {
@@ -76,6 +85,7 @@ func New(d Deps) *Server {
 		hub:          NewHub(),
 		loginLimiter: newRateLimiter(),
 		candCache:    newCandidateCache(),
+		metaFetcher:  d.MetadataFetcher,
 	}
 	if d.Store != nil {
 		s.auth = d.Store.Settings
@@ -140,6 +150,7 @@ func (s *Server) Handler() http.Handler {
 	api.GET("/stats", s.handleStats)
 	api.GET("/files", s.handleFiles)
 	api.GET("/files/grouped/episodes", s.handleGroupedFileEpisodes)
+	api.GET("/files/grouped/seasons", s.handleGroupedFileSeasons)
 	api.GET("/files/grouped", s.handleGroupedFiles)
 	api.GET("/candidates", s.handleCandidates)
 	api.GET("/candidates/grouped/episodes", s.handleGroupedSeasonEpisodes)
@@ -172,6 +183,11 @@ func (s *Server) Handler() http.Handler {
 	api.GET("/settings", s.handleGetSettings)
 	api.PUT("/settings", s.handlePutSettings)
 	api.PUT("/settings/credentials", s.handleChangeCredentials)
+
+	// Metadata (TMDB).
+	api.GET("/metadata/search", s.handleMetadataSearch)
+	api.PUT("/metadata", s.handleMetadataOverride)
+	api.POST("/metadata/refresh", s.handleMetadataRefresh)
 
 	// Live progress.
 	api.GET("/ws", s.handleWS)

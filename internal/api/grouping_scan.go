@@ -4,10 +4,11 @@ import (
 	"context"
 	"sort"
 
+	"reclaim/internal/media"
 	"reclaim/internal/store"
 )
 
-const tvScanPageSize = 500
+const tvScanPageSize = 200
 
 func (s *Server) scanTVLibraryFiles(ctx context.Context, filter store.FileFilter, fn func([]store.MediaFile, map[int64]store.CandidateState) error) error {
 	offset := 0
@@ -63,91 +64,6 @@ func (s *Server) scanTVCandidates(ctx context.Context, filter store.CandidateFil
 	}
 }
 
-type libraryTVAccumulator struct {
-	bySeries map[string]*librarySeriesAcc
-}
-
-type librarySeriesAcc struct {
-	title   string
-	lib     string
-	seasons map[int]*librarySeasonAcc
-	order   []int
-}
-
-type librarySeasonAcc struct {
-	season      int
-	ids         []int64
-	eligibleIDs []int64
-	bytes       int64
-	saving      int64
-	eligible    int
-}
-
-func newLibraryTVAccumulator() *libraryTVAccumulator {
-	return &libraryTVAccumulator{bySeries: map[string]*librarySeriesAcc{}}
-}
-
-func (a *libraryTVAccumulator) add(files []store.MediaFile, states map[int64]store.CandidateState, tvPath string) {
-	for i := range files {
-		f := &files[i]
-		title, season, _ := parseTVInfo(f.Path, tvPath)
-		acc, ok := a.bySeries[title]
-		if !ok {
-			acc = &librarySeriesAcc{title: title, lib: f.LibraryType, seasons: map[int]*librarySeasonAcc{}}
-			a.bySeries[title] = acc
-		}
-
-		sa, ok := acc.seasons[season]
-		if !ok {
-			sa = &librarySeasonAcc{season: season}
-			acc.seasons[season] = sa
-			acc.order = append(acc.order, season)
-		}
-		sa.ids = append(sa.ids, f.ID)
-		sa.bytes += f.SizeBytes
-		if states[f.ID] == store.CandidateStateCandidate {
-			sa.eligible++
-			sa.eligibleIDs = append(sa.eligibleIDs, f.ID)
-			sa.saving += f.PredictedSavingsBytes
-		}
-	}
-}
-
-func (a *libraryTVAccumulator) summaries() []librarySeriesSummary {
-	seriesOrder := make([]string, 0, len(a.bySeries))
-	for title := range a.bySeries {
-		seriesOrder = append(seriesOrder, title)
-	}
-	sort.Strings(seriesOrder)
-
-	out := make([]librarySeriesSummary, 0, len(seriesOrder))
-	for _, title := range seriesOrder {
-		acc := a.bySeries[title]
-		sg := librarySeriesSummary{Title: acc.title, LibraryType: acc.lib}
-
-		sort.Ints(acc.order)
-		for _, sn := range acc.order {
-			sa := acc.seasons[sn]
-			sg.Seasons = append(sg.Seasons, librarySeasonSummary{
-				Season:                sn,
-				FileCount:             len(sa.ids),
-				EligibleCount:         sa.eligible,
-				TotalBytes:            sa.bytes,
-				PredictedSavingsBytes: sa.saving,
-				EpisodeIDs:            sa.ids,
-				EligibleIDs:           sa.eligibleIDs,
-			})
-			sg.FileCount += len(sa.ids)
-			sg.EligibleCount += sa.eligible
-			sg.TotalBytes += sa.bytes
-			sg.PredictedSavingsBytes += sa.saving
-		}
-		sg.SeasonCount = len(sg.Seasons)
-		out = append(out, sg)
-	}
-	return out
-}
-
 type candidateTVAccumulator struct {
 	bySeries map[string]*candidateSeriesAcc
 }
@@ -174,7 +90,7 @@ func newCandidateTVAccumulator() *candidateTVAccumulator {
 func (a *candidateTVAccumulator) add(files []store.MediaFile, tvPath string) {
 	for i := range files {
 		f := &files[i]
-		title, season, _ := parseTVInfo(f.Path, tvPath)
+		title, season, _ := media.ParseTVInfo(f.Path, tvPath)
 		acc, ok := a.bySeries[title]
 		if !ok {
 			acc = &candidateSeriesAcc{title: title, lib: f.LibraryType, seasons: map[int]*candidateSeasonAcc{}}
@@ -254,7 +170,7 @@ func (s *Server) buildTVCandidateSummaries(ctx context.Context, filter store.Can
 			if f.Status != store.MediaStatusActive {
 				continue
 			}
-			title, season, _ := parseTVInfo(f.Path, s.tvPath)
+			title, season, _ := media.ParseTVInfo(f.Path, s.tvPath)
 			seasonFiles[seasonKey{title, season}]++
 			seriesFiles[title]++
 		}

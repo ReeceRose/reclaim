@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+
+	"reclaim/internal/media"
 )
 
 type MediaFile struct {
@@ -27,6 +29,8 @@ type MediaFile struct {
 	LastProbedAt          *int64
 	ProbeError            *string
 	Status                string
+	SeriesTitle           *string
+	SeasonNumber          *int
 }
 
 type Media struct {
@@ -53,12 +57,14 @@ func (m *Media) Insert(ctx context.Context, f *MediaFile) (int64, error) {
 			path, library_type, size_bytes, mtime, fingerprint,
 			video_codec, video_codec_profile, width, height, duration_seconds,
 			bitrate_kbps, audio_codec, audio_channels, container_format,
-			is_already_hevc, predicted_savings_bytes, last_probed_at, probe_error, status
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			is_already_hevc, predicted_savings_bytes, last_probed_at, probe_error, status,
+			series_title, season_number
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		f.Path, f.LibraryType, f.SizeBytes, f.Mtime, f.Fingerprint,
 		f.VideoCodec, f.VideoCodecProfile, f.Width, f.Height, f.DurationSeconds,
 		f.BitrateKbps, f.AudioCodec, f.AudioChannels, f.ContainerFormat,
 		btoi(f.IsAlreadyHEVC), f.PredictedSavingsBytes, f.LastProbedAt, f.ProbeError, f.Status,
+		f.SeriesTitle, f.SeasonNumber,
 	)
 	if err != nil {
 		return 0, err
@@ -103,13 +109,15 @@ func (m *Media) UpdateProbe(ctx context.Context, f *MediaFile) error {
 			video_codec = ?, video_codec_profile = ?, width = ?, height = ?,
 			duration_seconds = ?, bitrate_kbps = ?, audio_codec = ?, audio_channels = ?,
 			container_format = ?, is_already_hevc = ?, predicted_savings_bytes = ?,
-			last_probed_at = ?, probe_error = ?, status = ?
+			last_probed_at = ?, probe_error = ?, status = ?,
+			series_title = ?, season_number = ?
 		WHERE id = ?`,
 		f.SizeBytes, f.Mtime, f.Fingerprint,
 		f.VideoCodec, f.VideoCodecProfile, f.Width, f.Height,
 		f.DurationSeconds, f.BitrateKbps, f.AudioCodec, f.AudioChannels,
 		f.ContainerFormat, btoi(f.IsAlreadyHEVC), f.PredictedSavingsBytes,
-		f.LastProbedAt, f.ProbeError, f.Status, f.ID,
+		f.LastProbedAt, f.ProbeError, f.Status,
+		f.SeriesTitle, f.SeasonNumber, f.ID,
 	); err != nil {
 		return err
 	}
@@ -322,7 +330,8 @@ const mediaQ = `
 	SELECT id, path, library_type, size_bytes, mtime, fingerprint,
 		video_codec, video_codec_profile, width, height, duration_seconds,
 		bitrate_kbps, audio_codec, audio_channels, container_format,
-		is_already_hevc, predicted_savings_bytes, last_probed_at, probe_error, status
+		is_already_hevc, predicted_savings_bytes, last_probed_at, probe_error, status,
+		series_title, season_number
 	FROM media_files`
 
 func scanMedia(s rowScanner) (*MediaFile, error) {
@@ -333,6 +342,7 @@ func scanMedia(s rowScanner) (*MediaFile, error) {
 		&f.VideoCodec, &f.VideoCodecProfile, &f.Width, &f.Height, &f.DurationSeconds,
 		&f.BitrateKbps, &f.AudioCodec, &f.AudioChannels, &f.ContainerFormat,
 		&isHEVC, &f.PredictedSavingsBytes, &f.LastProbedAt, &f.ProbeError, &f.Status,
+		&f.SeriesTitle, &f.SeasonNumber,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -342,4 +352,109 @@ func scanMedia(s rowScanner) (*MediaFile, error) {
 	}
 	f.IsAlreadyHEVC = isHEVC != 0
 	return &f, nil
+}
+
+// BackfillSeriesMeta populates series_title and season_number for all TV files
+// that don't have them yet (rows added before the migration). Runs in a single
+// transaction so the browse page becomes consistent immediately on startup.
+func (m *Media) BackfillSeriesMeta(ctx context.Context, tvPath string) error {
+	rows, err := m.r.QueryContext(ctx,
+		"SELECT id, path FROM media_files WHERE library_type = 'tv' AND series_title IS NULL",
+	)
+	if err != nil {
+		return err
+	}
+	type row struct {
+		id   int64
+		path string
+	}
+	var pending []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.path); err != nil {
+			rows.Close()
+			return err
+		}
+		pending = append(pending, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+
+	tx, err := m.w.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx,
+		"UPDATE media_files SET series_title = ?, season_number = ? WHERE id = ?",
+	)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, r := range pending {
+		title, season, _ := media.ParseTVInfo(r.path, tvPath)
+		var titlePtr *string
+		var seasonPtr *int
+		if title != "" {
+			titlePtr = &title
+		}
+		if season >= 0 {
+			seasonPtr = &season
+		}
+		if _, err := stmt.ExecContext(ctx, titlePtr, seasonPtr, r.id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (m *Media) DistinctSeriesTitles(ctx context.Context) ([]string, error) {
+	rows, err := m.r.QueryContext(ctx,
+		"SELECT DISTINCT series_title FROM media_files WHERE library_type='tv' AND status='active' AND series_title IS NOT NULL ORDER BY series_title",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var title string
+		if err := rows.Scan(&title); err != nil {
+			return nil, err
+		}
+		out = append(out, title)
+	}
+	return out, rows.Err()
+}
+
+func (m *Media) DistinctMovieKeys(ctx context.Context, moviesPath string) ([]string, error) {
+	rows, err := m.r.QueryContext(ctx,
+		"SELECT DISTINCT path FROM media_files WHERE library_type='movies' AND status='active' ORDER BY path",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	seen := make(map[string]bool)
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		key := media.MovieKey(path, moviesPath)
+		if !seen[key] {
+			seen[key] = true
+			out = append(out, key)
+		}
+	}
+	return out, rows.Err()
 }

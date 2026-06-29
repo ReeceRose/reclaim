@@ -376,3 +376,123 @@ func candidateStateForFile(f MediaFile, jobState CandidateState) CandidateState 
 	}
 	return CandidateStateCandidate
 }
+
+// TVSeriesRow is one row of the paginated TV series browse list.
+type TVSeriesRow struct {
+	Title                 string
+	FileCount             int
+	SeasonCount           int
+	TotalBytes            int64
+	EligibleCount         int
+	PredictedSavingsBytes int64
+}
+
+const tvEligibleExpr = `status = 'active' AND is_already_hevc = 0 AND probe_error IS NULL AND video_codec IS NOT NULL
+		AND NOT EXISTS (
+			SELECT 1 FROM transcode_jobs j
+			WHERE j.media_file_id = media_files.id
+			  AND j.status IN ('queued', 'running', 'verifying', 'completed')
+		)`
+
+// TVSeriesGroups returns one page of TV series summaries ordered alphabetically.
+// It uses a single GROUP BY query so it is O(1) regardless of library size.
+func (m *Media) TVSeriesGroups(ctx context.Context, search string, limit, offset int) ([]TVSeriesRow, error) {
+	if limit <= 0 {
+		limit = defaultFileLimit
+	}
+
+	where := []string{"library_type = 'tv'", "series_title IS NOT NULL", "series_title != ''"}
+	var args []any
+	if s := strings.TrimSpace(search); s != "" {
+		where = append(where, "LOWER(series_title) LIKE '%' || LOWER(?) || '%'")
+		args = append(args, s)
+	}
+
+	query := `
+		SELECT
+			series_title,
+			COUNT(*) AS file_count,
+			COUNT(DISTINCT season_number) AS season_count,
+			SUM(size_bytes) AS total_bytes,
+			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN 1 ELSE 0 END) AS eligible_count,
+			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN predicted_savings_bytes ELSE 0 END) AS predicted_savings_bytes
+		FROM media_files
+		WHERE ` + strings.Join(where, " AND ") + `
+		GROUP BY series_title
+		ORDER BY LOWER(series_title)
+		LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+
+	rows, err := m.r.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []TVSeriesRow
+	for rows.Next() {
+		var r TVSeriesRow
+		if err := rows.Scan(&r.Title, &r.FileCount, &r.SeasonCount, &r.TotalBytes, &r.EligibleCount, &r.PredictedSavingsBytes); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// TVSeasonRow is one season within a TV series summary.
+type TVSeasonRow struct {
+	Season                int
+	FileCount             int
+	EligibleCount         int
+	TotalBytes            int64
+	PredictedSavingsBytes int64
+}
+
+// TVShowSeasons returns per-season summaries for a single TV series.
+func (m *Media) TVShowSeasons(ctx context.Context, seriesTitle string) ([]TVSeasonRow, error) {
+	query := `
+		SELECT
+			season_number,
+			COUNT(*) AS file_count,
+			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN 1 ELSE 0 END) AS eligible_count,
+			SUM(size_bytes) AS total_bytes,
+			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN predicted_savings_bytes ELSE 0 END) AS predicted_savings_bytes
+		FROM media_files
+		WHERE library_type = 'tv' AND series_title = ? AND season_number IS NOT NULL
+		GROUP BY season_number
+		ORDER BY season_number`
+
+	rows, err := m.r.QueryContext(ctx, query, seriesTitle)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []TVSeasonRow
+	for rows.Next() {
+		var r TVSeasonRow
+		if err := rows.Scan(&r.Season, &r.FileCount, &r.EligibleCount, &r.TotalBytes, &r.PredictedSavingsBytes); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// CountTVSeries returns the total number of distinct TV series matching the search.
+func (m *Media) CountTVSeries(ctx context.Context, search string) (int64, error) {
+	where := []string{"library_type = 'tv'", "series_title IS NOT NULL", "series_title != ''"}
+	var args []any
+	if s := strings.TrimSpace(search); s != "" {
+		where = append(where, "LOWER(series_title) LIKE '%' || LOWER(?) || '%'")
+		args = append(args, s)
+	}
+
+	query := `SELECT COUNT(DISTINCT series_title) FROM media_files WHERE ` + strings.Join(where, " AND ")
+	var n int64
+	if err := m.r.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}

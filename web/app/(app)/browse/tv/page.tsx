@@ -2,6 +2,7 @@
 
 import { Suspense, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { api, type Episode, type LibrarySeasonGroup } from '@/lib/api';
 import { baseName, formatBytes, formatInt, resolutionLabel } from '@/lib/format';
@@ -41,14 +42,18 @@ function StateBadge({ state }: { state: string }) {
   );
 }
 
-function EpisodeRow({ ep }: { ep: Episode }) {
+function EpisodeRow({ ep, onClick }: { ep: Episode; onClick: () => void }) {
   const dimmed = ep.candidate_state === 'already_hevc' || ep.candidate_state === 'completed';
   return (
-    <div className={cn(
-      'grid items-center gap-3 px-4 py-[10px] border-b border-line-soft last:border-b-0 text-[0.82rem]',
-      'grid-cols-[1fr_auto_auto_auto_auto]',
-      dimmed && 'opacity-60',
-    )}>
+    <div
+      onClick={onClick}
+      className={cn(
+        'grid items-center gap-3 px-4 py-[10px] border-b border-line-soft last:border-b-0 text-[0.82rem]',
+        'grid-cols-[1fr_auto_auto_auto_auto]',
+        'cursor-pointer hover:bg-surface-2 transition-colors',
+        dimmed && 'opacity-60',
+      )}
+    >
       <div className="min-w-0 truncate font-medium">{baseName(ep.path)}</div>
       <CodecBadge codec={ep.video_codec} />
       <span className="text-muted-dim hidden sm:inline">
@@ -69,6 +74,7 @@ function SeasonSection({ seriesTitle, seasonData }: {
   seriesTitle: string;
   seasonData: LibrarySeasonGroup;
 }) {
+  const router = useRouter();
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
     queryKey: ['browse', 'episodes', seriesTitle, seasonData.season],
     queryFn: ({ pageParam }: { pageParam: number }) =>
@@ -79,10 +85,9 @@ function SeasonSection({ seriesTitle, seasonData }: {
         offset: pageParam,
       }),
     initialPageParam: 0,
-    getNextPageParam: (lastPage, allPages) => {
+    getNextPageParam: (_lastPage, allPages) => {
       const loaded = allPages.flatMap((p) => p.episodes).length;
-      if (lastPage.total_count != null) return loaded < lastPage.total_count ? loaded : undefined;
-      return lastPage.episodes.length === EPISODES_PER_PAGE ? loaded : undefined;
+      return loaded < seasonData.file_count ? loaded : undefined;
     },
   });
 
@@ -120,7 +125,7 @@ function SeasonSection({ seriesTitle, seasonData }: {
           </div>
         ) : (
           <>
-            {episodes.map((ep) => <EpisodeRow key={ep.id} ep={ep} />)}
+            {episodes.map((ep) => <EpisodeRow key={ep.id} ep={ep} onClick={() => router.push(BROWSE_ROUTES.FILE(ep.id))} />)}
             {hasNextPage && (
               <div className="px-4 py-3 border-t border-line-soft">
                 <Button variant="ghost" size="sm" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()} className="text-xs text-muted-fg">
@@ -139,7 +144,7 @@ function TVShowPageContent() {
   const { get } = useQueryParams();
   const title = get('show') ?? '';
 
-  const { data: showData, isLoading } = useQuery({
+  const { data: showData, isLoading: showLoading } = useQuery({
     queryKey: ['browse', 'show', title],
     queryFn: async () => {
       if (!title) return null;
@@ -148,6 +153,14 @@ function TVShowPageContent() {
     },
     enabled: Boolean(title),
   });
+
+  const { data: seasonsData, isLoading: seasonsLoading } = useQuery({
+    queryKey: ['browse', 'seasons', title],
+    queryFn: () => api.groupedFileSeasons(title),
+    enabled: Boolean(title) && Boolean(showData),
+  });
+
+  const isLoading = showLoading || (Boolean(showData) && seasonsLoading);
 
   if (!title) {
     return (
@@ -241,7 +254,7 @@ function TVShowPageContent() {
       </div>
 
       <div className="flex-1 overflow-auto px-4 pt-5 pb-8 sm:px-7">
-        {showData.seasons.map((s) => (
+        {(seasonsData?.seasons ?? []).map((s) => (
           <SeasonSection key={s.season} seriesTitle={showData.title} seasonData={s} />
         ))}
       </div>

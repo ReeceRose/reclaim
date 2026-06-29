@@ -3,22 +3,15 @@ package api
 import (
 	"net/http"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/labstack/echo/v5"
 
+	"reclaim/internal/media"
 	"reclaim/internal/store"
 )
-
-// seasonEpisodeRe matches the common *arr SxxExx token in a filename, e.g.
-// "Harbor.Lights.S02E07.1080p.mkv" → season 2, episode 7.
-var seasonEpisodeRe = regexp.MustCompile(`(?i)[._ \-]s(\d{1,3})[._ \-]?e(\d{1,4})`)
-
-// seasonDirRe matches a "Season 02" / "Season.2" directory component.
-var seasonDirRe = regexp.MustCompile(`(?i)^season[ ._]*(\d{1,3})$`)
 
 // episodeDTO is a media file plus the parsed season/episode it belongs to.
 type episodeDTO struct {
@@ -147,7 +140,7 @@ func (s *Server) groupTVSummaries(candidates []store.MediaFile, allFiles []store
 		if f.Status != store.MediaStatusActive {
 			continue
 		}
-		title, season, _ := parseTVInfo(f.Path, s.tvPath)
+		title, season, _ := media.ParseTVInfo(f.Path, s.tvPath)
 		seasonFiles[seasonKey{title, season}]++
 		seriesFiles[title]++
 	}
@@ -171,7 +164,7 @@ func (s *Server) groupTVSummaries(candidates []store.MediaFile, allFiles []store
 
 	for i := range candidates {
 		f := &candidates[i]
-		title, season, _ := parseTVInfo(f.Path, s.tvPath)
+		title, season, _ := media.ParseTVInfo(f.Path, s.tvPath)
 		acc, ok := bySeries[title]
 		if !ok {
 			acc = &seriesAcc{title: title, lib: f.LibraryType, seasons: map[int]*seasonAcc{}}
@@ -233,7 +226,7 @@ func (s *Server) buildSeasonEpisodes(files []store.MediaFile, seriesTitle string
 	eps := make([]episodeDTO, 0)
 	for i := range files {
 		f := &files[i]
-		title, sn, episode := parseTVInfo(f.Path, s.tvPath)
+		title, sn, episode := media.ParseTVInfo(f.Path, s.tvPath)
 		if title != seriesTitle || sn != season {
 			continue
 		}
@@ -273,45 +266,3 @@ func (s *Server) groupCandidates(files []store.MediaFile) ([]seriesSummary, []me
 	return s.groupTVSummaries(tv, nil), movies
 }
 
-// parseTVInfo derives (series title, season, episode) from a TV file path.
-// season/episode are -1 when they can't be determined. The series title is the
-// first path segment under tvRoot; season/episode come from the SxxExx token in
-// the filename, falling back to a "Season NN" directory for the season.
-func parseTVInfo(path, tvRoot string) (title string, season, episode int) {
-	season, episode = -1, -1
-
-	rel := path
-	if tvRoot != "" && strings.HasPrefix(path, tvRoot) {
-		rel = strings.TrimPrefix(path, tvRoot)
-	}
-	rel = strings.TrimPrefix(rel, string(filepath.Separator))
-	rel = strings.TrimPrefix(rel, "/")
-	segs := strings.FieldsFunc(rel, func(r rune) bool { return r == '/' || r == filepath.Separator })
-
-	if len(segs) > 0 {
-		title = segs[0]
-	} else {
-		title = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	}
-
-	base := filepath.Base(path)
-	if mm := seasonEpisodeRe.FindStringSubmatch(base); mm != nil {
-		season = atoiSafe(mm[1])
-		episode = atoiSafe(mm[2])
-		return title, season, episode
-	}
-	for _, seg := range segs {
-		if dm := seasonDirRe.FindStringSubmatch(seg); dm != nil {
-			season = atoiSafe(dm[1])
-		}
-	}
-	return title, season, episode
-}
-
-func atoiSafe(s string) int {
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return -1
-	}
-	return n
-}

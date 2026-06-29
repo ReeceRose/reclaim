@@ -82,12 +82,16 @@ func TestHandleGroupedFilesSummarizesAllTVFiles(t *testing.T) {
 
 	h264 := "h264"
 	hevc := "hevc"
+	title := "Harbor Lights"
+	season := 1
 	insertAPIMedia(t, st, &store.MediaFile{
 		Path:                  "/media/tv/Harbor Lights/Season 01/Harbor.Lights.S01E01.mkv",
 		LibraryType:           store.LibraryTypeTV,
 		VideoCodec:            &h264,
 		PredictedSavingsBytes: 400,
 		SizeBytes:             1000,
+		SeriesTitle:           &title,
+		SeasonNumber:          &season,
 	})
 	insertAPIMedia(t, st, &store.MediaFile{
 		Path:          "/media/tv/Harbor Lights/Season 01/Harbor.Lights.S01E02.mkv",
@@ -95,6 +99,8 @@ func TestHandleGroupedFilesSummarizesAllTVFiles(t *testing.T) {
 		VideoCodec:    &hevc,
 		IsAlreadyHEVC: true,
 		SizeBytes:     700,
+		SeriesTitle:   &title,
+		SeasonNumber:  &season,
 	})
 
 	w := doReq(h, http.MethodGet, "/api/files/grouped", nil, nil)

@@ -7,7 +7,6 @@ import { api, type LibrarySeriesGroup, type MediaFile } from '@/lib/api';
 import { baseName, formatBytes, formatInt, resolutionLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { parseQueryEnum, useQueryParam } from '@/hooks/use-query-params';
-import { useFileDetail } from '@/components/file-detail-sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

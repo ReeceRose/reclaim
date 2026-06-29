@@ -183,7 +183,7 @@ function TVShowPageContent() {
     return (
       <div className="flex flex-col items-center justify-center h-full py-32 text-center">
         <div className="text-[0.9rem] font-semibold text-text">Show not found</div>
-        <div className="text-[0.8rem] text-muted-dim mt-2 mb-5">"{title}" could not be found in the library.</div>
+        <div className="text-[0.8rem] text-muted-dim mt-2 mb-5">&quot;{title}&quot; could not be found in the library.</div>
         <Link href={BROWSE_ROUTES.ROOT} className="text-[0.82rem] text-brand hover:underline cursor-pointer">← Back to Browse</Link>
       </div>
     );

@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useMemo, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -206,7 +207,7 @@ function EditPosterDialog({
         <div className="space-y-4">
           {currentPosterURL && !useCustom && selected === null && (
             <div className="flex items-center gap-3 pb-3 border-b border-line">
-              <img src={currentPosterURL} alt="current poster" className="w-12 rounded-md shrink-0" />
+              <Image src={currentPosterURL} alt="current poster" width={48} height={72} className="w-12 h-auto rounded-md shrink-0" />
               <span className="text-sm text-muted-fg">Current poster</span>
             </div>
           )}
@@ -236,7 +237,9 @@ function EditPosterDialog({
                   )}
                 >
                   {r.poster_url ? (
-                    <img src={r.poster_url} alt={r.title} className="w-full aspect-[2/3] object-cover" />
+                    <div className="relative w-full aspect-[2/3]">
+                      <Image src={r.poster_url} alt={r.title} fill sizes="120px" className="object-cover" />
+                    </div>
                   ) : (
                     <div className="w-full aspect-[2/3] bg-surface-3 flex items-center justify-center text-xs text-muted-dim p-1 text-center">{r.title}</div>
                   )}
@@ -441,10 +444,12 @@ function TVShowPageContent() {
 
           <div className="flex items-start gap-4">
             {posterURL && (
-              <img
+              <Image
                 src={posterURL}
                 alt={showData.title}
-                className="w-16 rounded-lg shrink-0 shadow-lg hidden sm:block"
+                width={64}
+                height={96}
+                className="w-16 h-auto rounded-lg shrink-0 shadow-lg hidden sm:block"
               />
             )}
 

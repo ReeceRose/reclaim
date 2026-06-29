@@ -5,8 +5,8 @@ import { parseQueryEnum, useQueryParam, useQueryParams } from '@/hooks/use-query
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { toast } from 'sonner';
-import { api, type CandidateState, type Episode, type FileFilters, type LibrarySeriesGroup, type MediaFile, type Profile } from '@/lib/api';
-import { baseName, dirName, formatBytes, formatCoverage, formatInt, resolutionLabel } from '@/lib/format';
+import { api, type CandidateState, type Episode, type FileFilters, type LibrarySeriesGroup, type MediaFile } from '@/lib/api';
+import { formatBytes, formatCoverage, formatInt } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { codecFilterOptions, libraryFilterOptions, resolutionFilterOptions } from '@/lib/filter-options';
 import { useRouter } from 'next/navigation';
@@ -15,10 +15,14 @@ import { FilterSelect } from '@/components/filter-select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { MediaFlatRow } from '@/components/media/media-flat-row';
+import { QueueConfirmDialog } from '@/components/media/queue-confirm-dialog';
+import { QueueSelectionBar } from '@/components/media/selection-bar';
+import { GroupedSkeleton } from '@/components/media/grouped-skeleton';
+import { STATE_OPTIONS, isQueueable } from '@/components/media/candidate-state';
 
 const PAGE_SIZE = 100;
 
@@ -32,216 +36,15 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'resolution', label: 'Resolution' },
 ];
 
-const STATE_OPTIONS: { value: CandidateState; label: string }[] = [
-  { value: 'candidate', label: 'Candidate' },
-  { value: 'already_hevc', label: 'Already HEVC' },
-  { value: 'probe_failed', label: 'Probe failed' },
-  { value: 'unknown_codec', label: 'Unknown codec' },
-  { value: 'queued', label: 'Queued' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'missing', label: 'Missing' },
-];
-
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
   { value: 'missing', label: 'Missing' },
 ];
 
-const CODEC_COLORS: Record<string, string> = {
-  h264: 'text-gold',
-  hevc: 'text-green',
-  h265: 'text-green',
-  mpeg2: 'text-rose',
-  mpeg2video: 'text-rose',
-  vc1: 'text-violet',
-  av1: 'text-sky',
-};
-
-const CODEC_BORDER: Record<string, string> = {
-  h264: 'border-[rgba(241,194,27,.3)] bg-[rgba(241,194,27,.1)]',
-  hevc: 'border-green-soft bg-green-soft',
-  h265: 'border-green-soft bg-green-soft',
-  mpeg2: 'border-[rgba(255,126,182,.3)] bg-[rgba(255,126,182,.1)]',
-  mpeg2video: 'border-[rgba(255,126,182,.3)] bg-[rgba(255,126,182,.1)]',
-  vc1: 'border-[rgba(190,149,255,.3)] bg-[rgba(190,149,255,.1)]',
-  av1: 'border-[rgba(51,177,255,.32)] bg-[rgba(51,177,255,.1)]',
-};
-
-function isQueueable(file: MediaFile): boolean {
-  return file.candidate_state === 'candidate';
-}
-
-function stateLabel(state: CandidateState): string {
-  return STATE_OPTIONS.find((o) => o.value === state)?.label ?? state;
-}
-
-function queueBlockReason(file: MediaFile): string {
-  switch (file.candidate_state) {
-    case 'already_hevc':
-      return 'Already HEVC';
-    case 'probe_failed':
-      return 'Probe failed';
-    case 'unknown_codec':
-      return 'Unknown codec';
-    case 'queued':
-      return 'Already queued';
-    case 'completed':
-      return 'Already completed';
-    case 'missing':
-      return 'Missing from disk';
-    default:
-      return '';
-  }
-}
-
-function CodecBadge({ codec }: { codec: string | null }) {
-  if (!codec) return <Badge variant="outline" className="font-mono text-[0.7rem] rounded-[7px]">unknown</Badge>;
-  const c = codec.toLowerCase();
-  return (
-    <Badge className={`font-mono text-[0.7rem] rounded-[7px] font-semibold ${CODEC_COLORS[c] ?? 'text-slate'} ${CODEC_BORDER[c] ?? 'border-line bg-surface-3'}`}>
-      {codec}
-    </Badge>
-  );
-}
-
-function StateBadge({ state }: { state: CandidateState }) {
-  const cls =
-    state === 'candidate'
-      ? 'text-brand border-brand-line bg-brand-soft'
-      : state === 'already_hevc'
-        ? 'text-green border-green-soft bg-green-soft'
-        : state === 'probe_failed'
-          ? 'text-red border-[rgba(255,120,120,.28)] bg-[rgba(255,120,120,.09)]'
-          : 'text-muted-fg border-line bg-surface-3';
-  return <Badge className={`text-[0.7rem] rounded-[7px] font-semibold ${cls}`}>{stateLabel(state)}</Badge>;
-}
-
-function ConfirmDialog({
-  open,
-  onClose,
-  selectedFiles,
-  profiles,
-  onConfirm,
-}: {
-  open: boolean;
-  onClose: () => void;
-  selectedFiles: MediaFile[];
-  profiles: Profile[];
-  onConfirm: (profileId: number | null) => Promise<void>;
-}) {
-  const defaultProfile = profiles.find((p) => p.is_default) ?? profiles[0];
-  const [profileId, setProfileId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
-  const totalSavings = selectedFiles.reduce((s, f) => s + f.predicted_savings_bytes, 0);
-
-  async function handleConfirm() {
-    setLoading(true);
-    try {
-      await onConfirm(profileId ?? defaultProfile?.id ?? null);
-      onClose();
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-[540px] p-0 overflow-hidden border-line" style={{ background: 'var(--surface)' }}>
-        <DialogHeader className="px-6 pt-[22px] pb-4 border-b border-line">
-          <DialogTitle className="text-[1.2rem] font-bold tracking-tight">Confirm queue</DialogTitle>
-          <p className="text-[0.85rem] text-muted-fg mt-1">Only candidate-eligible files will be queued.</p>
-        </DialogHeader>
-        <div className="px-6 py-5 max-h-[300px] overflow-auto">
-          <div className="flex gap-6 mb-[18px] flex-wrap">
-            <div>
-              <div className="text-[0.72rem] uppercase tracking-wider text-muted-fg">Files</div>
-              <div className="text-[1.55rem] font-bold tracking-tight mt-0.5">{formatInt(selectedFiles.length)}</div>
-            </div>
-            <div>
-              <div className="text-[0.72rem] uppercase tracking-wider text-muted-fg">Est. recoverable</div>
-              <div className="text-[1.55rem] font-bold tracking-tight mt-0.5 text-brand">{formatBytes(totalSavings)}</div>
-            </div>
-            <div>
-              <div className="text-[0.72rem] uppercase tracking-wider text-muted-fg">Profile</div>
-              {profiles.length > 1 ? (
-                <Select value={String(profileId ?? defaultProfile?.id ?? '')} onValueChange={(v) => setProfileId(Number(v))}>
-                  <SelectTrigger className="mt-0.5 h-8 rounded-lg text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {profiles.map((p) => (
-                      <SelectItem key={p.id} value={String(p.id)}>{p.name}{p.is_default ? ' (default)' : ''}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <div className="text-[1.1rem] font-bold tracking-tight mt-0.5">{defaultProfile?.name ?? '-'}</div>
-              )}
-            </div>
-          </div>
-          {selectedFiles.slice(0, 8).map((f) => (
-            <div key={f.id} className="flex justify-between gap-3 py-[7px] border-b border-line-soft last:border-b-0 text-[0.82rem]">
-              <span className="truncate text-muted-fg">{baseName(f.path)}</span>
-              <span className="text-brand font-medium shrink-0">-{formatBytes(f.predicted_savings_bytes)}</span>
-            </div>
-          ))}
-        </div>
-        <DialogFooter className="px-6 py-4 border-t border-line flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose} className="rounded-[11px]">Cancel</Button>
-          <Button onClick={() => void handleConfirm()} disabled={loading || selectedFiles.length === 0} className="rounded-[11px]" style={{ background: 'linear-gradient(145deg, var(--brand), var(--brand-2))' }}>
-            Queue {formatInt(selectedFiles.length)} jobs
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function FlatRow({ item, selected, onToggle, onOpen }: {
-  item: MediaFile;
-  selected: boolean;
-  onToggle: (id: number) => void;
-  onOpen: (file: MediaFile) => void;
-}) {
-  const queueable = isQueueable(item);
-  return (
-    <div
-      className={cn(
-        'flex items-center gap-0 border-b border-line-soft hover:bg-surface-2 cursor-pointer transition-colors',
-        selected && 'bg-brand-soft',
-        item.status === 'missing' && 'opacity-70',
-      )}
-      style={{ height: 52 }}
-      onClick={() => onOpen(item)}
-    >
-      <div className="w-[52px] flex justify-center shrink-0" title={queueable ? 'Queue candidate' : queueBlockReason(item)}>
-        <Checkbox
-          checked={selected}
-          disabled={!queueable}
-          onCheckedChange={() => queueable && onToggle(item.id)}
-          onClick={(e) => e.stopPropagation()}
-          className="size-[17px] rounded-[5px]"
-        />
-      </div>
-      <div className="flex-1 min-w-0 pr-3">
-        <div className={cn('font-semibold text-[0.88rem] truncate', item.status === 'missing' && 'line-through text-muted-fg')}>{baseName(item.path)}</div>
-        <div className="text-[0.74rem] text-muted-dim truncate font-mono">{dirName(item.path)}</div>
-      </div>
-      <div className="w-[64px] sm:w-[80px] shrink-0"><CodecBadge codec={item.video_codec} /></div>
-      <div className="hidden sm:block w-[60px] shrink-0 text-[0.82rem] text-muted-fg">{resolutionLabel(item.width, item.height)}</div>
-      <div className="hidden lg:block w-[118px] shrink-0"><StateBadge state={item.candidate_state} /></div>
-      <div className="hidden sm:block w-[90px] shrink-0 text-right text-[0.82rem] text-muted-fg pr-2 font-mono">{formatBytes(item.size_bytes)}</div>
-      <div className="w-[84px] sm:w-[110px] shrink-0 text-right text-[0.84rem] sm:text-[0.88rem] pr-3 sm:pr-4 font-mono">
-        {queueable ? <span className="text-brand font-semibold">{formatBytes(item.predicted_savings_bytes)}</span> : <span className="text-muted-dim">-</span>}
-      </div>
-    </div>
-  );
-}
-
 function EpisodeRow(props: { ep: Episode; selected: boolean; onToggle: (id: number) => void; onOpen: (file: MediaFile) => void }) {
   return (
     <div className="pl-[42px]">
-      <FlatRow item={props.ep} selected={props.selected} onToggle={props.onToggle} onOpen={props.onOpen} />
+      <MediaFlatRow item={props.ep} selected={props.selected} onToggle={props.onToggle} onOpen={props.onOpen} showState gateSelection />
     </div>
   );
 }
@@ -294,23 +97,6 @@ function SeasonEpisodes({ seriesTitle, season, filters, selectedIds, onToggle, o
         </div>
       )}
     </>
-  );
-}
-
-function GroupedSkeleton() {
-  return (
-    <div className="bg-surface border border-line rounded-(--radius) overflow-hidden">
-      {[0, 1, 2, 3].map((i) => (
-        <div key={i} className="flex items-center gap-[11px] px-4 py-[13px] border-b border-line-soft">
-          <Skeleton className="w-[18px] h-[18px] shrink-0 rounded" />
-          <div className="flex-1 min-w-0">
-            <Skeleton className="h-4 w-48 mb-1.5" />
-            <Skeleton className="h-3 w-64" />
-          </div>
-          <Skeleton className="h-4 w-20" />
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -419,7 +205,7 @@ function GroupedContent({ selectedIds, onToggle, onOpen, filters, onEpisodesLoad
       {filters.library_type !== 'tv' && movies.length > 0 && (
         <>
           <div className="text-[0.7rem] uppercase tracking-widest text-muted-dim font-bold px-4 pt-[15px] pb-[9px] border-b border-line-soft">Movies</div>
-          {movies.map((f) => <FlatRow key={f.id} item={f} selected={selectedIds.has(f.id)} onToggle={onToggle} onOpen={onOpen} />)}
+          {movies.map((f) => <MediaFlatRow key={f.id} item={f} selected={selectedIds.has(f.id)} onToggle={onToggle} onOpen={onOpen} showState gateSelection />)}
           {(hasNextPage || isFetchingNextPage) && (
             <div className="px-4 py-3 text-center border-t border-line-soft">
               <Button variant="ghost" size="sm" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()} className="text-sm text-muted-fg">
@@ -647,7 +433,7 @@ function LibraryPage() {
                   {virtualItems.map((vRow) => (
                     <div key={vRow.key} style={{ position: 'absolute', top: vRow.start, height: vRow.size, width: '100%' }}>
                       {vRow.index < allItems.length ? (
-                        <FlatRow item={allItems[vRow.index]} selected={selectedIds.has(allItems[vRow.index].id)} onToggle={toggleId} onOpen={(file) => router.push(BROWSE_ROUTES.FILE(file.id))} />
+                        <MediaFlatRow item={allItems[vRow.index]} selected={selectedIds.has(allItems[vRow.index].id)} onToggle={toggleId} onOpen={(file) => router.push(BROWSE_ROUTES.FILE(file.id))} showState gateSelection />
                       ) : (
                         <div className="flex items-center justify-center h-full text-muted-dim text-sm">{isFetchingNextPage ? 'Loading more...' : hasNextPage ? 'Scroll to load more' : 'End of list'}</div>
                       )}
@@ -665,21 +451,20 @@ function LibraryPage() {
       </div>
 
       {selectedFiles.length > 0 && (
-        <div className="mx-3 mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[13px] px-4 py-[13px] border border-brand-line sticky bottom-3 sm:mx-7 sm:px-[18px]" style={{ background: 'var(--surface-2)', boxShadow: '0 10px 30px rgba(0,0,0,.35)' }}>
-          <div className="font-bold"><b className="text-brand">{formatInt(selectedFiles.length)}</b> selected</div>
-          <div className="text-muted-fg text-[0.85rem] hidden sm:block">~ <span className="text-brand font-semibold">{formatBytes(totalSavings)}</span> estimated recoverable</div>
-          <div className="ml-auto flex gap-2.5 items-center">
-            <Button variant="ghost" onClick={clearSel} className="rounded-[11px] text-sm">Clear</Button>
-            <Button onClick={() => setConfirmOpen(true)} className="rounded-[11px] text-sm" style={{ background: 'linear-gradient(145deg, var(--brand), var(--brand-2))', boxShadow: '0 4px 14px var(--brand-soft)' }}>Queue selected -&gt;</Button>
-          </div>
-        </div>
+        <QueueSelectionBar
+          count={selectedFiles.length}
+          totalSavings={totalSavings}
+          onClear={clearSel}
+          onQueue={() => setConfirmOpen(true)}
+        />
       )}
 
-      <ConfirmDialog
+      <QueueConfirmDialog
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
         selectedFiles={selectedFiles}
         profiles={profiles}
+        subtitle="Only candidate-eligible files will be queued."
         onConfirm={async (profileId) => {
           await queueMutation.mutateAsync({ ids: selectedFiles.map((f) => f.id), profileId });
         }}

@@ -1,0 +1,60 @@
+import Link from 'next/link';
+import { BrandLink } from './brand-link';
+import { NotificationBell } from './notification-bell';
+import { NAV_ITEMS, isNavActive } from './nav-config';
+
+export function MobileHeader({
+  unreadCount,
+  onOpenNotifications,
+}: {
+  unreadCount: number;
+  onOpenNotifications: () => void;
+}) {
+  return (
+    <header
+      className="hidden max-sm:flex sticky top-0 z-50 items-center gap-3 px-4 border-b border-line-soft"
+      style={{
+        background: 'var(--surface)',
+        paddingTop: 'calc(12px + env(safe-area-inset-top))',
+        paddingBottom: '12px',
+      }}
+    >
+      <BrandLink size={28} />
+      <NotificationBell unreadCount={unreadCount} onClick={onOpenNotifications} />
+    </header>
+  );
+}
+
+export function MobileBottomNav({ pathname }: { pathname: string }) {
+  return (
+    <nav
+      className="hidden max-sm:flex fixed bottom-0 left-0 right-0 z-60 border-t border-line"
+      style={{
+        background: 'rgba(19,36,42,.96)',
+        backdropFilter: 'blur(14px)',
+        paddingBottom: 'calc(8px + env(safe-area-inset-bottom))',
+        paddingTop: '8px',
+        paddingLeft: '6px',
+        paddingRight: '6px',
+      }}
+    >
+      {NAV_ITEMS.map((item) => {
+        const active = isNavActive(pathname, item.path);
+        return (
+          <Link
+            key={item.path}
+            href={item.path}
+            className={[
+              'flex-1 flex flex-col items-center gap-[3px] px-[2px] py-[6px] rounded-[11px]',
+              'text-[0.64rem] font-semibold transition-[120ms] whitespace-nowrap overflow-hidden',
+              active ? 'text-brand bg-brand-soft' : 'text-muted-fg',
+            ].join(' ')}
+          >
+            {item.icon}
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}

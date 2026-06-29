@@ -545,29 +545,29 @@ function SettingsContent() {
             </div>
           ))}
         </div>
-      </div>
 
-      <div className="border border-line rounded-(--radius) p-5 mt-[18px]" style={{ background: 'var(--surface)' }}>
-        <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Metadata</div>
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <Label className="text-[0.8rem] font-semibold block mb-0.5">TMDB API key</Label>
-            {settings.tmdb_configured ? (
-              <p className="text-[0.78rem] text-green font-mono">Configured · TMDB_API_KEY env var</p>
-            ) : (
-              <p className="text-[0.78rem] text-muted-dim font-mono">Not configured · set <span className="text-muted-fg">TMDB_API_KEY</span> env var</p>
+        <div className="border border-line rounded-(--radius) p-5 mt-[18px]" style={{ background: 'var(--surface)' }}>
+          <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Metadata</div>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <Label className="text-[0.8rem] font-semibold block mb-0.5">TMDB API key</Label>
+              {settings.tmdb_configured ? (
+                <p className="text-[0.78rem] text-green font-mono">Configured · TMDB_API_KEY env var</p>
+              ) : (
+                <p className="text-[0.78rem] text-muted-dim font-mono">Not configured · set <span className="text-muted-fg">TMDB_API_KEY</span> env var</p>
+              )}
+            </div>
+            {settings.tmdb_configured && (
+              <Button
+                variant="outline"
+                onClick={() => refreshMetaMutation.mutate()}
+                disabled={refreshMetaMutation.isPending}
+                className="rounded-[11px]"
+              >
+                {refreshMetaMutation.isPending ? 'Refreshing…' : 'Refresh all metadata'}
+              </Button>
             )}
           </div>
-          {settings.tmdb_configured && (
-            <Button
-              variant="outline"
-              onClick={() => refreshMetaMutation.mutate()}
-              disabled={refreshMetaMutation.isPending}
-              className="rounded-[11px]"
-            >
-              {refreshMetaMutation.isPending ? 'Refreshing…' : 'Refresh all metadata'}
-            </Button>
-          )}
         </div>
       </div>
 

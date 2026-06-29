@@ -2,15 +2,14 @@
 
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { api, type MediaFile, type CandidateFilters, type Profile, type Episode, type SeriesGroup } from '@/lib/api';
-import { formatBytes, formatInt, formatCoverage, resolutionLabel, baseName, dirName } from '@/lib/format';
+import { api, type MediaFile, type CandidateFilters, type Episode, type SeriesGroup } from '@/lib/api';
+import { formatBytes, formatInt, formatCoverage, baseName } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { useRef, useState, useEffect, useMemo, useCallback, useTransition, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { parseQueryEnum, useQueryParam, useQueryParams } from '@/hooks/use-query-params';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -19,6 +18,11 @@ import { Input } from '@/components/ui/input';
 import { FilterSelect } from '@/components/filter-select';
 import { BROWSE_ROUTES } from '@/app/(app)/browse/browse';
 import { codecFilterOptions, libraryFilterOptions, resolutionFilterOptions } from '@/lib/filter-options';
+import { CodecBadge } from '@/components/media/codec-badge';
+import { MediaFlatRow } from '@/components/media/media-flat-row';
+import { QueueConfirmDialog } from '@/components/media/queue-confirm-dialog';
+import { QueueSelectionBar } from '@/components/media/selection-bar';
+import { GroupedSkeleton } from '@/components/media/grouped-skeleton';
 
 const PAGE_SIZE = 100;
 
@@ -31,185 +35,6 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'mtime_asc', label: 'Oldest file' },
   { value: 'codec', label: 'Source codec' },
 ];
-
-const CODEC_COLORS: Record<string, string> = {
-  h264: 'text-gold',
-  hevc: 'text-green',
-  mpeg2: 'text-rose',
-  vc1: 'text-violet',
-};
-const CODEC_BORDER: Record<string, string> = {
-  h264: 'border-[rgba(241,194,27,.3)] bg-[rgba(241,194,27,.1)]',
-  hevc: 'border-green-soft bg-green-soft',
-  mpeg2: 'border-[rgba(255,126,182,.3)] bg-[rgba(255,126,182,.1)]',
-  vc1: 'border-[rgba(190,149,255,.3)] bg-[rgba(190,149,255,.1)]',
-};
-
-function CodecBadge({ codec }: { codec: string | null }) {
-  if (!codec) return null;
-  const c = codec.toLowerCase();
-  return (
-    <Badge
-      className={`font-mono text-[0.7rem] rounded-[7px] font-semibold ${CODEC_COLORS[c] ?? 'text-slate'} ${CODEC_BORDER[c] ?? 'border-line bg-surface-3'}`}
-    >
-      {codec}
-    </Badge>
-  );
-}
-
-function ConfirmDialog({
-  open,
-  onClose,
-  selectedFiles,
-  profiles,
-  onConfirm,
-}: {
-  open: boolean;
-  onClose: () => void;
-  selectedFiles: MediaFile[];
-  profiles: Profile[];
-  onConfirm: (profileId: number | null) => Promise<void>;
-}) {
-  const defaultProfile = profiles.find((p) => p.is_default) ?? profiles[0];
-  const [profileId, setProfileId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const totalSavings = selectedFiles.reduce((s, f) => s + f.predicted_savings_bytes, 0);
-  const preview = selectedFiles.slice(0, 8);
-  const more = selectedFiles.length - preview.length;
-
-  async function handleConfirm() {
-    setLoading(true);
-    try {
-      await onConfirm(profileId ?? defaultProfile?.id ?? null);
-      onClose();
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent
-        className="max-w-[540px] p-0 overflow-hidden border-line"
-        style={{ background: 'var(--surface)' }}
-      >
-        <DialogHeader className="px-6 pt-[22px] pb-4 border-b border-line">
-          <DialogTitle className="text-[1.2rem] font-bold tracking-tight">Confirm queue</DialogTitle>
-          <p className="text-[0.85rem] text-muted-fg mt-1">Review the selection. Nothing runs until you confirm.</p>
-        </DialogHeader>
-
-        <div className="px-6 py-5 max-h-[300px] overflow-auto">
-          <div className="flex gap-6 mb-[18px] flex-wrap">
-            <div>
-              <div className="text-[0.72rem] uppercase tracking-wider text-muted-fg">Files</div>
-              <div className="text-[1.55rem] font-bold tracking-tight mt-0.5">{formatInt(selectedFiles.length)}</div>
-            </div>
-            <div>
-              <div className="text-[0.72rem] uppercase tracking-wider text-muted-fg">Est. recoverable</div>
-              <div className="text-[1.55rem] font-bold tracking-tight mt-0.5 text-brand">{formatBytes(totalSavings)}</div>
-            </div>
-            <div>
-              <div className="text-[0.72rem] uppercase tracking-wider text-muted-fg">Profile</div>
-              {profiles.length > 1 ? (
-                <Select
-                  value={String(profileId ?? profiles[0]?.id ?? '')}
-                  onValueChange={(v) => setProfileId(Number(v))}
-                >
-                  <SelectTrigger className="mt-0.5 h-8 rounded-lg text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {profiles.map((p) => (
-                      <SelectItem key={p.id} value={String(p.id)}>
-                        {p.name}{p.is_default ? ' (default)' : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <div className="text-[1.1rem] font-bold tracking-tight mt-0.5">{defaultProfile?.name ?? '—'}</div>
-              )}
-            </div>
-          </div>
-
-          <div className="text-[0.82rem]">
-            {preview.map((f) => (
-              <div key={f.id} className="flex justify-between gap-3 py-[7px] border-b border-line-soft last:border-b-0">
-                <span className="truncate text-muted-fg">{baseName(f.path)}</span>
-                <span className="text-brand font-medium shrink-0">-{formatBytes(f.predicted_savings_bytes)}</span>
-              </div>
-            ))}
-            {more > 0 && <div className="text-[0.78rem] text-muted-dim pt-2">…and {more} more</div>}
-          </div>
-
-          <div
-            className="flex items-start gap-[9px] text-[0.8rem] text-muted-fg mt-4 rounded-[11px] px-[13px] py-[11px] border"
-            style={{ background: 'var(--green-soft)', borderColor: 'color-mix(in srgb, var(--green) 26%, transparent)' }}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-green shrink-0 mt-px">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            </svg>
-            <div>
-              <b className="text-text font-semibold">Non-destructive.</b> Each original is kept until its re-encode passes verification, then swapped atomically. Jobs run only inside your encode window.
-            </div>
-          </div>
-        </div>
-
-        <DialogFooter className="px-6 py-4 border-t border-line flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose} className="rounded-[11px]">
-            Cancel
-          </Button>
-          <Button
-            onClick={() => void handleConfirm()}
-            disabled={loading}
-            className="rounded-[11px]"
-            style={{ background: 'linear-gradient(145deg, var(--brand), var(--brand-2))' }}
-          >
-            Queue {formatInt(selectedFiles.length)} jobs
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function FlatRow({
-  item,
-  selected,
-  onToggle,
-  onOpen,
-}: {
-  item: MediaFile;
-  selected: boolean;
-  onToggle: (id: number) => void;
-  onOpen: (file: MediaFile) => void;
-}) {
-  return (
-    <div
-      className={`flex items-center gap-0 border-b border-line-soft hover:bg-surface-2 cursor-pointer transition-colors ${selected ? 'bg-brand-soft' : ''}`}
-      style={{ height: 52 }}
-      onClick={() => onOpen(item)}
-    >
-      <div className="w-[52px] flex justify-center shrink-0">
-        <Checkbox
-          checked={selected}
-          onCheckedChange={() => onToggle(item.id)}
-          onClick={(e) => e.stopPropagation()}
-          className="size-[17px] rounded-[5px]"
-        />
-      </div>
-      <div className="flex-1 min-w-0 pr-3">
-        <div className="font-semibold text-[0.88rem] truncate">{baseName(item.path)}</div>
-        <div className="text-[0.74rem] text-muted-dim truncate font-mono">{dirName(item.path)}</div>
-      </div>
-      <div className="w-[64px] sm:w-[80px] shrink-0"><CodecBadge codec={item.video_codec} /></div>
-      <div className="hidden sm:block w-[60px] shrink-0 text-[0.82rem] text-muted-fg">{resolutionLabel(item.width, item.height)}</div>
-      <div className="hidden sm:block w-[90px] shrink-0 text-right text-[0.82rem] text-muted-fg pr-2 font-mono">{formatBytes(item.size_bytes)}</div>
-      <div className="w-[84px] sm:w-[110px] shrink-0 text-right text-brand font-semibold text-[0.84rem] sm:text-[0.88rem] pr-3 sm:pr-4 font-mono">{formatBytes(item.predicted_savings_bytes)}</div>
-    </div>
-  );
-}
 
 function EpisodeRow({
   ep,
@@ -301,27 +126,6 @@ function SeasonEpisodes({
         </div>
       )}
     </>
-  );
-}
-
-function GroupedSkeleton() {
-  return (
-    <div className="bg-surface border border-line rounded-(--radius) overflow-hidden">
-      {[0, 1, 2, 3].map((i) => (
-        <div key={i} className="flex items-center gap-[11px] px-4 py-[13px] border-b border-line-soft">
-          <Skeleton className="w-[17px] h-[17px] rounded-[5px] shrink-0" />
-          <Skeleton className="w-[18px] h-[18px] shrink-0 rounded" />
-          <div className="flex-1 min-w-0">
-            <Skeleton className="h-4 w-48 mb-1.5" />
-            <Skeleton className="h-3 w-64" />
-          </div>
-          <div className="text-right shrink-0">
-            <Skeleton className="h-3 w-20 mb-1 ml-auto" />
-            <Skeleton className="h-4 w-16 ml-auto" />
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -418,7 +222,7 @@ function GroupedContent({
 
   return (
     <div className="bg-surface border border-line rounded-(--radius) overflow-hidden">
-      {isLoading && groupedSeries.length === 0 ? <GroupedSkeleton /> : groupedSeries.map((s) => {
+      {isLoading && groupedSeries.length === 0 ? <GroupedSkeleton withCheckbox /> : groupedSeries.map((s) => {
         const expanded = expandedSeries.has(s.title);
         const selState = seriesSelState(s);
         const allIds = seriesEpisodeIds(s);
@@ -504,7 +308,7 @@ function GroupedContent({
             Movies
           </div>
           {movies.map((f) => (
-            <FlatRow key={f.id} item={f} selected={selectedIds.has(f.id)} onToggle={onToggle} onOpen={onOpen} />
+            <MediaFlatRow key={f.id} item={f} selected={selectedIds.has(f.id)} onToggle={onToggle} onOpen={onOpen} />
           ))}
           {(hasMoreMovies || isFetchingMovies) && (
             <div className="px-4 py-3 text-center border-t border-line-soft">
@@ -838,7 +642,7 @@ function CandidatesPage() {
                     style={{ position: 'absolute', top: vRow.start, height: vRow.size, width: '100%' }}
                   >
                     {vRow.index < allItems.length ? (
-                      <FlatRow
+                      <MediaFlatRow
                         item={allItems[vRow.index]}
                         selected={selectedIds.has(allItems[vRow.index].id)}
                         onToggle={toggleId}
@@ -870,36 +674,22 @@ function CandidatesPage() {
       </div>
 
       {selectedIds.size > 0 && (
-        <div
-          className="mx-3 mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[13px] px-4 py-[13px] border border-brand-line sticky bottom-3 sm:mx-7 sm:px-[18px]"
-          style={{ background: 'var(--surface-2)', boxShadow: '0 10px 30px rgba(0,0,0,.35)' }}
-        >
-          <div className="font-bold">
-            <b className="text-brand">{formatInt(selectedIds.size)}</b> selected
-          </div>
-          <div className="text-muted-fg text-[0.85rem] hidden sm:block">
-            ≈ <span className="text-brand font-semibold">{formatBytes(totalSavings)}</span> estimated recoverable
-          </div>
-          <div className="ml-auto flex gap-2.5 items-center">
-            <Button variant="ghost" onClick={clearSel} className="rounded-[11px] text-sm">
-              Clear
-            </Button>
-            <Button
-              onClick={() => setConfirmOpen(true)}
-              className="rounded-[11px] text-sm"
-              style={{ background: 'linear-gradient(145deg, var(--brand), var(--brand-2))', boxShadow: '0 4px 14px var(--brand-soft)' }}
-            >
-              Queue selected →
-            </Button>
-          </div>
-        </div>
+        <QueueSelectionBar
+          count={selectedIds.size}
+          totalSavings={totalSavings}
+          onClear={clearSel}
+          onQueue={() => setConfirmOpen(true)}
+        />
       )}
 
-      <ConfirmDialog
+      <QueueConfirmDialog
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
         selectedFiles={selectedFiles}
         profiles={profiles}
+        subtitle="Review the selection. Nothing runs until you confirm."
+        showSafetyNote
+        showMoreCount
         onConfirm={async (profileId) => {
           await queueMutation.mutateAsync({ ids: [...selectedIds], profileId });
         }}

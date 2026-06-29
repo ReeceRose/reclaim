@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { api, type LibrarySeriesGroup, type MediaFile } from '@/lib/api';
@@ -97,11 +98,12 @@ function ShowCard({ show, onClick }: { show: LibrarySeriesGroup; onClick: () => 
       <div className="relative h-48 overflow-hidden" style={{ background: 'var(--surface-2)' }}>
         {imageURL ? (
           <>
-            <img
+            <Image
               src={imageURL}
               alt={show.title}
-              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-              loading="lazy"
+              fill
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 240px"
+              className="object-cover transition-transform duration-300 group-hover:scale-105"
             />
             <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom, transparent 35%, rgba(10,10,10,0.88) 100%)' }} />
             <div className="absolute bottom-0 left-0 right-0 px-3 pb-2.5">
@@ -156,11 +158,12 @@ function MovieCard({ file, onClick }: { file: MediaFile; onClick: () => void }) 
       <div className="relative h-48 overflow-hidden" style={{ background: 'var(--surface-2)' }}>
         {imageURL ? (
           <>
-            <img
+            <Image
               src={imageURL}
               alt={title}
-              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-              loading="lazy"
+              fill
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 240px"
+              className="object-cover transition-transform duration-300 group-hover:scale-105"
             />
             <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom, transparent 35%, rgba(10,10,10,0.88) 100%)' }} />
             <div className="absolute bottom-0 left-0 right-0 px-3 pb-2.5">

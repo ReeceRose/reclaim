@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useTransition, type Dispatch, type SetStateAction } from 'react';
 import { parseQueryEnum, useQueryParam, useQueryParams } from '@/hooks/use-query-params';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { toast } from 'sonner';
 import { api, type CandidateState, type Episode, type FileFilters, type LibrarySeriesGroup, type MediaFile, type Profile } from '@/lib/api';
@@ -254,14 +254,23 @@ function SeasonEpisodes({ seriesTitle, season, filters, selectedIds, onToggle, o
   onOpen: (file: MediaFile) => void;
   onEpisodesLoaded: (files: MediaFile[]) => void;
 }) {
-  const { data, isLoading } = useQuery({
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
     queryKey: ['library', 'grouped', 'episodes', filters, seriesTitle, season],
-    queryFn: () => api.groupedFileEpisodes({ ...filters, series: seriesTitle, season }),
+    queryFn: ({ pageParam }: { pageParam: number }) =>
+      api.groupedFileEpisodes({ ...filters, series: seriesTitle, season, limit: PAGE_SIZE, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.flatMap((p) => p.episodes).length;
+      if (lastPage.total_count != null) return loaded < lastPage.total_count ? loaded : undefined;
+      return lastPage.episodes.length === PAGE_SIZE ? loaded : undefined;
+    },
   });
 
+  const episodes = useMemo(() => data?.pages.flatMap((p) => p.episodes) ?? [], [data]);
+
   useEffect(() => {
-    if (data?.episodes) onEpisodesLoaded(data.episodes);
-  }, [data?.episodes, onEpisodesLoaded]);
+    if (episodes.length > 0) onEpisodesLoaded(episodes);
+  }, [episodes, onEpisodesLoaded]);
 
   if (isLoading) {
     return (
@@ -273,9 +282,16 @@ function SeasonEpisodes({ seriesTitle, season, filters, selectedIds, onToggle, o
 
   return (
     <>
-      {(data?.episodes ?? []).map((ep) => (
+      {episodes.map((ep) => (
         <EpisodeRow key={ep.id} ep={ep} selected={selectedIds.has(ep.id)} onToggle={onToggle} onOpen={onOpen} />
       ))}
+      {(hasNextPage || isFetchingNextPage) && (
+        <div className="px-4 py-2 pl-[42px] border-b border-line-soft">
+          <Button variant="ghost" size="sm" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()} className="text-xs text-muted-fg">
+            {isFetchingNextPage ? 'Loading more...' : 'Load more episodes'}
+          </Button>
+        </div>
+      )}
     </>
   );
 }
@@ -304,10 +320,18 @@ function GroupedContent({ selectedIds, onToggle, onOpen, filters, onEpisodesLoad
   filters: FileFilters;
   onEpisodesLoaded: (files: MediaFile[]) => void;
 }) {
-  const { data } = useSuspenseQuery({
+  const { data, fetchNextPage: fetchNextSeries, hasNextPage: hasMoreSeries, isFetchingNextPage: isFetchingMoreSeries, isLoading } = useInfiniteQuery({
     queryKey: ['library', 'grouped', filters],
-    queryFn: () => api.groupedFiles(filters),
+    queryFn: ({ pageParam }: { pageParam: number }) =>
+      api.groupedFiles({ ...filters, limit: PAGE_SIZE, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.flatMap((p) => p.series).length;
+      if (lastPage.total_count != null) return loaded < lastPage.total_count ? loaded : undefined;
+      return lastPage.series.length === PAGE_SIZE ? loaded : undefined;
+    },
   });
+  const series = useMemo(() => data?.pages.flatMap((p) => p.series) ?? [], [data]);
   const movieFilters = { ...filters, library_type: 'movies' as const };
   const { data: movieData, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ['library', 'grouped', 'movies', movieFilters],
@@ -338,7 +362,7 @@ function GroupedContent({ selectedIds, onToggle, onOpen, filters, onEpisodesLoad
 
   return (
     <div className="bg-surface border border-line rounded-(--radius) overflow-hidden">
-      {data.series.map((s: LibrarySeriesGroup) => {
+      {isLoading && series.length === 0 ? <GroupedSkeleton /> : series.map((s: LibrarySeriesGroup) => {
         const expanded = expandedSeries.has(s.title);
         return (
           <div key={s.title}>
@@ -384,6 +408,13 @@ function GroupedContent({ selectedIds, onToggle, onOpen, filters, onEpisodesLoad
           </div>
         );
       })}
+      {(hasMoreSeries || isFetchingMoreSeries) && (
+        <div className="px-4 py-3 text-center border-t border-line-soft">
+          <Button variant="ghost" size="sm" disabled={isFetchingMoreSeries} onClick={() => void fetchNextSeries()} className="text-sm text-muted-fg">
+            {isFetchingMoreSeries ? 'Loading more...' : 'Load more series'}
+          </Button>
+        </div>
+      )}
       {filters.library_type !== 'tv' && movies.length > 0 && (
         <>
           <div className="text-[0.7rem] uppercase tracking-widest text-muted-dim font-bold px-4 pt-[15px] pb-[9px] border-b border-line-soft">Movies</div>
@@ -402,11 +433,7 @@ function GroupedContent({ selectedIds, onToggle, onOpen, filters, onEpisodesLoad
 }
 
 function GroupedView(props: Parameters<typeof GroupedContent>[0]) {
-  return (
-    <Suspense fallback={<GroupedSkeleton />}>
-      <GroupedContent {...props} />
-    </Suspense>
-  );
+  return <GroupedContent {...props} />;
 }
 
 function LibraryPage() {
@@ -458,7 +485,7 @@ function LibraryPage() {
   const filters: FileFilters = {
     sort,
     video_codec: effectiveCodec || undefined,
-    resolution_band: effectiveResolution || undefined,
+    height: effectiveResolution || undefined,
     library_type: effectiveLibrary || undefined,
     status: status || undefined,
     candidate_state: (candidateState as CandidateState) || undefined,

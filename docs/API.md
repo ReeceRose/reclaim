@@ -110,7 +110,7 @@ Precomputed library overview (O(buckets), not O(files)).
       "learned_sample_count": 42 }
   ],
   "by_resolution": [
-    { "band": "hd", "file_count": 800, "total_bytes": 7000000000, "predicted_savings_bytes": 2500000000 }
+    { "band": "1080", "file_count": 800, "total_bytes": 7000000000, "predicted_savings_bytes": 2500000000 }
   ]
 }
 ```
@@ -126,7 +126,7 @@ One page of ranked re-encode candidates. Excludes files that are already HEVC,
 | `sort` | `savings_desc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type` |
 | `library_type` | filter: `movies` or `tv` |
 | `video_codec` | filter, exact source codec, e.g. `h264` |
-| `resolution_band` | filter, `sd` \| `hd` \| `uhd` |
+| `height` | filter, pixel height as decimal string, e.g. `720`, `1080`, or `unknown` |
 | `search` | path substring filter |
 | `limit` | page size (default 50, max 200) |
 | `offset` | for non-default sorts only |
@@ -149,24 +149,55 @@ width, height, duration_seconds, bitrate_kbps, audio_codec, audio_channels,
 container_format, is_already_hevc, predicted_savings_bytes, last_probed_at,
 probe_error, status`. Nullable columns serialize as `null`.
 
+### `GET /api/files/grouped`
+TV series/season summaries for the Library **By series** view. Movies use the
+paginated `/api/files` endpoint.
+
+**Query params:** same filters as `/api/files` (`library_type`, `video_codec`,
+`height`, `search`, `status`, `candidate_state`), plus `limit` (default 50,
+max 200) and `offset`.
+
+```json
+{
+  "series": [
+    { "title": "Breaking Bad", "library_type": "tv", "file_count": 12,
+      "eligible_count": 8, "season_count": 2, "total_bytes": 50000000000,
+      "predicted_savings_bytes": 15000000000,
+      "seasons": [ { "season": 1, "file_count": 6, "eligible_count": 4, "episode_ids": [1, 2] } ] }
+  ],
+  "total_count": 42
+}
+```
+
+### `GET /api/files/grouped/episodes`
+Episode rows for one TV series season in the Library view.
+
+**Query params:** `series`, `season` (required), same filters as `/api/files`,
+plus `limit` (default 50, max 200) and `offset`.
+
 ### `GET /api/candidates/grouped`
-Full candidate set grouped for the TV **By series** view: series → season → episode,
-with movies returned flat. Not paginated — aggregation runs server-side over all
-matching candidates.
+TV series/season summaries for the **By series** candidate view. Movies use the
+paginated `/api/candidates` endpoint.
 
 **Query params:** same filters as `/api/candidates` (`library_type`, `video_codec`,
-`resolution_band`, `search`).
+`height`, `search`), plus `limit` (default 50, max 200) and `offset`.
 
 ```json
 {
   "series": [
     { "title": "Breaking Bad", "library_type": "tv", "candidate_count": 12,
       "season_count": 2, "total_bytes": 50000000000, "predicted_savings_bytes": 15000000000,
-      "seasons": [ { "season": 1, "candidate_count": 6, "episodes": [ { "id": 5, "path": "...", "season": 1, "episode": 1, "...": "..." } ] } ] }
+      "seasons": [ { "season": 1, "candidate_count": 6, "episode_ids": [5, 6] } ] }
   ],
-  "movies": [ { "id": 99, "path": "/movies/Inception (2010)/Inception.mkv", "...": "..." } ]
+  "total_count": 42
 }
 ```
+
+### `GET /api/candidates/grouped/episodes`
+Episode rows for one TV series season in the candidate view.
+
+**Query params:** `series`, `season` (required), same filters as `/api/candidates`,
+plus `limit` (default 50, max 200) and `offset`.
 
 ### `GET /api/files/:id`
 Single media file by id.
@@ -178,7 +209,7 @@ Projects total savings for a set or filter. **Queues nothing.** Uses the same
 candidate exclusions as `/api/candidates`.
 
 **Query params:** `ids` (comma-separated ids), and/or `library_type`, `video_codec`,
-`resolution_band`, `search`. With none, spans the whole candidate list.
+`height`, `search`. With none, spans the whole candidate list.
 
 ```json
 { "file_count": 2, "total_bytes": 2000, "predicted_savings_bytes": 800 }
@@ -262,9 +293,10 @@ Skip reasons: `file not found`, `file is not active`, `file is already HEVC`,
 
 ### `GET /api/jobs`
 Combined queue + history, newest first.
-**Query:** `status` (optional filter, e.g. `queued`, `running`, `completed`, `failed`, `cancelled`).
+**Query:** `status` (optional filter, e.g. `queued`, `running`, `completed`, `failed`, `cancelled`),
+`limit` (default 50, max 200), `offset`.
 ```json
-{ "items": [ { "id": 10, "status": "queued", "queue_position": 1, "...": "..." } ] }
+{ "items": [ { "id": 10, "status": "queued", "queue_position": 1, "...": "..." } ], "total_count": 42 }
 ```
 
 ### `POST /api/jobs/:id/cancel`

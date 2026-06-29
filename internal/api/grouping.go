@@ -51,7 +51,7 @@ func parseCandidateFilter(c *echo.Context) store.CandidateFilter {
 	return store.CandidateFilter{
 		LibraryType:    c.QueryParam("library_type"),
 		VideoCodec:     c.QueryParam("video_codec"),
-		ResolutionBand: c.QueryParam("resolution_band"),
+		Height:      c.QueryParam("height"),
 		Search:         c.QueryParam("search"),
 	}
 }
@@ -62,30 +62,34 @@ func parseCandidateFilter(c *echo.Context) store.CandidateFilter {
 func (s *Server) handleGroupedCandidates(c *echo.Context) error {
 	filter := parseCandidateFilter(c)
 	if filter.LibraryType == store.LibraryTypeMovies {
-		return c.JSON(http.StatusOK, map[string]any{"series": []seriesSummary{}})
+		return c.JSON(http.StatusOK, map[string]any{"series": []seriesSummary{}, "total_count": 0})
+	}
+
+	limit, offset, err := parseLimitOffset(c, defaultPageLimit, maxPageLimit)
+	if err != nil {
+		return err
 	}
 
 	tvFilter := filter
 	tvFilter.LibraryType = store.LibraryTypeTV
 	cacheKey := filterCacheKey(tvFilter)
-	if series, ok := s.candCache.getGrouped(cacheKey); ok {
-		return c.JSON(http.StatusOK, map[string]any{"series": series})
+	var all []seriesSummary
+	if cached, ok := s.candCache.getGrouped(cacheKey); ok {
+		all = cached
+	} else {
+		built, err := s.buildTVCandidateSummaries(c.Request().Context(), tvFilter)
+		if err != nil {
+			return badRequest(c, err.Error())
+		}
+		all = built
+		s.candCache.putGrouped(cacheKey, all)
 	}
 
-	candidates, err := s.store.Media.AllCandidates(c.Request().Context(), tvFilter)
-	if err != nil {
-		return badRequest(c, err.Error())
+	resp := map[string]any{
+		"series":      slicePage(all, offset, limit),
+		"total_count": len(all),
 	}
-	allFiles, err := s.store.Media.AllFiles(c.Request().Context(), store.FileFilter{
-		LibraryType: store.LibraryTypeTV,
-		Search:      filter.Search,
-	})
-	if err != nil {
-		return badRequest(c, err.Error())
-	}
-	series := s.groupTVSummaries(candidates, allFiles)
-	s.candCache.putGrouped(cacheKey, series)
-	return c.JSON(http.StatusOK, map[string]any{"series": series})
+	return c.JSON(http.StatusOK, resp)
 }
 
 // handleGroupedSeasonEpisodes returns the episode rows for one TV series season.
@@ -103,23 +107,28 @@ func (s *Server) handleGroupedSeasonEpisodes(c *echo.Context) error {
 	filter := parseCandidateFilter(c)
 	filter.LibraryType = store.LibraryTypeTV
 
-	cacheKey := seasonEpisodesCacheKey(filter, series, season)
-	if episodes, ok := s.candCache.getEpisodes(cacheKey); ok {
-		return c.JSON(http.StatusOK, map[string]any{"episodes": episodes})
+	limit, offset, err := parseLimitOffset(c, defaultPageLimit, maxPageLimit)
+	if err != nil {
+		return err
 	}
 
 	prefix := filepath.Join(s.tvPath, series)
 	if s.tvPath != "" && !strings.HasSuffix(prefix, string(filepath.Separator)) {
 		prefix += string(filepath.Separator)
 	}
-	files, err := s.store.Media.CandidatesUnderPathPrefix(c.Request().Context(), filter, prefix)
+	files, err := s.store.Media.CandidatesUnderPathPrefix(c.Request().Context(), filter, prefix, limit, offset)
 	if err != nil {
 		return badRequest(c, err.Error())
 	}
 
 	episodes := s.buildSeasonEpisodes(files, series, season)
-	s.candCache.putEpisodes(cacheKey, episodes)
-	return c.JSON(http.StatusOK, map[string]any{"episodes": episodes})
+	resp := map[string]any{"episodes": episodes}
+	if offset == 0 {
+		if total, err := s.store.Media.CountCandidatesUnderPathPrefix(c.Request().Context(), filter, prefix); err == nil {
+			resp["total_count"] = total
+		}
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 // groupTVSummaries aggregates TV candidates into series → season summaries.

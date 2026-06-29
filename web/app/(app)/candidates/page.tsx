@@ -1,6 +1,6 @@
 'use client';
 
-import { useInfiniteQuery, useQuery, useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api, type MediaFile, type CandidateFilters, type Profile, type Episode, type SeriesGroup } from '@/lib/api';
 import { formatBytes, formatInt, formatCoverage, resolutionLabel, baseName, dirName } from '@/lib/format';
@@ -261,14 +261,23 @@ function SeasonEpisodes({
   onOpen: (file: MediaFile) => void;
   onEpisodesLoaded: (files: MediaFile[]) => void;
 }) {
-  const { data, isLoading } = useQuery({
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
     queryKey: ['candidates', 'grouped', 'episodes', filters, seriesTitle, season],
-    queryFn: () => api.groupedSeasonEpisodes({ ...filters, series: seriesTitle, season }),
+    queryFn: ({ pageParam }: { pageParam: number }) =>
+      api.groupedSeasonEpisodes({ ...filters, series: seriesTitle, season, limit: PAGE_SIZE, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.flatMap((p) => p.episodes).length;
+      if (lastPage.total_count != null) return loaded < lastPage.total_count ? loaded : undefined;
+      return lastPage.episodes.length === PAGE_SIZE ? loaded : undefined;
+    },
   });
 
+  const episodes = useMemo(() => data?.pages.flatMap((p) => p.episodes) ?? [], [data]);
+
   useEffect(() => {
-    if (data?.episodes) onEpisodesLoaded(data.episodes);
-  }, [data?.episodes, onEpisodesLoaded]);
+    if (episodes.length > 0) onEpisodesLoaded(episodes);
+  }, [episodes, onEpisodesLoaded]);
 
   if (isLoading) {
     return (
@@ -280,9 +289,16 @@ function SeasonEpisodes({
 
   return (
     <>
-      {(data?.episodes ?? []).map((ep) => (
+      {episodes.map((ep) => (
         <EpisodeRow key={ep.id} ep={ep} selected={selectedIds.has(ep.id)} onToggle={onToggle} onOpen={onOpen} />
       ))}
+      {(hasNextPage || isFetchingNextPage) && (
+        <div className="px-4 py-2 pl-[42px] border-b border-line-soft">
+          <Button variant="ghost" size="sm" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()} className="text-xs text-muted-fg">
+            {isFetchingNextPage ? 'Loading more…' : 'Load more episodes'}
+          </Button>
+        </div>
+      )}
     </>
   );
 }
@@ -323,10 +339,18 @@ function GroupedContent({
   filters: CandidateFilters;
   onEpisodesLoaded: (files: MediaFile[]) => void;
 }) {
-  const { data } = useSuspenseQuery({
+  const { data, fetchNextPage: fetchNextSeries, hasNextPage: hasMoreSeries, isFetchingNextPage: isFetchingMoreSeries, isLoading } = useInfiniteQuery({
     queryKey: ['candidates', 'grouped', filters],
-    queryFn: () => api.groupedCandidates(filters),
+    queryFn: ({ pageParam }: { pageParam: number }) =>
+      api.groupedCandidates({ ...filters, limit: PAGE_SIZE, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.flatMap((p) => p.series).length;
+      if (lastPage.total_count != null) return loaded < lastPage.total_count ? loaded : undefined;
+      return lastPage.series.length === PAGE_SIZE ? loaded : undefined;
+    },
   });
+  const groupedSeries = useMemo(() => data?.pages.flatMap((p) => p.series) ?? [], [data]);
 
   const movieFilters = { ...filters, library_type: 'movies' as const };
   const {
@@ -393,7 +417,7 @@ function GroupedContent({
 
   return (
     <div className="bg-surface border border-line rounded-(--radius) overflow-hidden">
-      {data.series.map((s) => {
+      {isLoading && groupedSeries.length === 0 ? <GroupedSkeleton /> : groupedSeries.map((s) => {
         const expanded = expandedSeries.has(s.title);
         const selState = seriesSelState(s);
         const allIds = seriesEpisodeIds(s);
@@ -466,7 +490,13 @@ function GroupedContent({
           </div>
         );
       })}
-
+      {(hasMoreSeries || isFetchingMoreSeries) && (
+        <div className="px-4 py-3 text-center border-t border-line-soft">
+          <Button variant="ghost" size="sm" disabled={isFetchingMoreSeries} onClick={() => void fetchNextSeries()} className="text-sm text-muted-fg">
+            {isFetchingMoreSeries ? 'Loading more…' : 'Load more series'}
+          </Button>
+        </div>
+      )}
       {filters.library_type !== 'tv' && movies.length > 0 && (
         <>
           <div className="text-[0.7rem] uppercase tracking-widest text-muted-dim font-bold px-4 pt-[15px] pb-[9px] border-b border-line-soft">
@@ -502,11 +532,7 @@ function GroupedView(props: {
   filters: CandidateFilters;
   onEpisodesLoaded: (files: MediaFile[]) => void;
 }) {
-  return (
-    <Suspense fallback={<GroupedSkeleton />}>
-      <GroupedContent {...props} />
-    </Suspense>
-  );
+  return <GroupedContent {...props} />;
 }
 
 function CandidatesPage() {
@@ -534,8 +560,8 @@ function CandidatesPage() {
     staleTime: 30_000,
   });
   const codecOptions = useMemo(() => codecFilterOptions(stats, { excludeHEVC: true, excludeUnknown: true }), [stats]);
-  const resolutionOptions = useMemo(() => resolutionFilterOptions(stats), [stats]);
-  const libraryOptions = useMemo(() => libraryFilterOptions(stats), [stats]);
+  const resolutionOptions = useMemo(() => resolutionFilterOptions(stats, { excludeUnknown: true }), [stats]);
+  const libraryOptions = useMemo(() => libraryFilterOptions(stats, { excludeUnknown: true }), [stats]);
 
   // Clamp to options that actually exist so a stale selection (e.g. after a
   // rescan drops a codec) reads as "All" without a setState-in-effect.
@@ -562,7 +588,7 @@ function CandidatesPage() {
   const filters: CandidateFilters = {
     sort,
     video_codec: effectiveCodec || undefined,
-    resolution_band: effectiveResolution || undefined,
+    height: effectiveResolution || undefined,
     library_type: effectiveLibrary || undefined,
     search: debouncedSearch || undefined,
   };
@@ -697,7 +723,6 @@ function CandidatesPage() {
         )}
       </div>
 
-      {/* Filter strip: search on its own line, controls on second line */}
       <div className="border-b border-line-soft shrink-0" style={{ background: 'var(--bg)' }}>
         <div className="flex items-center gap-2 px-4 py-3 sm:px-7">
           <div className="flex-1 relative">

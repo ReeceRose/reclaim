@@ -24,8 +24,8 @@ const features = [
   },
   {
     icon: BarChart3,
-    title: "Rank by savings",
-    body: "Sorts candidates by predicted HEVC savings. After enough completed jobs, estimates switch from seed values to your observed results.",
+    title: "Savings that adapt",
+    body: "Ranks candidates by predicted HEVC savings. Reclaim starts with conservative defaults, then recalculates estimates from your own completed encodes.",
     accent: "var(--sky)",
   },
   {
@@ -75,7 +75,7 @@ const steps = [
   {
     n: "02",
     title: "Rank & review",
-    body: "Files are sorted by predicted HEVC savings. Review each one's codec and bitrate to decide what's worth re-encoding — and what's better re-downloaded.",
+    body: "Files are sorted by predicted HEVC savings. As jobs complete, Reclaim recalculates estimates from your library's results so future rankings stay grounded in real outcomes.",
   },
   {
     n: "03",
@@ -91,7 +91,7 @@ const steps = [
 
 const does = [
   "Scans mounted library folders directly",
-  "Ranks candidates by estimated savings",
+  "Ranks candidates by savings estimates that improve over time",
   "Helps spot files better re-downloaded than re-encoded",
   "Replaces files in-place after verification",
   "Runs encodes in a configurable overnight window",

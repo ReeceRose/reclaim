@@ -165,6 +165,7 @@ export interface SeriesGroup {
 
 export interface GroupedCandidates {
   series: SeriesGroup[];
+  total_count?: number;
 }
 
 export interface LibrarySeasonGroup {
@@ -189,10 +190,12 @@ export interface LibrarySeriesGroup {
 
 export interface GroupedFiles {
   series: LibrarySeriesGroup[];
+  total_count?: number;
 }
 
 export interface GroupedSeasonEpisodes {
   episodes: Episode[];
+  total_count?: number;
 }
 
 export interface Profile {
@@ -298,7 +301,7 @@ export interface CandidateFilters {
   sort?: string;
   library_type?: string;
   video_codec?: string;
-  resolution_band?: string;
+  height?: string;
   search?: string;
 }
 
@@ -339,15 +342,15 @@ export const api = {
   stats: () => request<Stats>("GET", "/api/stats"),
   files: (filters: FileFilters & { limit?: number; offset?: number }) =>
     request<FilesPage>("GET", `/api/files${buildQuery(filters)}`),
-  groupedFiles: (filters: FileFilters) =>
+  groupedFiles: (filters: FileFilters & { limit?: number; offset?: number }) =>
     request<GroupedFiles>("GET", `/api/files/grouped${buildQuery(filters)}`),
-  groupedFileEpisodes: (filters: FileFilters & { series: string; season: number }) =>
+  groupedFileEpisodes: (filters: FileFilters & { series: string; season: number; limit?: number; offset?: number }) =>
     request<GroupedSeasonEpisodes>("GET", `/api/files/grouped/episodes${buildQuery(filters)}`),
   candidates: (filters: CandidateFilters & { limit?: number; offset?: number; after_savings?: number; after_id?: number }) =>
     request<CandidatesPage>("GET", `/api/candidates${buildQuery(filters)}`),
-  groupedCandidates: (filters: CandidateFilters) =>
+  groupedCandidates: (filters: CandidateFilters & { limit?: number; offset?: number }) =>
     request<GroupedCandidates>("GET", `/api/candidates/grouped${buildQuery(filters)}`),
-  groupedSeasonEpisodes: (filters: CandidateFilters & { series: string; season: number }) =>
+  groupedSeasonEpisodes: (filters: CandidateFilters & { series: string; season: number; limit?: number; offset?: number }) =>
     request<GroupedSeasonEpisodes>("GET", `/api/candidates/grouped/episodes${buildQuery(filters)}`),
   dryRun: (params: { ids?: string } & CandidateFilters) =>
     request<DryRunResult>("GET", `/api/dry-run${buildQuery(params)}`),
@@ -370,8 +373,8 @@ export const api = {
       file_ids: fileIds,
       profile_id: profileId ?? null,
     }),
-  jobs: (status?: string) =>
-    request<{ items: Job[] }>("GET", `/api/jobs${buildQuery({ status })}`),
+  jobs: (params?: { status?: string; limit?: number; offset?: number }) =>
+    request<{ items: Job[]; total_count?: number }>("GET", `/api/jobs${buildQuery(params ?? {})}`),
   cancelJob: (id: number) =>
     request<{ job_id: number; status: string }>("POST", `/api/jobs/${id}/cancel`),
   forceJob: (id: number) =>

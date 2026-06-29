@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -41,7 +42,7 @@ var orderClauses = map[CandidateSort]string{
 type CandidateFilter struct {
 	LibraryType    string // "movies" | "tv"
 	VideoCodec     string // exact source codec, e.g. "h264"
-	ResolutionBand string // "sd" | "hd" | "uhd"
+	Height         string // pixel height as decimal string, e.g. "720", or "unknown"
 	Search         string // case-insensitive substring match against path
 }
 
@@ -50,15 +51,23 @@ type CandidateFilter struct {
 // lockstep on what "matches the filter" means.
 func appendFilter(where []string, args []any, f CandidateFilter) ([]string, []any, error) {
 	if f.LibraryType != "" {
-		where = append(where, "library_type = ?")
-		args = append(args, f.LibraryType)
+		if f.LibraryType == resBandUnknown {
+			where = append(where, "(library_type IS NULL OR library_type = '')")
+		} else {
+			where = append(where, "library_type = ?")
+			args = append(args, f.LibraryType)
+		}
 	}
 	if f.VideoCodec != "" {
-		where = append(where, "video_codec = ?")
-		args = append(args, f.VideoCodec)
+		if f.VideoCodec == resBandUnknown {
+			where = append(where, "(video_codec IS NULL OR video_codec = '')")
+		} else {
+			where = append(where, "video_codec = ?")
+			args = append(args, f.VideoCodec)
+		}
 	}
-	if f.ResolutionBand != "" {
-		clause, err := resolutionBandClause(f.ResolutionBand)
+	if f.Height != "" {
+		clause, err := resolutionHeightClause(f.Height)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -196,9 +205,15 @@ func (m *Media) CountCandidates(ctx context.Context, filter CandidateFilter) (in
 	return n, nil
 }
 
-// CandidatesUnderPathPrefix returns candidates whose path starts with prefix.
-// Used to load one TV series' episodes without scanning the whole library.
-func (m *Media) CandidatesUnderPathPrefix(ctx context.Context, filter CandidateFilter, prefix string) ([]MediaFile, error) {
+// CandidatesUnderPathPrefix returns one page of candidates under prefix.
+func (m *Media) CandidatesUnderPathPrefix(ctx context.Context, filter CandidateFilter, prefix string, limit, offset int) ([]MediaFile, error) {
+	if limit <= 0 {
+		limit = defaultCandidateLimit
+	}
+	if limit > maxCandidateLimit {
+		limit = maxCandidateLimit
+	}
+
 	where := []string{
 		"status = 'active'",
 		"is_already_hevc = 0",
@@ -215,7 +230,8 @@ func (m *Media) CandidatesUnderPathPrefix(ctx context.Context, filter CandidateF
 	}
 
 	query := mediaQ + " WHERE " + strings.Join(where, " AND ") +
-		" ORDER BY predicted_savings_bytes DESC, id ASC"
+		" ORDER BY predicted_savings_bytes DESC, id ASC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
 
 	rows, err := m.r.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -232,6 +248,31 @@ func (m *Media) CandidatesUnderPathPrefix(ctx context.Context, filter CandidateF
 		out = append(out, *f)
 	}
 	return out, rows.Err()
+}
+
+// CountCandidatesUnderPathPrefix returns how many candidates match prefix + filter.
+func (m *Media) CountCandidatesUnderPathPrefix(ctx context.Context, filter CandidateFilter, prefix string) (int64, error) {
+	where := []string{
+		"status = 'active'",
+		"is_already_hevc = 0",
+		"probe_error IS NULL",
+		"video_codec IS NOT NULL",
+		jobExclusionSQL,
+		"path LIKE ? ESCAPE '\\'",
+	}
+	args := []any{likePrefix(prefix)}
+	var err error
+	where, args, err = appendFilter(where, args, filter)
+	if err != nil {
+		return 0, err
+	}
+
+	query := `SELECT COUNT(*) FROM media_files WHERE ` + strings.Join(where, " AND ")
+	var n int64
+	if err := m.r.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // AllCandidates returns every candidate matching the filter, ranked by
@@ -319,19 +360,16 @@ func (m *Media) DryRunSavings(ctx context.Context, ids []int64, filter Candidate
 	return &res, nil
 }
 
-// resolutionBandClause returns the height predicate for a band, mirroring the
-// bands in resolutionBand / Stats.Recompute.
-func resolutionBandClause(band string) (string, error) {
-	switch band {
-	case "sd":
-		return fmt.Sprintf("(height IS NOT NULL AND height > 0 AND height < %d)", resHeightSD), nil
-	case "hd":
-		return fmt.Sprintf("(height >= %d AND height < %d)", resHeightSD, resHeightHD), nil
-	case "uhd":
-		return fmt.Sprintf("(height >= %d)", resHeightHD), nil
-	default:
-		return "", fmt.Errorf("unknown resolution band %q", band)
+// resolutionHeightClause returns the height predicate for a stats bucket key.
+func resolutionHeightClause(height string) (string, error) {
+	if height == resBandUnknown {
+		return "(height IS NULL OR height <= 0)", nil
 	}
+	h, err := strconv.Atoi(height)
+	if err != nil || h <= 0 {
+		return "", fmt.Errorf("unknown resolution height %q", height)
+	}
+	return fmt.Sprintf("height = %d", h), nil
 }
 
 // likePrefix escapes % and _ in prefix for a LIKE 'prefix%' match.

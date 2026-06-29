@@ -63,7 +63,19 @@ func (s *Stats) needsRebuild(ctx context.Context) (bool, error) {
 	).Scan(&libRows); err != nil {
 		return false, err
 	}
-	return libRows == 0, nil
+	if libRows == 0 {
+		return true, nil
+	}
+
+	// One-time upgrade path: pre-height-bucket installs stored sd/hd/uhd bands.
+	var legacyResRows int
+	if err := s.r.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM library_stats
+		WHERE dimension = ? AND bucket IN ('sd', 'hd', 'uhd')`, dimResolution,
+	).Scan(&legacyResRows); err != nil {
+		return false, err
+	}
+	return legacyResRows > 0, nil
 }
 
 // needsSavingsBackfill reports whether probed non-HEVC rows still carry the

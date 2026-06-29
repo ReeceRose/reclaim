@@ -41,16 +41,25 @@ export function relativeTime(unixSeconds: number | null | undefined): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-/** resolutionLabel maps a height to a band label (2160p / 1080p / 720p / SD). */
 export function resolutionLabel(
-  _width: number | null | undefined,
+  width: number | null | undefined,
   height: number | null | undefined,
 ): string {
-  if (!height) return "—";
-  if (height >= 2000) return "2160p";
-  if (height >= 1000) return "1080p";
-  if (height >= 700) return "720p";
+  const w = width ?? 0;
+  const h = height ?? 0;
+  if (!w && !h) return "—";
+  if (w >= 3840 || h >= 2160) return "4K";
+  if (w >= 1920 || h >= 1080) return "1080p";
+  if (w >= 1280 || h >= 720) return "720p";
   return "SD";
+}
+
+/** resolutionBucketLabel formats a stats bucket key for display. */
+export function resolutionBucketLabel(bucket: string): string {
+  if (!bucket || bucket === "unknown") return "Unknown";
+  const h = Number(bucket);
+  if (!Number.isFinite(h) || h <= 0) return bucket;
+  return `${h}p`;
 }
 
 /** windowInfo computes open/closed state and a countdown label for an encode window. */

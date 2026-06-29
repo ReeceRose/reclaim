@@ -2,7 +2,7 @@
 
 import { useSuspenseQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { formatBytes, formatInt, formatPct } from '@/lib/format';
+import { formatBytes, formatInt, formatPct, resolutionBucketLabel } from '@/lib/format';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -57,7 +57,7 @@ function DashboardSkeleton() {
         </div>
       </div>
       <div className="grid grid-cols-[1.55fr_1fr] gap-5 max-sm:grid-cols-1">
-        <div className="border border-line rounded-(--radius) p-5" style={{ background: 'var(--surface)' }}>
+        <div className="border border-line rounded-lg p-5" style={{ background: 'var(--surface)' }}>
           <Skeleton className="h-3 w-32 mb-5" />
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className="flex items-center gap-3 mb-4">
@@ -67,7 +67,7 @@ function DashboardSkeleton() {
             </div>
           ))}
         </div>
-        <div className="border border-line rounded-(--radius) p-5" style={{ background: 'var(--surface)' }}>
+        <div className="border border-line rounded-lg p-5" style={{ background: 'var(--surface)' }}>
           <Skeleton className="h-3 w-24 mb-5" />
           {[0, 1, 2].map((i) => (
             <div key={i} className="flex items-center gap-3 mb-4">
@@ -148,14 +148,12 @@ function DashboardContent() {
 
   return (
     <div className="px-4 pt-5 pb-14 w-full sm:px-7 sm:pt-7">
-      {/* Hero — replaces the generic page header */}
       <div
         className="rounded-[18px] border border-line px-5 py-6 mb-6 relative overflow-hidden sm:px-7 sm:py-7"
         style={{ background: 'radial-gradient(120% 150% at 100% 0%, var(--brand-soft), transparent 55%), var(--surface)' }}
       >
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'repeating-linear-gradient(0deg, rgba(244,244,244,.022) 0 1px, transparent 1px 4px)' }} />
 
-        {/* Eyebrow + scan action */}
         <div className="flex items-center justify-between mb-5">
           <div className="text-xs text-muted-fg uppercase tracking-[0.13em] font-bold">Estimated recoverable</div>
           <Button
@@ -172,7 +170,6 @@ function DashboardContent() {
           </Button>
         </div>
 
-        {/* Hero number */}
         <div className="flex items-end justify-between gap-6 flex-wrap">
           <div>
             <div
@@ -194,7 +191,6 @@ function DashboardContent() {
           </div>
         </div>
 
-        {/* Segmented bar */}
         <div className="mt-6">
           <div className="h-8 rounded-[11px] bg-surface-2 flex overflow-hidden shadow-[inset_0_0_0_1px_var(--line)]">
             <div className="h-full transition-[width_1.2s_cubic-bezier(.34,1.4,.5,1)]" style={{ width: `${reclaimPct}%`, background: 'linear-gradient(180deg, var(--brand), var(--brand-2))', boxShadow: '0 0 22px var(--brand-soft)' }} />
@@ -226,9 +222,8 @@ function DashboardContent() {
         </div>
       </div>
 
-      {/* Charts */}
       <div className="grid grid-cols-[1.55fr_1fr] gap-5 max-sm:grid-cols-1">
-        <div className="border border-line rounded-(--radius) p-5" style={{ background: 'var(--surface)' }}>
+        <div className="border border-line rounded-lg p-5" style={{ background: 'var(--surface)' }}>
           <div className="text-xs uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Codec breakdown</div>
           {stats.by_codec.map((c) => (
             <div key={c.codec} className="flex items-center gap-3 mb-3.5 last:mb-0 text-sm">
@@ -239,14 +234,6 @@ function DashboardContent() {
                 >
                   {c.codec}
                 </Badge>
-                {c.ratio_source === 'learned' && (
-                  <Badge
-                    className="text-[0.6rem] font-bold tracking-wide rounded-[5px] uppercase px-1 py-0 text-green border-green/30 bg-green/10"
-                    title={`Savings ratio learned from ${c.learned_sample_count ?? 0} completed jobs`}
-                  >
-                    learned
-                  </Badge>
-                )}
               </div>
               <div className="flex-1 h-[10px] bg-surface-2 rounded-[6px] overflow-hidden">
                 <div className="h-full rounded-[6px]" style={{ width: `${Math.round((c.file_count / maxCodecFiles) * 100)}%`, background: codecColor(c.codec) }} />
@@ -257,11 +244,11 @@ function DashboardContent() {
             </div>
           ))}
         </div>
-        <div className="border border-line rounded-(--radius) p-5" style={{ background: 'var(--surface)' }}>
+        <div className="border border-line rounded-lg p-5" style={{ background: 'var(--surface)' }}>
           <div className="text-xs uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Resolution</div>
           {stats.by_resolution.map((r) => (
             <div key={r.band} className="flex items-center gap-3 mb-3.5 last:mb-0 text-sm">
-              <div className="w-[64px] sm:w-[78px] shrink-0 font-semibold">{r.band}</div>
+              <div className="w-[64px] sm:w-[78px] shrink-0 font-semibold">{resolutionBucketLabel(r.band)}</div>
               <div className="flex-1 h-[10px] bg-surface-2 rounded-[6px] overflow-hidden">
                 <div className="h-full rounded-[6px] bg-sky" style={{ width: `${Math.round((r.file_count / maxResFiles) * 100)}%` }} />
               </div>

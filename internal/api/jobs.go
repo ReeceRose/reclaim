@@ -121,22 +121,39 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 // status, with a 1-based queue position attached to queued jobs.
 func (s *Server) handleListJobs(c *echo.Context) error {
 	ctx := c.Request().Context()
-	jobs, err := s.store.Jobs.ListAllWithPath(ctx)
+
+	limit, offset, err := parseLimitOffset(c, defaultPageLimit, maxPageLimit)
+	if err != nil {
+		return err
+	}
+
+	statusFilter := c.QueryParam("status")
+	jobs, err := s.store.Jobs.ListWithPath(ctx, store.JobListQuery{
+		Status: statusFilter,
+		Limit:  limit,
+		Offset: offset,
+	})
 	if err != nil {
 		return serverError(c, err)
 	}
 
-	positions := queuePositions(jobs)
+	positions, err := s.store.Jobs.QueuedPositions(ctx)
+	if err != nil {
+		return serverError(c, err)
+	}
 
-	statusFilter := c.QueryParam("status")
 	out := make([]jobDTO, 0, len(jobs))
 	for i := range jobs {
-		if statusFilter != "" && jobs[i].Status != statusFilter {
-			continue
-		}
 		out = append(out, toJobDTO(&jobs[i], positions[jobs[i].ID]))
 	}
-	return c.JSON(http.StatusOK, map[string]any{"items": out})
+
+	resp := map[string]any{"items": out}
+	if offset == 0 {
+		if total, err := s.store.Jobs.CountJobs(ctx, statusFilter); err == nil {
+			resp["total_count"] = total
+		}
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 // queuePositions assigns 1-based positions to queued jobs ordered by queue time.

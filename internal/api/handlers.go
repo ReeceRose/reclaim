@@ -78,7 +78,7 @@ func (s *Server) handleCandidates(c *echo.Context) error {
 		Filter: store.CandidateFilter{
 			LibraryType:    c.QueryParam("library_type"),
 			VideoCodec:     c.QueryParam("video_codec"),
-			ResolutionBand: c.QueryParam("resolution_band"),
+			Height:      c.QueryParam("height"),
 			Search:         c.QueryParam("search"),
 		},
 	}
@@ -193,7 +193,7 @@ func (s *Server) handleDryRun(c *echo.Context) error {
 	filter := store.CandidateFilter{
 		LibraryType:    c.QueryParam("library_type"),
 		VideoCodec:     c.QueryParam("video_codec"),
-		ResolutionBand: c.QueryParam("resolution_band"),
+		Height:      c.QueryParam("height"),
 		Search:         c.QueryParam("search"),
 	}
 	res, err := s.store.Media.DryRunSavings(c.Request().Context(), ids, filter)

@@ -106,3 +106,40 @@ func TestFiles_filtersByCandidateState(t *testing.T) {
 		t.Fatalf("missing: want 1, got %d", n)
 	}
 }
+
+func TestFiles_filtersUnknownBuckets(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	noCodecID, err := s.Media.insertFile(ctx, testFile{path: "/m/no-codec.mkv", size: 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	noHeightID, err := s.Media.insertFile(ctx, testFile{path: "/m/no-height.mkv", size: 1000, codec: "h264"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Media.insertFile(ctx, testFile{path: "/m/known.mkv", size: 1000, codec: "h264", height: 1080}); err != nil {
+		t.Fatal(err)
+	}
+
+	byCodec, err := s.Media.Files(ctx, FileQuery{Filter: FileFilter{VideoCodec: "unknown"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byCodec) != 1 || byCodec[0].ID != noCodecID {
+		t.Fatalf("unknown codec: got %+v, want only %d", byCodec, noCodecID)
+	}
+
+	byResolution, err := s.Media.Files(ctx, FileQuery{Filter: FileFilter{Height: "unknown"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotIDs := map[int64]bool{}
+	for _, f := range byResolution {
+		gotIDs[f.ID] = true
+	}
+	if len(byResolution) != 2 || !gotIDs[noCodecID] || !gotIDs[noHeightID] {
+		t.Fatalf("unknown resolution: got %+v, want %d and %d", byResolution, noCodecID, noHeightID)
+	}
+}

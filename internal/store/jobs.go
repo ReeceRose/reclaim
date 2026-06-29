@@ -50,6 +50,91 @@ func (j *Jobs) GetByID(ctx context.Context, id int64) (*TranscodeJob, error) {
 	return scanJob(j.r.QueryRowContext(ctx, jobQ+" WHERE id = ?", id))
 }
 
+// JobListQuery pages the combined queue + history list.
+type JobListQuery struct {
+	Status string
+	Limit  int
+	Offset int
+}
+
+const defaultJobLimit = 50
+const maxJobLimit = 200
+
+// ListWithPath returns one page of jobs, newest first, with SourcePath joined in.
+func (j *Jobs) ListWithPath(ctx context.Context, q JobListQuery) ([]TranscodeJob, error) {
+	limit := q.Limit
+	if limit <= 0 {
+		limit = defaultJobLimit
+	}
+	if limit > maxJobLimit {
+		limit = maxJobLimit
+	}
+
+	query := jobWithPathQ
+	var args []any
+	if q.Status != "" {
+		query += " WHERE j.status = ?"
+		args = append(args, q.Status)
+	}
+	query += " ORDER BY j.queued_at DESC, j.id DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, q.Offset)
+
+	rows, err := j.r.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []TranscodeJob
+	for rows.Next() {
+		job, err := scanJobWithPath(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *job)
+	}
+	return out, rows.Err()
+}
+
+// CountJobs returns how many jobs match an optional status filter.
+func (j *Jobs) CountJobs(ctx context.Context, status string) (int64, error) {
+	query := `SELECT COUNT(*) FROM transcode_jobs`
+	var args []any
+	if status != "" {
+		query += " WHERE status = ?"
+		args = append(args, status)
+	}
+	var n int64
+	if err := j.r.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// QueuedPositions returns 1-based queue positions for every queued job.
+func (j *Jobs) QueuedPositions(ctx context.Context) (map[int64]int, error) {
+	rows, err := j.r.QueryContext(ctx, `
+		SELECT id FROM transcode_jobs
+		WHERE status = 'queued'
+		ORDER BY queued_at, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	pos := make(map[int64]int)
+	i := 1
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		pos[id] = i
+		i++
+	}
+	return pos, rows.Err()
+}
+
 // ListAllWithPath returns every job, newest first, with the originating media
 // file's path joined in (SourcePath). Used by GET /api/jobs so the UI can show
 // the file name instead of a bare media_file_id. The LEFT JOIN keeps jobs whose

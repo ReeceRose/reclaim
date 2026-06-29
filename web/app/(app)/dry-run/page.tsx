@@ -61,7 +61,7 @@ function DryRunContent() {
     staleTime: 30_000,
   });
   const codecOptions = useMemo(() => codecFilterOptions(stats, { excludeHEVC: true, excludeUnknown: true }), [stats]);
-  const libraryOptions = useMemo(() => libraryFilterOptions(stats), [stats]);
+  const libraryOptions = useMemo(() => libraryFilterOptions(stats, { excludeUnknown: true }), [stats]);
 
   // Clamp to options that actually exist so a stale selection (e.g. after a
   // rescan drops a codec) reads as "All" without a setState-in-effect.

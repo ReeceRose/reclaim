@@ -3,15 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
-)
-
-// Resolution band thresholds (by height in pixels). These MUST stay in sync
-// with the CASE expression in Stats.Recompute below — the incremental path
-// (resolutionBand) and the recompute path derive the same buckets, and a test
-// asserts incremental == recompute to catch any drift.
-const (
-	resHeightSD = 720  // height < 720 → sd
-	resHeightHD = 2160 // 720 <= height < 2160 → hd; >= 2160 → uhd
+	"strconv"
 )
 
 // Dimension names in library_stats.
@@ -22,13 +14,8 @@ const (
 	dimLibrary    = "library"
 )
 
-// Resolution band values in library_stats and candidate filters.
-const (
-	resBandSD      = "sd"
-	resBandHD      = "hd"
-	resBandUHD     = "uhd"
-	resBandUnknown = "unknown"
-)
+// resBandUnknown is the library_stats bucket for files with no probed height.
+const resBandUnknown = "unknown"
 
 // CodecStat is the per-codec aggregate slice of the library.
 type CodecStat struct {
@@ -38,7 +25,8 @@ type CodecStat struct {
 	PredictedSavingsBytes int64
 }
 
-// ResolutionStat is the per-resolution-band aggregate slice of the library.
+// ResolutionStat is the per-height aggregate slice of the library. Band holds
+// the pixel height as a decimal string (e.g. "720", "1080") or "unknown".
 type ResolutionStat struct {
 	Band                  string
 	FileCount             int64
@@ -177,9 +165,7 @@ func (s *Stats) Recompute(ctx context.Context) error {
 		 SELECT 'resolution',
 		        CASE
 		          WHEN height IS NULL OR height <= 0 THEN 'unknown'
-		          WHEN height < 720 THEN 'sd'
-		          WHEN height < 2160 THEN 'hd'
-		          ELSE 'uhd'
+		          ELSE CAST(height AS TEXT)
 		        END,
 		        COUNT(*), COALESCE(SUM(size_bytes), 0), COALESCE(SUM(predicted_savings_bytes), 0)
 		 FROM media_files WHERE status = 'active'
@@ -232,24 +218,17 @@ func contributionsFor(f *MediaFile) []statBucket {
 	return []statBucket{
 		{dimTotal, ""},
 		{dimCodec, codec},
-		{dimResolution, resolutionBand(f.Height)},
+		{dimResolution, resolutionBucket(f.Height)},
 		{dimLibrary, lib},
 	}
 }
 
-// resolutionBand classifies a height into the same bands the Recompute CASE uses.
-func resolutionBand(height *int) string {
+// resolutionBucket maps a probed height to the same bucket key Recompute uses.
+func resolutionBucket(height *int) string {
 	if height == nil || *height <= 0 {
 		return resBandUnknown
 	}
-	switch {
-	case *height < resHeightSD:
-		return resBandSD
-	case *height < resHeightHD:
-		return resBandHD
-	default:
-		return resBandUHD
-	}
+	return strconv.Itoa(*height)
 }
 
 // applyContribution adds (sign=+1) or removes (sign=-1) a file's contribution

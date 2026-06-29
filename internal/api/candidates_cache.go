@@ -44,12 +44,12 @@ func (c *candidateCache) invalidate() {
 
 func filterCacheKey(f store.CandidateFilter) string {
 	var b strings.Builder
-	b.Grow(len(f.LibraryType) + len(f.VideoCodec) + len(f.ResolutionBand) + len(f.Search) + 4)
+	b.Grow(len(f.LibraryType) + len(f.VideoCodec) + len(f.Height) + len(f.Search) + 4)
 	b.WriteString(f.LibraryType)
 	b.WriteByte(0)
 	b.WriteString(f.VideoCodec)
 	b.WriteByte(0)
-	b.WriteString(f.ResolutionBand)
+	b.WriteString(f.Height)
 	b.WriteByte(0)
 	b.WriteString(f.Search)
 	return b.String()

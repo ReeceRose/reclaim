@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 )
@@ -49,7 +50,7 @@ var fileOrderClauses = map[FileSort]string{
 type FileFilter struct {
 	LibraryType    string
 	VideoCodec     string
-	ResolutionBand string
+	Height         string
 	Search         string
 	Status         string
 	CandidateState string
@@ -70,7 +71,7 @@ func appendFileFilter(where []string, args []any, f FileFilter) ([]string, []any
 	where, args, err := appendFilter(where, args, CandidateFilter{
 		LibraryType:    f.LibraryType,
 		VideoCodec:     f.VideoCodec,
-		ResolutionBand: f.ResolutionBand,
+		Height:         f.Height,
 		Search:         f.Search,
 	})
 	if err != nil {
@@ -226,17 +227,36 @@ func (m *Media) AllFiles(ctx context.Context, filter FileFilter) ([]MediaFile, e
 	return out, rows.Err()
 }
 
-// FilesUnderPathPrefix returns Library rows whose path starts with prefix.
-func (m *Media) FilesUnderPathPrefix(ctx context.Context, filter FileFilter, prefix string) ([]MediaFile, error) {
+// PathPrefixQuery pages Library rows whose path starts with prefix.
+type PathPrefixQuery struct {
+	Filter FileFilter
+	Prefix string
+	Limit  int
+	Offset int
+}
+
+// FilesUnderPathPrefix returns one page of Library rows under prefix.
+func (m *Media) FilesUnderPathPrefix(ctx context.Context, q PathPrefixQuery) ([]MediaFile, error) {
+	limit := q.Limit
+	if limit <= 0 {
+		limit = defaultFileLimit
+	}
+	if limit > maxFileLimit {
+		limit = maxFileLimit
+	}
+
 	where := []string{"path LIKE ? ESCAPE '\\'"}
-	args := []any{likePrefix(prefix)}
+	args := []any{likePrefix(q.Prefix)}
 	var err error
-	where, args, err = appendFileFilter(where, args, filter)
+	where, args, err = appendFileFilter(where, args, q.Filter)
 	if err != nil {
 		return nil, err
 	}
 
-	query := mediaQ + " WHERE " + strings.Join(where, " AND ") + " ORDER BY path ASC, id ASC"
+	query := mediaQ + " WHERE " + strings.Join(where, " AND ") +
+		" ORDER BY path ASC, id ASC LIMIT ? OFFSET ?"
+	args = append(args, limit, q.Offset)
+
 	rows, err := m.r.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -254,6 +274,24 @@ func (m *Media) FilesUnderPathPrefix(ctx context.Context, filter FileFilter, pre
 	return out, rows.Err()
 }
 
+// CountFilesUnderPathPrefix returns how many Library rows match prefix + filter.
+func (m *Media) CountFilesUnderPathPrefix(ctx context.Context, filter FileFilter, prefix string) (int64, error) {
+	where := []string{"path LIKE ? ESCAPE '\\'"}
+	args := []any{likePrefix(prefix)}
+	var err error
+	where, args, err = appendFileFilter(where, args, filter)
+	if err != nil {
+		return 0, err
+	}
+
+	query := `SELECT COUNT(*) FROM media_files WHERE ` + strings.Join(where, " AND ")
+	var n int64
+	if err := m.r.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // CandidateStates derives the current Library eligibility state for each file.
 func (m *Media) CandidateStates(ctx context.Context, files []MediaFile) (map[int64]CandidateState, error) {
 	states := make(map[int64]CandidateState, len(files))
@@ -261,31 +299,53 @@ func (m *Media) CandidateStates(ctx context.Context, files []MediaFile) (map[int
 		return states, nil
 	}
 
-	placeholders := make([]string, 0, len(files))
-	args := make([]any, 0, len(files))
-	for _, f := range files {
-		placeholders = append(placeholders, "?")
-		args = append(args, f.ID)
-	}
-
 	jobStates := make(map[int64]CandidateState, len(files))
-	rows, err := m.r.QueryContext(ctx, `
-		SELECT media_file_id, status
-		FROM transcode_jobs
-		WHERE media_file_id IN (`+strings.Join(placeholders, ",")+`)
-		  AND status IN ('queued', 'running', 'verifying', 'completed')`,
-		args...,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+	// SQLite caps host parameters per statement (SQLITE_MAX_VARIABLE_NUMBER),
+	// so batch the IN clause to stay safely under the limit for large libraries.
+	const chunkSize = 500
+	for start := 0; start < len(files); start += chunkSize {
+		end := start + chunkSize
+		if end > len(files) {
+			end = len(files)
+		}
+		chunk := files[start:end]
 
+		placeholders := make([]string, 0, len(chunk))
+		args := make([]any, 0, len(chunk))
+		for _, f := range chunk {
+			placeholders = append(placeholders, "?")
+			args = append(args, f.ID)
+		}
+
+		rows, err := m.r.QueryContext(ctx, `
+			SELECT media_file_id, status
+			FROM transcode_jobs
+			WHERE media_file_id IN (`+strings.Join(placeholders, ",")+`)
+			  AND status IN ('queued', 'running', 'verifying', 'completed')`,
+			args...,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := scanJobStates(rows, jobStates); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, f := range files {
+		states[f.ID] = candidateStateForFile(f, jobStates[f.ID])
+	}
+	return states, nil
+}
+
+func scanJobStates(rows *sql.Rows, jobStates map[int64]CandidateState) error {
+	defer rows.Close()
 	for rows.Next() {
 		var id int64
 		var status string
 		if err := rows.Scan(&id, &status); err != nil {
-			return nil, err
+			return err
 		}
 		if status == "completed" {
 			if _, exists := jobStates[id]; !exists {
@@ -295,14 +355,7 @@ func (m *Media) CandidateStates(ctx context.Context, files []MediaFile) (map[int
 		}
 		jobStates[id] = CandidateStateQueued
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	for _, f := range files {
-		states[f.ID] = candidateStateForFile(f, jobStates[f.ID])
-	}
-	return states, nil
+	return rows.Err()
 }
 
 func candidateStateForFile(f MediaFile, jobState CandidateState) CandidateState {

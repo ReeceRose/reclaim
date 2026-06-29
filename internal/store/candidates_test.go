@@ -185,14 +185,14 @@ func TestCandidates_filters(t *testing.T) {
 	if n := count(CandidateQuery{Filter: CandidateFilter{VideoCodec: "h264"}}); n != 3 {
 		t.Fatalf("codec h264: want 3, got %d", n)
 	}
-	if n := count(CandidateQuery{Filter: CandidateFilter{ResolutionBand: "sd"}}); n != 1 {
-		t.Fatalf("band sd: want 1, got %d", n)
+	if n := count(CandidateQuery{Filter: CandidateFilter{Height: "480"}}); n != 1 {
+		t.Fatalf("height 480: want 1, got %d", n)
 	}
-	if n := count(CandidateQuery{Filter: CandidateFilter{ResolutionBand: "uhd"}}); n != 1 {
-		t.Fatalf("band uhd: want 1, got %d", n)
+	if n := count(CandidateQuery{Filter: CandidateFilter{Height: "2160"}}); n != 1 {
+		t.Fatalf("height 2160: want 1, got %d", n)
 	}
-	if n := count(CandidateQuery{Filter: CandidateFilter{ResolutionBand: "hd"}}); n != 2 {
-		t.Fatalf("band hd: want 2, got %d", n)
+	if n := count(CandidateQuery{Filter: CandidateFilter{Height: "1080"}}); n != 2 {
+		t.Fatalf("height 1080: want 2, got %d", n)
 	}
 }
 

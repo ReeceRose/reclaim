@@ -1,4 +1,5 @@
 import type { Stats } from '@/lib/api';
+import { resolutionBucketLabel } from '@/lib/format';
 
 export type FilterOption = { value: string; label: string };
 
@@ -14,38 +15,32 @@ const CODEC_LABELS: Record<string, string> = {
   unknown: 'Unknown',
 };
 
-const RESOLUTION_LABELS: Record<string, string> = {
-  uhd: '4K',
-  hd: 'HD',
-  sd: 'SD',
-  unknown: 'Unknown',
-};
-
 const LIBRARY_LABELS: Record<string, string> = {
   movies: 'Movies',
   tv: 'TV',
 };
 
-const RESOLUTION_ORDER = ['uhd', 'hd', 'sd', 'unknown'];
 const LIBRARY_ORDER = ['movies', 'tv'];
 
 function codecLabel(codec: string): string {
   return CODEC_LABELS[codec.toLowerCase()] ?? codec;
 }
 
-function resolutionBandLabel(band: string): string {
-  return RESOLUTION_LABELS[band] ?? band;
-}
-
 function libraryLabel(libraryType: string): string {
   return LIBRARY_LABELS[libraryType] ?? libraryType;
 }
 
-function sortByOrder<T extends { value: string }>(items: T[], order: string[]): T[] {
-  const rank = new Map(order.map((value, index) => [value, index]));
-  return [...items].sort(
-    (a, b) => (rank.get(a.value) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.value) ?? Number.MAX_SAFE_INTEGER),
-  );
+function sortByNumericDesc(items: FilterOption[]): FilterOption[] {
+  return [...items].sort((a, b) => {
+    const ah = Number(a.value);
+    const bh = Number(b.value);
+    const aNum = Number.isFinite(ah) && ah > 0;
+    const bNum = Number.isFinite(bh) && bh > 0;
+    if (aNum && bNum) return bh - ah;
+    if (aNum) return -1;
+    if (bNum) return 1;
+    return a.label.localeCompare(b.label);
+  });
 }
 
 export function codecFilterOptions(
@@ -63,18 +58,28 @@ export function codecFilterOptions(
     .map((c) => ({ value: c.codec, label: codecLabel(c.codec) }));
 }
 
-export function resolutionFilterOptions(stats: Stats | undefined): FilterOption[] {
+export function resolutionFilterOptions(
+  stats: Stats | undefined,
+  opts?: { excludeUnknown?: boolean },
+): FilterOption[] {
   if (!stats) return [];
-  return sortByOrder(
-    stats.by_resolution.map((r) => ({ value: r.band, label: resolutionBandLabel(r.band) })),
-    RESOLUTION_ORDER,
+  return sortByNumericDesc(
+    stats.by_resolution
+      .filter((r) => !opts?.excludeUnknown || r.band !== 'unknown')
+      .map((r) => ({ value: r.band, label: resolutionBucketLabel(r.band) })),
   );
 }
 
-export function libraryFilterOptions(stats: Stats | undefined): FilterOption[] {
+export function libraryFilterOptions(
+  stats: Stats | undefined,
+  opts?: { excludeUnknown?: boolean },
+): FilterOption[] {
   if (!stats) return [];
-  return sortByOrder(
-    stats.by_library.map((l) => ({ value: l.library_type, label: libraryLabel(l.library_type) })),
-    LIBRARY_ORDER,
-  );
+  const rank = new Map(LIBRARY_ORDER.map((value, index) => [value, index]));
+  return [...stats.by_library
+    .filter((l) => !opts?.excludeUnknown || l.library_type !== 'unknown')
+    .map((l) => ({ value: l.library_type, label: libraryLabel(l.library_type) }))]
+    .sort(
+      (a, b) => (rank.get(a.value) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.value) ?? Number.MAX_SAFE_INTEGER),
+    );
 }

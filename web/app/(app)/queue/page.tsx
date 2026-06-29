@@ -82,7 +82,7 @@ function QueueContent() {
 
   const { data: jobsAll } = useSuspenseQuery({
     queryKey: ['jobs'],
-    queryFn: () => api.jobs(),
+    queryFn: () => api.jobs({ limit: 200 }),
   });
 
   const { data: progressMap = {} } = useQuery<Record<number, number>>({

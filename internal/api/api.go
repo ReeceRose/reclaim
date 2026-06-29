@@ -212,8 +212,28 @@ func newStaticHandler(fsys fs.FS) http.Handler {
 				}
 			}
 		}
-		serveIndexHTML(w, r, fsys)
+		serveNotFound(w, r, fsys)
 	})
+}
+
+// serveNotFound serves the prebuilt 404 page (Next.js static export) with a 404
+// status so unmatched URLs render the styled not-found UI instead of silently
+// falling back to the home shell. Older builds without a 404.html degrade to
+// the SPA shell.
+func serveNotFound(w http.ResponseWriter, r *http.Request, fsys fs.FS) {
+	f, err := fsys.Open("404.html")
+	if err != nil {
+		serveIndexHTML(w, r, fsys)
+		return
+	}
+	defer f.Close()
+	if info, err := f.Stat(); err != nil || info.IsDir() {
+		serveIndexHTML(w, r, fsys)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+	_, _ = io.Copy(w, f)
 }
 
 func serveIndexHTML(w http.ResponseWriter, r *http.Request, fsys fs.FS) {

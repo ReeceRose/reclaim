@@ -37,7 +37,7 @@ func parseFileFilter(c *echo.Context) store.FileFilter {
 	return store.FileFilter{
 		LibraryType:    c.QueryParam("library_type"),
 		VideoCodec:     c.QueryParam("video_codec"),
-		ResolutionBand: c.QueryParam("resolution_band"),
+		Height:      c.QueryParam("height"),
 		Search:         c.QueryParam("search"),
 		Status:         c.QueryParam("status"),
 		CandidateState: c.QueryParam("candidate_state"),
@@ -91,21 +91,30 @@ func (s *Server) handleFiles(c *echo.Context) error {
 func (s *Server) handleGroupedFiles(c *echo.Context) error {
 	filter := parseFileFilter(c)
 	if filter.LibraryType == store.LibraryTypeMovies {
-		return c.JSON(http.StatusOK, map[string]any{"series": []librarySeriesSummary{}})
+		return c.JSON(http.StatusOK, map[string]any{"series": []librarySeriesSummary{}, "total_count": 0})
+	}
+
+	limit, offset, err := parseLimitOffset(c, defaultPageLimit, maxPageLimit)
+	if err != nil {
+		return err
 	}
 
 	tvFilter := filter
 	tvFilter.LibraryType = store.LibraryTypeTV
-	files, err := s.store.Media.AllFiles(c.Request().Context(), tvFilter)
-	if err != nil {
-		return badRequest(c, err.Error())
-	}
-	states, err := s.store.Media.CandidateStates(c.Request().Context(), files)
-	if err != nil {
+	acc := newLibraryTVAccumulator()
+	if err := s.scanTVLibraryFiles(c.Request().Context(), tvFilter, func(files []store.MediaFile, states map[int64]store.CandidateState) error {
+		acc.add(files, states, s.tvPath)
+		return nil
+	}); err != nil {
 		return serverError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{"series": s.groupLibraryTVSummaries(files, states)})
+	all := acc.summaries()
+	resp := map[string]any{
+		"series":      slicePage(all, offset, limit),
+		"total_count": len(all),
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 func (s *Server) handleGroupedFileEpisodes(c *echo.Context) error {
@@ -122,11 +131,21 @@ func (s *Server) handleGroupedFileEpisodes(c *echo.Context) error {
 	filter := parseFileFilter(c)
 	filter.LibraryType = store.LibraryTypeTV
 
+	limit, offset, err := parseLimitOffset(c, defaultPageLimit, maxPageLimit)
+	if err != nil {
+		return err
+	}
+
 	prefix := filepath.Join(s.tvPath, series)
 	if s.tvPath != "" && !strings.HasSuffix(prefix, string(filepath.Separator)) {
 		prefix += string(filepath.Separator)
 	}
-	files, err := s.store.Media.FilesUnderPathPrefix(c.Request().Context(), filter, prefix)
+	files, err := s.store.Media.FilesUnderPathPrefix(c.Request().Context(), store.PathPrefixQuery{
+		Filter: filter,
+		Prefix: prefix,
+		Limit:  limit,
+		Offset: offset,
+	})
 	if err != nil {
 		return badRequest(c, err.Error())
 	}
@@ -135,7 +154,13 @@ func (s *Server) handleGroupedFileEpisodes(c *echo.Context) error {
 		return serverError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{"episodes": s.buildLibrarySeasonEpisodes(files, states, series, season)})
+	resp := map[string]any{"episodes": s.buildLibrarySeasonEpisodes(files, states, series, season)}
+	if offset == 0 {
+		if total, err := s.store.Media.CountFilesUnderPathPrefix(c.Request().Context(), filter, prefix); err == nil {
+			resp["total_count"] = total
+		}
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 func (s *Server) groupLibraryTVSummaries(files []store.MediaFile, states map[int64]store.CandidateState) []librarySeriesSummary {

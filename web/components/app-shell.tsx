@@ -201,9 +201,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { data: session } = useQuery({ queryKey: ['session'], queryFn: api.session, retry: false });
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: api.stats, staleTime: 30_000 });
-  const { data: jobsData } = useQuery({
-    queryKey: ['jobs'],
-    queryFn: () => api.jobs(),
+  const { data: runningJobs } = useQuery({
+    queryKey: ['jobs', 'running-count'],
+    queryFn: () => api.jobs({ status: 'running', limit: 1 }),
+  });
+  const { data: queuedJobs } = useQuery({
+    queryKey: ['jobs', 'queued-count'],
+    queryFn: () => api.jobs({ status: 'queued', limit: 1 }),
   });
   const { data: eventsData } = useQuery({
     queryKey: ['events'],
@@ -217,8 +221,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     ? stats.by_codec.filter((c) => c.codec !== 'hevc').reduce((s, c) => s + c.file_count, 0)
     : null;
 
-  const runningCount = jobsData?.items.filter((j) => j.status === 'running').length ?? 0;
-  const queuedCount = jobsData?.items.filter((j) => j.status === 'queued').length ?? 0;
+  const runningCount = runningJobs?.total_count ?? runningJobs?.items.length ?? 0;
+  const queuedCount = queuedJobs?.total_count ?? queuedJobs?.items.length ?? 0;
   const queueBadge =
     runningCount + queuedCount > 0
       ? [runningCount > 0 ? String(runningCount) : '', queuedCount > 0 ? String(queuedCount) : '']
@@ -267,20 +271,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <FileDetailProvider>
-    <div className="grid grid-cols-[230px_1fr] sm:min-h-screen max-sm:grid-cols-1 max-sm:grid-rows-[auto_1fr] max-sm:h-[100dvh]">
-      {/* Sidebar */}
+    <div className="grid grid-cols-[230px_1fr] sm:min-h-screen max-sm:grid-cols-1 max-sm:grid-rows-[auto_1fr] max-sm:h-dvh">
       <aside
         className="flex flex-col sticky top-0 h-screen border-r border-line max-sm:hidden"
         style={{ background: 'var(--surface)' }}
       >
-        {/* Brand */}
         <div className="flex items-center gap-[11px] px-5 py-5 border-b border-line-soft">
           <BrandLink />
           <NotificationBell unreadCount={unreadCount} onClick={() => setNotifOpen(true)} />
         </div>
 
-        {/* Animate height (grid-rows 0fr↔1fr) instead of mounting/unmounting so
-            the nav below slides smoothly rather than jumping on quick scans. */}
         <div
           className="grid transition-[grid-template-rows] duration-200 ease-out"
           style={{ gridTemplateRows: isScanning ? '1fr' : '0fr' }}
@@ -299,7 +299,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {/* Nav */}
         <nav className="flex flex-col gap-[3px] px-3 py-[14px] flex-1">
           {(['Library', 'Encoding'] as const).map((group) => (
             <div key={group}>
@@ -315,7 +314,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     href={item.path}
                     className={[
                       'flex items-center gap-[11px] px-[11px] py-[10px] rounded-[11px] w-full',
-                      'text-[0.93rem] font-medium border transition-all duration-[130ms]',
+                      'text-[0.93rem] font-medium border transition-all duration-130',
                       active
                         ? 'bg-brand-soft text-brand border-brand-line font-semibold'
                         : 'text-muted-fg border-transparent hover:bg-surface-2 hover:text-text',
@@ -324,7 +323,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     {item.icon}
                     <span className="flex-1">{item.label}</span>
                     {badge && (
-                      <span className={`text-[0.7rem] font-bold px-[9px] py-[1px] rounded-[20px] ${active ? 'bg-brand-soft text-brand' : 'bg-surface-3 text-muted-fg'}`}>
+                      <span className={`text-[0.7rem] font-bold px-[9px] py-px rounded-[20px] ${active ? 'bg-brand-soft text-brand' : 'bg-surface-3 text-muted-fg'}`}>
                         {badge}
                       </span>
                     )}
@@ -335,7 +334,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
 
-        {/* Footer */}
         <div className="border-t border-line-soft px-4 py-[14px]">
           {win && settings && (
             <div className="flex items-center gap-3 mb-3">
@@ -360,14 +358,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {initials}
             </div>
             <span className="flex-1 min-w-0 truncate">{username}</span>
-            <button onClick={() => void handleLogout()} className="text-[0.76rem] text-muted-dim hover:text-red transition-colors">
+            <button onClick={() => void handleLogout()} className="text-[0.76rem] text-muted-dim hover:text-red transition-colors cursor-pointer">
               Log out
             </button>
           </div>
         </div>
       </aside>
 
-      {/* Mobile header — bell lives in the sidebar on desktop */}
       <header
         className="hidden max-sm:flex sticky top-0 z-50 items-center gap-3 px-4 border-b border-line-soft"
         style={{
@@ -380,14 +377,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <NotificationBell unreadCount={unreadCount} onClick={() => setNotifOpen(true)} />
       </header>
 
-      {/* Main */}
       <main className="flex flex-col min-w-0 max-sm:min-h-0 max-sm:overflow-y-auto max-sm:pb-20">
         {children}
       </main>
 
       <NotificationPanel open={notifOpen} onOpenChange={setNotifOpen} />
 
-      {/* Mobile bottom tab bar */}
       <nav
         className="hidden max-sm:flex fixed bottom-0 left-0 right-0 z-60 border-t border-line"
         style={{

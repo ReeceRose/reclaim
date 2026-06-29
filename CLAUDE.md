@@ -31,9 +31,10 @@ make migrate-status
 
 ```bash
 cd web
-npm run dev       # Next.js dev server on :3000, proxies /api/* to :8080
-npm run build     # static export to web/out/ (used by embed.go)
-npm run lint
+pnpm install      # or pnpm install --frozen-lockfile in CI
+pnpm run dev      # Next.js dev server on :3000, proxies /api/* to :8080
+pnpm run build    # static export to web/out/ (used by embed.go)
+pnpm run lint
 ```
 
 ### Landing page (landing/)
@@ -42,8 +43,8 @@ Separate marketing site deployed to Vercel (not embedded in the Go binary):
 
 ```bash
 cd landing
-npm run dev       # Next.js dev server on :3000
-npm run build
+pnpm run dev      # Next.js dev server on :3000
+pnpm run build
 ```
 
 Production: https://reclaim.reecerose.com — config in `landing/lib/site.ts`.
@@ -81,7 +82,7 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 
 ### Dev workflow
 
-`make dev` runs the Go backend and the Next.js dev server concurrently (`& wait`). The frontend dev server (`npm run dev` in `web/`) proxies `/api/*` to the Go server. The Go static handler serves the embedded `web/out/` in production; the rewrite proxy in `next.config.ts` handles dev.
+`make dev` runs the Go backend and the Next.js dev server concurrently (`& wait`). The frontend dev server (`pnpm run dev` in `web/`) proxies `/api/*` to the Go server. The Go static handler serves the embedded `web/out/` in production; the rewrite proxy in `next.config.ts` handles dev.
 
 ## Required environment variables
 

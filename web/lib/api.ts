@@ -449,7 +449,7 @@ export function wsURL(): string {
   // does NOT forward WebSocket upgrades to the Go backend — the socket would just
   // hang. NEXT_PUBLIC_WS_BASE (set in `make dev`) points the socket straight at
   // the backend. As a fallback, the Next dev port also routes there directly so
-  // a bare `npm run dev` still gets live updates. Production leaves both unset
+  // a bare `pnpm run dev` still gets live updates. Production leaves both unset
   // and uses the same origin the Go binary serves from.
   const wsBase = process.env.NEXT_PUBLIC_WS_BASE;
   if (wsBase) return `${wsBase.replace(/\/+$/, "")}/api/ws`;

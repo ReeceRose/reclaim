@@ -25,7 +25,7 @@ dev: $(DEV_DIR)
 	SCAN_INTERVAL=24h \
 	PROBE_CONCURRENCY=4 \
 	go run ./cmd/reclaim & \
-	cd web && NEXT_PUBLIC_WS_BASE=ws://localhost:8080 npm run dev & \
+	cd web && NEXT_PUBLIC_WS_BASE=ws://localhost:8080 pnpm run dev & \
 	wait
 
 ## build: compile binary to bin/reclaim

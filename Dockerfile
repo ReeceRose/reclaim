@@ -3,10 +3,11 @@
 # ── Stage 1: Build the Next.js frontend ──────────────────────────────────────
 FROM node:22-alpine AS frontend-build
 WORKDIR /build
-COPY web/package*.json ./
-RUN npm ci --prefer-offline
+RUN corepack enable
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY web/ ./
-RUN npm run build
+RUN pnpm run build
 # Output lands in /build/out — copied into the Go source tree before compile.
 
 # ── Stage 2: Build the Go binary ─────────────────────────────────────────────

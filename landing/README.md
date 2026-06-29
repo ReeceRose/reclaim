@@ -6,8 +6,8 @@ Public marketing site for [Reclaim](https://github.com/reecerose/reclaim). Deplo
 
 ```bash
 cd landing
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).

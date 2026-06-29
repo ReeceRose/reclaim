@@ -7,7 +7,7 @@ import (
 	"io/fs"
 )
 
-// dist holds the static export produced by `npm run build` (output: 'export').
+// dist holds the static export produced by `pnpm run build` (output: 'export').
 // A committed placeholder index.html keeps `go build` working before the
 // frontend has been built; a real build overwrites it.
 //

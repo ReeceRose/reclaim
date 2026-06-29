@@ -156,6 +156,7 @@ func (s *Server) handleGroupedFiles(c *echo.Context) error {
 		}
 	}
 
+
 	return c.JSON(http.StatusOK, map[string]any{
 		"series":      series,
 		"total_count": total,

@@ -9,7 +9,8 @@ import { api, type CandidateState, type Episode, type FileFilters, type LibraryS
 import { baseName, dirName, formatBytes, formatCoverage, formatInt, resolutionLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { codecFilterOptions, libraryFilterOptions, resolutionFilterOptions } from '@/lib/filter-options';
-import { useFileDetail } from '@/components/file-detail-sheet';
+import { useRouter } from 'next/navigation';
+import { BROWSE_ROUTES } from '@/app/(app)/browse/browse';
 import { FilterSelect } from '@/components/filter-select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -438,7 +439,7 @@ function GroupedView(props: Parameters<typeof GroupedContent>[0]) {
 
 function LibraryPage() {
   const qc = useQueryClient();
-  const { openFile } = useFileDetail();
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const { get, set: setQuery } = useQueryParams();
   const [search, setSearch] = useState(() => get('q') ?? '');
@@ -646,7 +647,7 @@ function LibraryPage() {
                   {virtualItems.map((vRow) => (
                     <div key={vRow.key} style={{ position: 'absolute', top: vRow.start, height: vRow.size, width: '100%' }}>
                       {vRow.index < allItems.length ? (
-                        <FlatRow item={allItems[vRow.index]} selected={selectedIds.has(allItems[vRow.index].id)} onToggle={toggleId} onOpen={(file) => openFile(file.id, file)} />
+                        <FlatRow item={allItems[vRow.index]} selected={selectedIds.has(allItems[vRow.index].id)} onToggle={toggleId} onOpen={(file) => router.push(BROWSE_ROUTES.FILE(file.id))} />
                       ) : (
                         <div className="flex items-center justify-center h-full text-muted-dim text-sm">{isFetchingNextPage ? 'Loading more...' : hasNextPage ? 'Scroll to load more' : 'End of list'}</div>
                       )}
@@ -658,7 +659,7 @@ function LibraryPage() {
           </div>
         ) : (
           <div className="h-full overflow-auto">
-            <GroupedView selectedIds={selectedIds} onToggle={toggleId} onOpen={(file) => openFile(file.id, file)} filters={filters} onEpisodesLoaded={registerLoadedFiles} />
+            <GroupedView selectedIds={selectedIds} onToggle={toggleId} onOpen={(file) => router.push(BROWSE_ROUTES.FILE(file.id))} filters={filters} onEpisodesLoaded={registerLoadedFiles} />
           </div>
         )}
       </div>

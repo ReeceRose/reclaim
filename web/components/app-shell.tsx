@@ -9,7 +9,6 @@ import { useWS } from '@/hooks/use-ws';
 import { formatInt, windowInfo } from '@/lib/format';
 import { toast } from 'sonner';
 import { NotificationPanel, useUnreadCount } from '@/components/notification-panel';
-import { FileDetailProvider } from '@/components/file-detail-sheet';
 import { LogoMark } from '@/components/logo';
 
 // ---------------------------------------------------------------------------
@@ -281,7 +280,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <FileDetailProvider>
     <div className="grid grid-cols-[230px_1fr] sm:min-h-screen max-sm:grid-cols-1 max-sm:grid-rows-[auto_1fr] max-sm:h-dvh">
       <aside
         className="flex flex-col sticky top-0 h-screen border-r border-line max-sm:hidden"
@@ -424,6 +422,5 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         })}
       </nav>
     </div>
-    </FileDetailProvider>
   );
 }

@@ -4,12 +4,13 @@ import { useQuery, useSuspenseQuery, useMutation, useQueryClient } from '@tansta
 import { api, type Job, type VerificationResult } from '@/lib/api';
 import { formatBytes, baseName, dirName, windowInfo, relativeTime } from '@/lib/format';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Suspense } from 'react';
-import { useFileDetail } from '@/components/file-detail-sheet';
+import { BROWSE_ROUTES } from '@/app/(app)/browse/browse';
 
 // jobName renders the originating file name, falling back to the temp output
 // path and finally a synthetic label if the media row was deleted.
@@ -78,7 +79,7 @@ function QueueSkeleton() {
 
 function QueueContent() {
   const qc = useQueryClient();
-  const { openFile } = useFileDetail();
+  const router = useRouter();
 
   const { data: jobsAll } = useSuspenseQuery({
     queryKey: ['jobs'],
@@ -159,14 +160,14 @@ function QueueContent() {
             </div>
             <button
               type="button"
-              onClick={() => openFile(runningJob.media_file_id)}
+              onClick={() => router.push(BROWSE_ROUTES.FILE(runningJob.media_file_id))}
               className="font-semibold text-[0.88rem] text-left hover:text-brand transition-colors cursor-pointer"
             >
               {jobName(runningJob)}
             </button>
             <button
               type="button"
-              onClick={() => openFile(runningJob.media_file_id)}
+              onClick={() => router.push(BROWSE_ROUTES.FILE(runningJob.media_file_id))}
               className="text-left text-[0.74rem] text-muted-dim font-mono mt-0.5 hover:text-brand transition-colors cursor-pointer"
             >
               {dirName(runningJob.source_path ?? runningJob.output_path ?? '')}
@@ -198,7 +199,7 @@ function QueueContent() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => openFile(job.media_file_id)}
+                  onClick={() => router.push(BROWSE_ROUTES.FILE(job.media_file_id))}
                   className="flex-1 min-w-0 text-left hover:opacity-80 transition-opacity cursor-pointer"
                 >
                   <div className="font-semibold text-[0.88rem] truncate">{jobName(job)}</div>
@@ -252,7 +253,7 @@ function QueueContent() {
                 >
                   <button
                     type="button"
-                    onClick={() => openFile(job.media_file_id)}
+                    onClick={() => router.push(BROWSE_ROUTES.FILE(job.media_file_id))}
                     className="flex-1 min-w-[60%] text-left hover:opacity-80 transition-opacity cursor-pointer"
                   >
                     <div className="font-semibold text-sm">{jobName(job)}</div>

@@ -77,6 +77,42 @@ function TimeSelect({ value, onChange }: { value: string; onChange: (v: string) 
   );
 }
 
+function DeleteProfileDialog({
+  profile,
+  onClose,
+  onConfirm,
+}: {
+  profile: Profile | null;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={!!profile} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm p-0 overflow-hidden border-line" style={{ background: 'var(--surface)' }} showCloseButton={false}>
+        <DialogHeader className="px-6 pt-[22px] pb-4 border-b border-line">
+          <DialogTitle className="text-[1.1rem] font-bold tracking-tight">Delete profile</DialogTitle>
+        </DialogHeader>
+        <div className="px-6 py-5">
+          <p className="text-[0.85rem] text-muted-fg">
+            Delete <span className="font-semibold text-text">&ldquo;{profile?.name}&rdquo;</span>? This cannot be undone.
+          </p>
+        </div>
+        <DialogFooter className="px-6 py-4 border-t border-line flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose} className="rounded-[11px]">
+            Cancel
+          </Button>
+          <Button
+            onClick={() => { onConfirm(); onClose(); }}
+            className="rounded-[11px] bg-red hover:bg-red/90 text-white border-0"
+          >
+            Delete
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ProfileDialog({
   open,
   onClose,
@@ -320,6 +356,7 @@ function SettingsContent() {
     open: false,
     initial: null,
   });
+  const [deleteProfile, setDeleteProfile] = useState<Profile | null>(null);
 
   function handleCredSave() {
     if (credPassword !== credConfirm) {
@@ -507,9 +544,7 @@ function SettingsContent() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => {
-                        if (confirm(`Delete profile "${p.name}"?`)) deleteProfileMutation.mutate(p.id);
-                      }}
+                      onClick={() => setDeleteProfile(p)}
                       className="rounded-[11px] text-red hover:bg-red-soft hover:text-red"
                     >
                       Delete
@@ -562,6 +597,11 @@ function SettingsContent() {
         open={profileDialog.open}
         onClose={() => setProfileDialog({ open: false, initial: null })}
         initial={profileDialog.initial}
+      />
+      <DeleteProfileDialog
+        profile={deleteProfile}
+        onClose={() => setDeleteProfile(null)}
+        onConfirm={() => deleteProfileMutation.mutate(deleteProfile!.id)}
       />
     </>
   );

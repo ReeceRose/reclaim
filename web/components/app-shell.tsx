@@ -76,6 +76,17 @@ const NAV_ITEMS = [
     ),
   },
   {
+    path: '/browse',
+    label: 'Browse',
+    group: 'Library',
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[18px] h-[18px] shrink-0">
+        <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+        <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+      </svg>
+    ),
+  },
+  {
     path: '/library',
     label: 'Library',
     group: 'Library',
@@ -140,7 +151,7 @@ function NotificationBell({
   return (
     <button
       onClick={onClick}
-      className="relative w-7 h-7 flex items-center justify-center rounded-[8px] text-muted-fg hover:text-text hover:bg-surface-2 transition-colors shrink-0"
+      className="relative w-7 h-7 flex items-center justify-center rounded-[8px] text-muted-fg hover:text-text hover:bg-surface-2 transition-colors shrink-0 cursor-pointer"
       aria-label="Events"
     >
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[15px] h-[15px]">

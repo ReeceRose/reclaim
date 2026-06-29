@@ -21,7 +21,7 @@ function HelpTip({ children }: { children: React.ReactNode }) {
           type="button"
           tabIndex={-1}
           aria-label="More info"
-          className="inline-flex align-middle text-muted-dim hover:text-muted-fg transition-colors focus:outline-none"
+          className="inline-flex align-middle text-muted-dim hover:text-muted-fg transition-colors focus:outline-none cursor-pointer"
         >
           <CircleHelpIcon className="size-3.5" />
         </button>

@@ -160,14 +160,14 @@ function QueueContent() {
             <button
               type="button"
               onClick={() => openFile(runningJob.media_file_id)}
-              className="font-semibold text-[0.88rem] text-left hover:text-brand transition-colors"
+              className="font-semibold text-[0.88rem] text-left hover:text-brand transition-colors cursor-pointer"
             >
               {jobName(runningJob)}
             </button>
             <button
               type="button"
               onClick={() => openFile(runningJob.media_file_id)}
-              className="text-left text-[0.74rem] text-muted-dim font-mono mt-0.5 hover:text-brand transition-colors"
+              className="text-left text-[0.74rem] text-muted-dim font-mono mt-0.5 hover:text-brand transition-colors cursor-pointer"
             >
               {dirName(runningJob.source_path ?? runningJob.output_path ?? '')}
             </button>
@@ -199,7 +199,7 @@ function QueueContent() {
                 <button
                   type="button"
                   onClick={() => openFile(job.media_file_id)}
-                  className="flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
+                  className="flex-1 min-w-0 text-left hover:opacity-80 transition-opacity cursor-pointer"
                 >
                   <div className="font-semibold text-[0.88rem] truncate">{jobName(job)}</div>
                   <div className="text-[0.74rem] text-muted-dim font-mono mt-0.5 truncate">{formatBytes(job.original_size_bytes)}</div>
@@ -253,7 +253,7 @@ function QueueContent() {
                   <button
                     type="button"
                     onClick={() => openFile(job.media_file_id)}
-                    className="flex-1 min-w-[60%] text-left hover:opacity-80 transition-opacity"
+                    className="flex-1 min-w-[60%] text-left hover:opacity-80 transition-opacity cursor-pointer"
                   >
                     <div className="font-semibold text-sm">{jobName(job)}</div>
                     <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">

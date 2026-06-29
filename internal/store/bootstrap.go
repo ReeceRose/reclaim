@@ -67,11 +67,14 @@ func (s *Stats) needsRebuild(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
-	// One-time upgrade path: pre-height-bucket installs stored sd/hd/uhd bands.
+	// One-time upgrade path: rebuild installs that stored exact heights before
+	// resolution stats were canonicalized into five stable buckets.
 	var legacyResRows int
 	if err := s.r.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM library_stats
-		WHERE dimension = ? AND bucket IN ('sd', 'hd', 'uhd')`, dimResolution,
+		WHERE dimension = ?
+		  AND bucket NOT IN (?, ?, ?, ?, ?, ?, ?)`,
+		dimResolution, resBandUnknown, resBandSD, resBandHD, resBandFHD, resBandQHD, resBandUHD, resBand8K,
 	).Scan(&legacyResRows); err != nil {
 		return false, err
 	}

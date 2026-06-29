@@ -354,51 +354,6 @@ func TestCreateJobsEchoesResolvedSelection(t *testing.T) {
 	}
 }
 
-// --- Dry run --------------------------------------------------------------
-
-func TestDryRunProjectsSavingsWithoutQueueing(t *testing.T) {
-	_, h, st, _ := newTestServer(t, false)
-	cookie := completeSetup(t, st)
-	ctx := context.Background()
-
-	codec := "h264"
-	var ids []int64
-	for i := 0; i < 3; i++ {
-		id, err := st.Media.Insert(ctx, &store.MediaFile{
-			Path: filepath.Join("/media/movies", string(rune('a'+i))+".mkv"), LibraryType: "movie",
-			SizeBytes: 1000, Mtime: 1, Fingerprint: "fp" + string(rune('a'+i)),
-			VideoCodec: &codec, PredictedSavingsBytes: 400, Status: "active",
-		})
-		if err != nil {
-			t.Fatalf("insert: %v", err)
-		}
-		ids = append(ids, id)
-	}
-
-	w := doReq(h, http.MethodGet,
-		"/api/dry-run?ids="+strconv.FormatInt(ids[0], 10)+","+strconv.FormatInt(ids[1], 10),
-		nil, cookie)
-	if w.Code != http.StatusOK {
-		t.Fatalf("dry-run: want 200, got %d (%s)", w.Code, w.Body.String())
-	}
-	body := decodeBody(t, w)
-	if body["file_count"].(float64) != 2 {
-		t.Errorf("file_count = %v, want 2", body["file_count"])
-	}
-	if body["predicted_savings_bytes"].(float64) != 800 {
-		t.Errorf("predicted_savings_bytes = %v, want 800", body["predicted_savings_bytes"])
-	}
-
-	// No jobs were created.
-	jobs, err := st.Jobs.ListAllWithPath(ctx)
-	if err != nil {
-		t.Fatalf("list jobs: %v", err)
-	}
-	if len(jobs) != 0 {
-		t.Errorf("dry-run created %d jobs, want 0", len(jobs))
-	}
-}
-
 // --- Settings live config -------------------------------------------------
 
 func TestSettingsLiveUpdate(t *testing.T) {

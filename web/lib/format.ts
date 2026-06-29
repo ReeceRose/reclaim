@@ -56,6 +56,16 @@ export function resolutionLabel(
 
 /** resolutionBucketLabel formats a stats bucket key for display. */
 export function resolutionBucketLabel(bucket: string): string {
+  const labels: Record<string, string> = {
+    uhd8k: "8K",
+    uhd: "4K/UHD",
+    qhd: "1440p",
+    fhd: "1080p",
+    hd: "720p",
+    sd: "SD",
+    unknown: "Unknown",
+  };
+  if (labels[bucket]) return labels[bucket];
   if (!bucket || bucket === "unknown") return "Unknown";
   const h = Number(bucket);
   if (!Number.isFinite(h) || h <= 0) return bucket;

@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"strconv"
 )
 
 // Dimension names in library_stats.
@@ -14,8 +13,17 @@ const (
 	dimLibrary    = "library"
 )
 
-// resBandUnknown is the library_stats bucket for files with no probed height.
-const resBandUnknown = "unknown"
+// Resolution buckets used by library_stats and resolution filters, ordered
+// low to high. Each class is "at least this standard" by width OR height.
+const (
+	resBandUnknown = "unknown"
+	resBandSD      = "sd"
+	resBandHD      = "hd"    // 720p
+	resBandFHD     = "fhd"   // 1080p
+	resBandQHD     = "qhd"   // 1440p
+	resBandUHD     = "uhd"   // 4K/UHD
+	resBand8K      = "uhd8k" // 8K
+)
 
 // CodecStat is the per-codec aggregate slice of the library.
 type CodecStat struct {
@@ -25,8 +33,8 @@ type CodecStat struct {
 	PredictedSavingsBytes int64
 }
 
-// ResolutionStat is the per-height aggregate slice of the library. Band holds
-// the pixel height as a decimal string (e.g. "720", "1080") or "unknown".
+// ResolutionStat is the per-resolution-class aggregate slice of the library.
+// Band holds "uhd8k", "uhd", "qhd", "fhd", "hd", "sd", or "unknown".
 type ResolutionStat struct {
 	Band                  string
 	FileCount             int64
@@ -164,8 +172,13 @@ func (s *Stats) Recompute(ctx context.Context) error {
 		`INSERT INTO library_stats (dimension, bucket, file_count, total_bytes, predicted_savings_bytes)
 		 SELECT 'resolution',
 		        CASE
-		          WHEN height IS NULL OR height <= 0 THEN 'unknown'
-		          ELSE CAST(height AS TEXT)
+		          WHEN COALESCE(width, 0) <= 0 AND COALESCE(height, 0) <= 0 THEN 'unknown'
+		          WHEN COALESCE(width, 0) >= 7680 OR COALESCE(height, 0) >= 4320 THEN 'uhd8k'
+		          WHEN COALESCE(width, 0) >= 3840 OR COALESCE(height, 0) >= 2160 THEN 'uhd'
+		          WHEN COALESCE(width, 0) >= 2560 OR COALESCE(height, 0) >= 1440 THEN 'qhd'
+		          WHEN COALESCE(width, 0) >= 1920 OR COALESCE(height, 0) >= 1080 THEN 'fhd'
+		          WHEN COALESCE(width, 0) >= 1280 OR COALESCE(height, 0) >= 720 THEN 'hd'
+		          ELSE 'sd'
 		        END,
 		        COUNT(*), COALESCE(SUM(size_bytes), 0), COALESCE(SUM(predicted_savings_bytes), 0)
 		 FROM media_files WHERE status = 'active'
@@ -218,17 +231,36 @@ func contributionsFor(f *MediaFile) []statBucket {
 	return []statBucket{
 		{dimTotal, ""},
 		{dimCodec, codec},
-		{dimResolution, resolutionBucket(f.Height)},
+		{dimResolution, resolutionBucket(f.Width, f.Height)},
 		{dimLibrary, lib},
 	}
 }
 
-// resolutionBucket maps a probed height to the same bucket key Recompute uses.
-func resolutionBucket(height *int) string {
-	if height == nil || *height <= 0 {
-		return resBandUnknown
+// resolutionBucket maps probed dimensions to the same bucket key Recompute uses.
+func resolutionBucket(width, height *int) string {
+	w, h := 0, 0
+	if width != nil {
+		w = *width
 	}
-	return strconv.Itoa(*height)
+	if height != nil {
+		h = *height
+	}
+	switch {
+	case w <= 0 && h <= 0:
+		return resBandUnknown
+	case w >= 7680 || h >= 4320:
+		return resBand8K
+	case w >= 3840 || h >= 2160:
+		return resBandUHD
+	case w >= 2560 || h >= 1440:
+		return resBandQHD
+	case w >= 1920 || h >= 1080:
+		return resBandFHD
+	case w >= 1280 || h >= 720:
+		return resBandHD
+	default:
+		return resBandSD
+	}
 }
 
 // applyContribution adds (sign=+1) or removes (sign=-1) a file's contribution

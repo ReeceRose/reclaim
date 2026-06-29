@@ -194,6 +194,46 @@ func TestCandidates_filters(t *testing.T) {
 	if n := count(CandidateQuery{Filter: CandidateFilter{Height: "1080"}}); n != 2 {
 		t.Fatalf("height 1080: want 2, got %d", n)
 	}
+	if n := count(CandidateQuery{Filter: CandidateFilter{Height: resBandUHD}}); n != 1 {
+		t.Fatalf("height uhd: want 1, got %d", n)
+	}
+	if n := count(CandidateQuery{Filter: CandidateFilter{Height: resBandFHD}}); n != 2 {
+		t.Fatalf("height fhd: want 2, got %d", n)
+	}
+	if n := count(CandidateQuery{Filter: CandidateFilter{Height: resBandSD}}); n != 1 {
+		t.Fatalf("height sd: want 1, got %d", n)
+	}
+}
+
+func TestCandidates_resolutionFilterUsesWidthForCroppedFiles(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	for _, tf := range []testFile{
+		{path: "/m/8k-crop.mkv", size: 1000, codec: "h264", width: 7680, height: 3200, savings: 100},
+		{path: "/m/uhd-crop.mkv", size: 1000, codec: "h264", width: 3840, height: 1600, savings: 100},
+		{path: "/m/qhd-crop.mkv", size: 1000, codec: "h264", width: 2560, height: 1080, savings: 100},
+		{path: "/m/fhd-crop.mkv", size: 1000, codec: "h264", width: 1920, height: 800, savings: 100},
+		{path: "/m/hd-crop.mkv", size: 1000, codec: "h264", width: 1280, height: 536, savings: 100},
+	} {
+		if _, err := s.Media.insertFile(ctx, tf); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	count := func(height string) int {
+		got, err := s.Media.Candidates(ctx, CandidateQuery{Filter: CandidateFilter{Height: height}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(got)
+	}
+
+	for _, band := range []string{resBand8K, resBandUHD, resBandQHD, resBandFHD, resBandHD} {
+		if n := count(band); n != 1 {
+			t.Fatalf("height %s: want 1, got %d", band, n)
+		}
+	}
 }
 
 func TestCandidates_libraryTypeSort(t *testing.T) {

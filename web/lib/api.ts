@@ -237,12 +237,6 @@ export interface Job {
   forced: boolean;
 }
 
-export interface DryRunResult {
-  file_count: number;
-  total_bytes: number;
-  predicted_savings_bytes: number;
-}
-
 export interface Settings {
   encode_window_start: string;
   encode_window_end: string;
@@ -400,8 +394,6 @@ export const api = {
     request<GroupedCandidates>("GET", `/api/candidates/grouped${buildQuery(filters)}`),
   groupedSeasonEpisodes: (filters: CandidateFilters & { series: string; season: number; limit?: number; offset?: number }) =>
     request<GroupedSeasonEpisodes>("GET", `/api/candidates/grouped/episodes${buildQuery(filters)}`),
-  dryRun: (params: { ids?: string } & CandidateFilters) =>
-    request<DryRunResult>("GET", `/api/dry-run${buildQuery(params)}`),
   file: (id: number) => request<MediaFile>("GET", `/api/files/${id}`),
 
   // Scanning

@@ -110,6 +110,50 @@ func TestStats_overviewMatchesKnownTotals(t *testing.T) {
 	if byCodec["hevc"].FileCount != 1 {
 		t.Fatalf("hevc codec stat wrong: %+v", byCodec["hevc"])
 	}
+
+	byRes := map[string]ResolutionStat{}
+	for _, r := range ov.ByResolution {
+		byRes[r.Band] = r
+	}
+	if byRes[resBandFHD].FileCount != 2 || byRes[resBandFHD].TotalBytes != 9000 {
+		t.Fatalf("fhd resolution stat wrong: %+v", byRes[resBandFHD])
+	}
+	if byRes[resBandSD].FileCount != 1 || byRes[resBandSD].TotalBytes != 3000 {
+		t.Fatalf("sd resolution stat wrong: %+v", byRes[resBandSD])
+	}
+}
+
+func TestStats_resolutionBucketsUseWidthForCroppedFiles(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	for _, tf := range []testFile{
+		{path: "/m/8k-crop.mkv", size: 1000, codec: "h264", width: 7680, height: 3200},
+		{path: "/m/uhd-crop.mkv", size: 1000, codec: "h264", width: 3840, height: 1600},
+		{path: "/m/qhd-crop.mkv", size: 1000, codec: "h264", width: 2560, height: 1080},
+		{path: "/m/fhd-crop.mkv", size: 1000, codec: "h264", width: 1920, height: 800},
+		{path: "/m/hd-crop.mkv", size: 1000, codec: "h264", width: 1280, height: 536},
+		{path: "/m/sd.mkv", size: 1000, codec: "h264", width: 720, height: 480},
+		{path: "/m/unknown.mkv", size: 1000, codec: "h264"},
+	} {
+		if _, err := s.Media.insertFile(ctx, tf); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ov, err := s.Stats.Overview(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byRes := map[string]ResolutionStat{}
+	for _, r := range ov.ByResolution {
+		byRes[r.Band] = r
+	}
+	for _, band := range []string{resBand8K, resBandUHD, resBandQHD, resBandFHD, resBandHD, resBandSD, resBandUnknown} {
+		if byRes[band].FileCount != 1 {
+			t.Fatalf("%s count = %d, want 1; all: %+v", band, byRes[band].FileCount, byRes)
+		}
+	}
 }
 
 func TestStats_encodeCompletionUpdatesWithoutRecompute(t *testing.T) {

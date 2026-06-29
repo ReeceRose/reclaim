@@ -30,6 +30,7 @@ type testFile struct {
 	size        int64
 	mtime       int64
 	codec       string // "" → leave video_codec NULL
+	width       int
 	height      int
 	hevc        bool
 	savings     int64
@@ -55,6 +56,10 @@ func (tf testFile) toMedia() *MediaFile {
 	if tf.height != 0 {
 		h := tf.height
 		f.Height = &h
+	}
+	if tf.width != 0 {
+		w := tf.width
+		f.Width = &w
 	}
 	if tf.probeErr != "" {
 		e := tf.probeErr

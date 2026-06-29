@@ -110,10 +110,13 @@ Precomputed library overview (O(buckets), not O(files)).
       "learned_sample_count": 42 }
   ],
   "by_resolution": [
-    { "band": "1080", "file_count": 800, "total_bytes": 7000000000, "predicted_savings_bytes": 2500000000 }
+    { "band": "fhd", "file_count": 800, "total_bytes": 7000000000, "predicted_savings_bytes": 2500000000 }
   ]
 }
 ```
+Resolution bands are stable buckets, classified by width OR height (whichever
+is larger wins): `uhd8k` (8K), `uhd` (4K/UHD), `qhd` (1440p), `fhd` (1080p),
+`hd` (720p), `sd`, and `unknown`.
 
 ### `GET /api/candidates`
 One page of ranked re-encode candidates. Excludes files that are already HEVC,
@@ -126,7 +129,7 @@ One page of ranked re-encode candidates. Excludes files that are already HEVC,
 | `sort` | `savings_desc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type` |
 | `library_type` | filter: `movies` or `tv` |
 | `video_codec` | filter, exact source codec, e.g. `h264` |
-| `height` | filter, pixel height as decimal string, e.g. `720`, `1080`, or `unknown` |
+| `height` | resolution filter: `uhd8k`, `uhd`, `qhd`, `fhd`, `hd`, `sd`, `unknown`; exact numeric heights like `1080` are still accepted for compatibility |
 | `search` | path substring filter |
 | `limit` | page size (default 50, max 200) |
 | `offset` | for non-default sorts only |
@@ -220,17 +223,6 @@ plus `limit` (default 50, max 200) and `offset`.
 Single media file by id.
 - `200` → file object
 - `404` → not found
-
-### `GET /api/dry-run`
-Projects total savings for a set or filter. **Queues nothing.** Uses the same
-candidate exclusions as `/api/candidates`.
-
-**Query params:** `ids` (comma-separated ids), and/or `library_type`, `video_codec`,
-`height`, `search`. With none, spans the whole candidate list.
-
-```json
-{ "file_count": 2, "total_bytes": 2000, "predicted_savings_bytes": 800 }
-```
 
 ---
 
@@ -489,9 +481,6 @@ curl -s -b $JAR "$BASE/api/candidates?limit=5"
 
 # Trigger a scan (watch the WS for progress)
 curl -s -b $JAR -X POST $BASE/api/scan
-
-# Dry-run a couple of ids
-curl -s -b $JAR "$BASE/api/dry-run?ids=1,2"
 
 # Queue them
 curl -s -b $JAR -X POST $BASE/api/jobs \

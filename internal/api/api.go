@@ -159,7 +159,6 @@ func (s *Server) Handler() http.Handler {
 	api.GET("/candidates/grouped/episodes", s.handleGroupedSeasonEpisodes)
 	api.GET("/candidates/grouped", s.handleGroupedCandidates)
 	api.GET("/files/:id", s.handleFileDetail)
-	api.GET("/dry-run", s.handleDryRun)
 
 	// Scanning.
 	api.POST("/scan", s.handleScan)

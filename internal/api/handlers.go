@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/labstack/echo/v5"
 
@@ -209,49 +208,6 @@ func (s *Server) triggerScan(c *echo.Context, force bool) error {
 		_, _ = s.scanner.Scan(context.Background(), scanner.TriggerManual, force)
 	}()
 	return c.JSON(http.StatusAccepted, map[string]any{"started": true, "kind": kind})
-}
-
-// handleDryRun projects total savings for a set or filter, queuing nothing.
-func (s *Server) handleDryRun(c *echo.Context) error {
-	ids, err := parseIDList(c.QueryParam("ids"))
-	if err != nil {
-		return badRequest(c, "ids must be a comma-separated list of integers")
-	}
-	filter := store.CandidateFilter{
-		LibraryType:    c.QueryParam("library_type"),
-		VideoCodec:     c.QueryParam("video_codec"),
-		Height:      c.QueryParam("height"),
-		Search:         c.QueryParam("search"),
-	}
-	res, err := s.store.Media.DryRunSavings(c.Request().Context(), ids, filter)
-	if err != nil {
-		return badRequest(c, err.Error())
-	}
-	return c.JSON(http.StatusOK, map[string]any{
-		"file_count":              res.FileCount,
-		"total_bytes":             res.TotalBytes,
-		"predicted_savings_bytes": res.PredictedSavingsBytes,
-	})
-}
-
-func parseIDList(v string) ([]int64, error) {
-	if strings.TrimSpace(v) == "" {
-		return nil, nil
-	}
-	parts := strings.Split(v, ",")
-	out := make([]int64, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		n, err := strconv.ParseInt(p, 10, 64)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, n)
-	}
-	return out, nil
 }
 
 func defaultStr(v, def string) string {

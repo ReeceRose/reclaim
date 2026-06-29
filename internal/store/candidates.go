@@ -40,15 +40,15 @@ var orderClauses = map[CandidateSort]string{
 
 // CandidateFilter narrows the candidate list. Zero values mean "no filter".
 type CandidateFilter struct {
-	LibraryType    string // "movies" | "tv"
-	VideoCodec     string // exact source codec, e.g. "h264"
-	Height         string // pixel height as decimal string, e.g. "720", or "unknown"
-	Search         string // case-insensitive substring match against path
+	LibraryType string // "movies" | "tv"
+	VideoCodec  string // exact source codec, e.g. "h264"
+	Height      string // resolution bucket, e.g. "fhd", or a legacy exact height
+	Search      string // case-insensitive substring match against path
 }
 
 // appendFilter adds the shared candidate filter predicates to a WHERE slice.
-// Used by Candidates, AllCandidates, and DryRunSavings so the three stay in
-// lockstep on what "matches the filter" means.
+// Used by Candidates and AllCandidates so the two stay in lockstep on what
+// "matches the filter" means.
 func appendFilter(where []string, args []any, f CandidateFilter) ([]string, []any, error) {
 	if f.LibraryType != "" {
 		if f.LibraryType == resBandUnknown {
@@ -313,57 +313,24 @@ func (m *Media) AllCandidates(ctx context.Context, filter CandidateFilter) ([]Me
 	return out, rows.Err()
 }
 
-// DryRunResult is the projected outcome of re-encoding a candidate set: pure
-// decision support, queues nothing.
-type DryRunResult struct {
-	FileCount             int64
-	TotalBytes            int64
-	PredictedSavingsBytes int64
-}
-
-// DryRunSavings sums the projected savings over candidate-eligible files, scoped
-// either to an explicit set of ids, a filter, or both. With neither set it spans
-// the whole candidate list. The same exclusions as Candidates apply, so a dry
-// run never counts a file the user can't actually queue.
-func (m *Media) DryRunSavings(ctx context.Context, ids []int64, filter CandidateFilter) (*DryRunResult, error) {
-	where := []string{
-		"status = 'active'",
-		"is_already_hevc = 0",
-		"probe_error IS NULL",
-		"video_codec IS NOT NULL",
-		jobExclusionSQL,
-	}
-	var args []any
-
-	if len(ids) > 0 {
-		placeholders := make([]string, len(ids))
-		for i, id := range ids {
-			placeholders[i] = "?"
-			args = append(args, id)
-		}
-		where = append(where, "id IN ("+strings.Join(placeholders, ",")+")")
-	}
-	where, args, err := appendFilter(where, args, filter)
-	if err != nil {
-		return nil, err
-	}
-
-	query := `SELECT COUNT(*), COALESCE(SUM(size_bytes), 0), COALESCE(SUM(predicted_savings_bytes), 0)
-		FROM media_files WHERE ` + strings.Join(where, " AND ")
-
-	var res DryRunResult
-	if err := m.r.QueryRowContext(ctx, query, args...).Scan(
-		&res.FileCount, &res.TotalBytes, &res.PredictedSavingsBytes,
-	); err != nil {
-		return nil, err
-	}
-	return &res, nil
-}
-
-// resolutionHeightClause returns the height predicate for a stats bucket key.
+// resolutionHeightClause returns the predicate for a stats bucket key. Grouped
+// keys are emitted by /api/stats; numeric keys are kept for older links.
 func resolutionHeightClause(height string) (string, error) {
-	if height == resBandUnknown {
-		return "(height IS NULL OR height <= 0)", nil
+	switch height {
+	case resBandUnknown:
+		return "(COALESCE(width, 0) <= 0 AND COALESCE(height, 0) <= 0)", nil
+	case resBand8K:
+		return "(COALESCE(width, 0) >= 7680 OR COALESCE(height, 0) >= 4320)", nil
+	case resBandUHD:
+		return "(COALESCE(width, 0) < 7680 AND COALESCE(height, 0) < 4320 AND (COALESCE(width, 0) >= 3840 OR COALESCE(height, 0) >= 2160))", nil
+	case resBandQHD:
+		return "(COALESCE(width, 0) < 3840 AND COALESCE(height, 0) < 2160 AND (COALESCE(width, 0) >= 2560 OR COALESCE(height, 0) >= 1440))", nil
+	case resBandFHD:
+		return "(COALESCE(width, 0) < 2560 AND COALESCE(height, 0) < 1440 AND (COALESCE(width, 0) >= 1920 OR COALESCE(height, 0) >= 1080))", nil
+	case resBandHD:
+		return "(COALESCE(width, 0) < 1920 AND COALESCE(height, 0) < 1080 AND (COALESCE(width, 0) >= 1280 OR COALESCE(height, 0) >= 720))", nil
+	case resBandSD:
+		return "(COALESCE(width, 0) > 0 OR COALESCE(height, 0) > 0) AND COALESCE(width, 0) < 1280 AND COALESCE(height, 0) < 720", nil
 	}
 	h, err := strconv.Atoi(height)
 	if err != nil || h <= 0 {

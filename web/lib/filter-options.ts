@@ -21,6 +21,7 @@ const LIBRARY_LABELS: Record<string, string> = {
 };
 
 const LIBRARY_ORDER = ['movies', 'tv'];
+const RESOLUTION_ORDER = ['uhd8k', 'uhd', 'qhd', 'fhd', 'hd', 'sd', 'unknown'];
 
 function codecLabel(codec: string): string {
   return CODEC_LABELS[codec.toLowerCase()] ?? codec;
@@ -31,7 +32,14 @@ function libraryLabel(libraryType: string): string {
 }
 
 function sortByNumericDesc(items: FilterOption[]): FilterOption[] {
+  const groupedRank = new Map(RESOLUTION_ORDER.map((value, index) => [value, index]));
   return [...items].sort((a, b) => {
+    const ar = groupedRank.get(a.value);
+    const br = groupedRank.get(b.value);
+    if (ar !== undefined && br !== undefined) return ar - br;
+    if (ar !== undefined) return -1;
+    if (br !== undefined) return 1;
+
     const ah = Number(a.value);
     const bh = Number(b.value);
     const aNum = Number.isFinite(ah) && ah > 0;

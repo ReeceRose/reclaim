@@ -15,16 +15,22 @@ type Fetcher struct {
 	store      *store.Store
 	moviesPath string
 	tvPath     string
+	envKey     string
 	trigger    chan struct{}
 }
 
-func New(s *store.Store, moviesPath, tvPath string) *Fetcher {
+func New(s *store.Store, moviesPath, tvPath, envKey string) *Fetcher {
 	return &Fetcher{
 		store:      s,
 		moviesPath: moviesPath,
 		tvPath:     tvPath,
+		envKey:     envKey,
 		trigger:    make(chan struct{}, 1),
 	}
+}
+
+func (f *Fetcher) resolveKey() string {
+	return f.envKey
 }
 
 func (f *Fetcher) Trigger() {
@@ -47,8 +53,8 @@ func (f *Fetcher) Start(ctx context.Context) {
 }
 
 func (f *Fetcher) runOnce(ctx context.Context) {
-	apiKey, err := f.store.Settings.GetTMDBKey(ctx)
-	if err != nil || apiKey == "" {
+	apiKey := f.resolveKey()
+	if apiKey == "" {
 		return
 	}
 	client := tmdb.New(apiKey)
@@ -176,8 +182,8 @@ func (f *Fetcher) fetchMovie(ctx context.Context, client *tmdb.Client, key strin
 }
 
 func (f *Fetcher) RefreshKey(ctx context.Context, key, mediaType string) error {
-	apiKey, err := f.store.Settings.GetTMDBKey(ctx)
-	if err != nil || apiKey == "" {
+	apiKey := f.resolveKey()
+	if apiKey == "" {
 		return errors.New("tmdb api key not configured")
 	}
 	client := tmdb.New(apiKey)

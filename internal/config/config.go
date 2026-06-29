@@ -11,6 +11,7 @@ type Config struct {
 	MoviesPath        string
 	TVPath            string
 	DBPath            string
+	TMDBKey           string
 	EncodeWindowStart time.Duration // minutes since midnight
 	EncodeWindowEnd   time.Duration
 	ScanInterval      time.Duration
@@ -34,6 +35,8 @@ func Load() (*Config, error) {
 	c.ScanInterval = parseDuration("SCAN_INTERVAL", "24h", &errs)
 	c.ScanAnchor = parseHHMMString("SCAN_ANCHOR", "00:00", &errs)
 	c.ProbeConcurrency = parseInt("PROBE_CONCURRENCY", "4", &errs)
+
+	c.TMDBKey = os.Getenv("TMDB_API_KEY")
 
 	c.DisableAuth = os.Getenv("DISABLE_AUTH") == "true"
 	c.ResetAuth = os.Getenv("RESET_AUTH") == "true"

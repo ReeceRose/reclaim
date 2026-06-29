@@ -45,6 +45,7 @@ type Deps struct {
 	Live            *config.Live
 	MoviesPath      string
 	TVPath          string
+	TMDBKey         string
 	DisableAuth     bool
 	MetadataFetcher MetadataFetcher
 
@@ -63,6 +64,7 @@ type Server struct {
 	auth        AuthStore
 	moviesPath  string
 	tvPath      string
+	tmdbKey     string
 	disableAuth bool
 	staticFS    fs.FS
 
@@ -80,6 +82,7 @@ func New(d Deps) *Server {
 		live:         d.Live,
 		moviesPath:   d.MoviesPath,
 		tvPath:       d.TVPath,
+		tmdbKey:      d.TMDBKey,
 		disableAuth:  d.DisableAuth,
 		staticFS:     d.StaticFS,
 		hub:          NewHub(),
@@ -185,6 +188,7 @@ func (s *Server) Handler() http.Handler {
 	api.PUT("/settings/credentials", s.handleChangeCredentials)
 
 	// Metadata (TMDB).
+	api.GET("/metadata", s.handleMetadataGet)
 	api.GET("/metadata/search", s.handleMetadataSearch)
 	api.PUT("/metadata", s.handleMetadataOverride)
 	api.POST("/metadata/refresh", s.handleMetadataRefresh)
@@ -287,4 +291,8 @@ func serveFSFile(w http.ResponseWriter, r *http.Request, info fs.FileInfo, f fs.
 
 func (s *Server) healthz(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) tmdbAPIKey() string {
+	return s.tmdbKey
 }

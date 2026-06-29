@@ -147,18 +147,45 @@ func (s *Server) handleFileDetail(c *echo.Context) error {
 	if err != nil {
 		return badRequest(c, "invalid file id")
 	}
-	f, err := s.store.Media.GetByID(c.Request().Context(), id)
+	ctx := c.Request().Context()
+	f, err := s.store.Media.GetByID(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return c.JSON(http.StatusNotFound, errorBody("file not found"))
 	}
 	if err != nil {
 		return serverError(c, err)
 	}
-	states, err := s.store.Media.CandidateStates(c.Request().Context(), []store.MediaFile{*f})
+	states, err := s.store.Media.CandidateStates(ctx, []store.MediaFile{*f})
 	if err != nil {
 		return serverError(c, err)
 	}
-	return c.JSON(http.StatusOK, toMediaFileDTOWithState(f, string(states[f.ID])))
+	dto := toMediaFileDTOWithState(f, string(states[f.ID]))
+
+	if s.store.Metadata != nil {
+		var metaKey string
+		switch f.LibraryType {
+		case "movies":
+			metaKey = media.MovieKey(f.Path, s.moviesPath)
+		case "tv":
+			title, _, _ := media.ParseTVInfo(f.Path, s.tvPath)
+			metaKey = title
+		}
+		if metaKey != "" {
+			if m, err := s.store.Metadata.Get(ctx, metaKey); err == nil && !m.NoMatch {
+				dto.PosterPath = m.PosterPath
+				dto.BackdropPath = m.BackdropPath
+				dto.Overview = m.Overview
+				dto.Tagline = m.Tagline
+				dto.Genres = m.Genres
+				dto.VoteAverage = m.VoteAverage
+				dto.VoteCount = m.VoteCount
+				dto.ReleaseYear = m.ReleaseYear
+				dto.RuntimeMins = m.RuntimeMins
+			}
+		}
+	}
+
+	return c.JSON(http.StatusOK, dto)
 }
 
 func (s *Server) handleScan(c *echo.Context) error {

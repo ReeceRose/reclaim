@@ -1,12 +1,52 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/labstack/echo/v5"
 
+	"reclaim/internal/store"
 	"reclaim/internal/tmdb"
 )
+
+func (s *Server) handleMetadataGet(c *echo.Context) error {
+	key := c.QueryParam("key")
+	if key == "" {
+		return badRequest(c, "key is required")
+	}
+	if s.store.Metadata == nil {
+		return c.JSON(http.StatusOK, nil)
+	}
+	ctx := c.Request().Context()
+	meta, err := s.store.Metadata.Get(ctx, key)
+	if errors.Is(err, store.ErrNotFound) {
+		return c.JSON(http.StatusOK, nil)
+	}
+	if err != nil {
+		return serverError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"key":           meta.Key,
+		"media_type":    meta.MediaType,
+		"tmdb_id":       meta.TMDBID,
+		"title":         meta.Title,
+		"tagline":       meta.Tagline,
+		"overview":      meta.Overview,
+		"poster_path":   meta.PosterPath,
+		"backdrop_path": meta.BackdropPath,
+		"release_year":  meta.ReleaseYear,
+		"runtime_mins":  meta.RuntimeMins,
+		"vote_average":  meta.VoteAverage,
+		"vote_count":    meta.VoteCount,
+		"genres":        meta.Genres,
+		"status":        meta.Status,
+		"network":       meta.Network,
+		"in_production": meta.InProduction,
+		"is_manual":     meta.IsManual,
+		"no_match":      meta.NoMatch,
+	})
+}
 
 func (s *Server) handleMetadataSearch(c *echo.Context) error {
 	query := c.QueryParam("query")
@@ -16,13 +56,16 @@ func (s *Server) handleMetadataSearch(c *echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	apiKey, err := s.store.Settings.GetTMDBKey(ctx)
-	if err != nil || apiKey == "" {
+	apiKey := s.tmdbAPIKey()
+	if apiKey == "" {
 		return badRequest(c, "tmdb api key not configured")
 	}
 	client := tmdb.New(apiKey)
 
-	var results []tmdb.SearchResult
+	var (
+		results []tmdb.SearchResult
+		err     error
+	)
 	switch mediaType {
 	case "movie":
 		results, err = client.SearchMovieResults(ctx, query)

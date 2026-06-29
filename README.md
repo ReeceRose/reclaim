@@ -73,6 +73,7 @@ export DB_PATH=/var/lib/reclaim/reclaim.db
 | `PROBE_CONCURRENCY` | no | `4` | Max parallel ffprobe calls during a scan |
 | `SCAN_ANCHOR` | no | `00:00` | Daily scan anchor time (`HH:MM`, local) |
 | `TZ` | no | — | Container timezone — **set this in Docker** so the encode window matches your clock |
+| `TMDB_API_KEY` | no | — | TMDB API key for movie/TV poster and backdrop fetching |
 | `DISABLE_AUTH` | no | `false` | Bypass login entirely — **trusted LAN use only** |
 | `RESET_AUTH` | no | `false` | Clear stored credentials on boot, re-triggering first-run setup |
 

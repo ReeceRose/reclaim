@@ -1,3 +1,6 @@
+-include .env
+export
+
 .PHONY: dev build test test-race clean help migrate-new migrate-up migrate-status
 
 GOOSE := go run github.com/pressly/goose/v3/cmd/goose@v3.26.0

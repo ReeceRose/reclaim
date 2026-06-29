@@ -44,6 +44,14 @@ type mediaFileDTO struct {
 	CandidateState        string   `json:"candidate_state"`
 	PosterPath            *string  `json:"poster_path"`
 	BackdropPath          *string  `json:"backdrop_path"`
+	// TMDB metadata fields — only populated by handleFileDetail
+	Overview    *string  `json:"overview,omitempty"`
+	Tagline     *string  `json:"tagline,omitempty"`
+	Genres      []string `json:"genres,omitempty"`
+	VoteAverage *float64 `json:"vote_average,omitempty"`
+	VoteCount   *int64   `json:"vote_count,omitempty"`
+	ReleaseYear *int     `json:"release_year,omitempty"`
+	RuntimeMins *int     `json:"runtime_mins,omitempty"`
 }
 
 func toMediaFileDTO(f *store.MediaFile) mediaFileDTO {

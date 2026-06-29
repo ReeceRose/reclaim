@@ -145,16 +145,3 @@ func (s *Settings) ensureSecret(ctx context.Context) error {
 	return err
 }
 
-func (s *Settings) GetTMDBKey(ctx context.Context) (string, error) {
-	var key sql.NullString
-	err := s.r.QueryRowContext(ctx, "SELECT tmdb_api_key FROM settings WHERE id = 1").Scan(&key)
-	if err != nil {
-		return "", err
-	}
-	return key.String, nil
-}
-
-func (s *Settings) SetTMDBKey(ctx context.Context, key string) error {
-	_, err := s.w.ExecContext(ctx, "UPDATE settings SET tmdb_api_key = ? WHERE id = 1", key)
-	return err
-}

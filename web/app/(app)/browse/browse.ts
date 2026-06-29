@@ -1,14 +1,21 @@
 export const BROWSE_ROUTES = {
-  ROOT: '/browse',
-  TV_SHOW: (title: string) => `/browse/tv?show=${encodeURIComponent(title)}`,
-  MOVIE: (id: number) => `/browse/movies?id=${id}`,
+  ROOT: (view?: string) => view && view !== VIEW_MODE.GRID ? `/browse?view=${view}` : '/browse',
+  TV_SHOW: (title: string, view?: string) =>
+    `/browse/tv?show=${encodeURIComponent(title)}${view && view !== VIEW_MODE.GRID ? `&view=${view}` : ''}`,
+  MOVIE: (id: number) => `/browse/file?id=${id}`,
   FILE: (id: number) => `/browse/file?id=${id}`,
-} as const;
+};
 
 export const QUERY_PARAMS = {
   TAB: 'tab',
   TV_SORT: 'tvsort',
   MOVIE_SORT: 'msort',
+  VIEW: 'view',
+} as const;
+
+export const VIEW_MODE = {
+  GRID: 'grid',
+  LIST: 'list',
 } as const;
 
 export const LIBRARY_TYPE = {

@@ -20,6 +20,7 @@ import {
   PAGE_SIZE,
   QUERY_PARAMS,
   TV_SORT,
+  VIEW_MODE,
 } from './browse';
 
 const TV_SORT_OPTIONS = [
@@ -54,23 +55,22 @@ function tmdbPosterURL(path: string | null | undefined, size: string): string | 
 // ── Shared UI ─────────────────────────────────────────────────────────────────
 
 export function CodecBadge({ codec }: { codec: string | null }) {
-  if (!codec) return <Badge variant="outline" className="font-mono text-[0.7rem] rounded-[7px]">unknown</Badge>;
+  if (!codec) return <Badge variant="outline" className="font-mono text-xs rounded-md">unknown</Badge>;
   const c = codec.toLowerCase();
   return (
-    <Badge className={`font-mono text-[0.7rem] rounded-[7px] font-semibold ${CODEC_COLORS[c] ?? 'text-slate'} ${CODEC_BORDER[c] ?? 'border-line bg-surface-3'}`}>
+    <Badge className={`font-mono text-xs rounded-md font-semibold ${CODEC_COLORS[c] ?? 'text-slate'} ${CODEC_BORDER[c] ?? 'border-line bg-surface-3'}`}>
       {codec}
     </Badge>
   );
 }
 
-export function EncodeHealthBar({ fileCount, eligibleCount, height = 3 }: {
+export function EncodeHealthBar({ fileCount, eligibleCount }: {
   fileCount: number;
   eligibleCount: number;
-  height?: number;
 }) {
   const donePct = fileCount > 0 ? Math.round(Math.max(0, fileCount - eligibleCount) / fileCount * 100) : 100;
   return (
-    <div className="w-full overflow-hidden rounded-full" style={{ height, background: 'var(--surface-3)' }}>
+    <div className="w-full h-1 overflow-hidden rounded-full" style={{ background: 'var(--surface-3)' }}>
       <div
         className="h-full transition-[width] duration-500"
         style={{
@@ -87,44 +87,52 @@ export function EncodeHealthBar({ fileCount, eligibleCount, height = 3 }: {
 function ShowCard({ show, onClick }: { show: LibrarySeriesGroup; onClick: () => void }) {
   const letter = show.title.replace(/^(the |a |an )/i, '').charAt(0).toUpperCase();
   const fullyConverted = show.eligible_count === 0;
-  const posterURL = tmdbPosterURL(show.poster_path, 'w342');
+  const imageURL = tmdbPosterURL(show.backdrop_path, 'w780') ?? tmdbPosterURL(show.poster_path, 'w342');
 
   return (
     <div
       onClick={onClick}
-      className="relative bg-surface border border-line rounded-[14px] overflow-hidden cursor-pointer hover:border-[var(--brand-line)] transition-[border-color] group"
+      className="relative bg-surface border border-line rounded-2xl overflow-hidden cursor-pointer hover:border-[var(--brand-line)] transition-[border-color] group"
     >
-      <div className="relative h-[160px] overflow-hidden" style={{ background: 'var(--surface-2)' }}>
-        {posterURL ? (
-          <img
-            src={posterURL}
-            alt={show.title}
-            className="w-full h-full object-cover"
-            loading="lazy"
-          />
+      <div className="relative h-48 overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+        {imageURL ? (
+          <>
+            <img
+              src={imageURL}
+              alt={show.title}
+              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+              loading="lazy"
+            />
+            <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom, transparent 35%, rgba(10,10,10,0.88) 100%)' }} />
+            <div className="absolute bottom-0 left-0 right-0 px-3 pb-2.5">
+              <div className="font-bold text-sm leading-snug line-clamp-2 text-white drop-shadow">{show.title}</div>
+            </div>
+          </>
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <span
-              className="font-black select-none pointer-events-none leading-none opacity-[0.12]"
-              style={{ fontSize: '5.5rem' }}
-              aria-hidden
-            >
-              {letter}
-            </span>
-          </div>
+          <>
+            <div className="w-full h-full flex items-center justify-center">
+              <span className="font-black select-none pointer-events-none leading-none opacity-10 text-8xl" aria-hidden>
+                {letter}
+              </span>
+            </div>
+            <div className="absolute bottom-0 left-0 right-0 px-3 pb-2.5">
+              <div className="font-bold text-sm leading-snug line-clamp-2">{show.title}</div>
+            </div>
+          </>
         )}
       </div>
 
-      <div className="px-[14px] pt-[10px] pb-[13px] flex flex-col gap-[6px]">
-        <div className="font-bold text-[0.92rem] leading-snug line-clamp-2">{show.title}</div>
-        <div className="text-[0.72rem] text-muted-dim">
+      <div className="px-3 pt-2 pb-3 flex flex-col gap-1">
+        <div className="text-xs text-muted-dim">
           {show.season_count} {show.season_count === 1 ? 'season' : 'seasons'} · {formatInt(show.file_count)} files
         </div>
-        <div className="text-[0.72rem] text-muted-fg font-mono">{formatBytes(show.total_bytes)}</div>
-        <div className="mt-auto pt-1">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-muted-fg font-mono">{formatBytes(show.total_bytes)}</span>
           {fullyConverted
-            ? <span className="text-[0.72rem] font-medium text-green">All converted</span>
-            : <span className="text-[0.78rem] font-semibold text-brand">-{formatBytes(show.predicted_savings_bytes)} recoverable</span>
+            ? <span className="text-xs font-medium text-green">All converted</span>
+            : show.predicted_savings_bytes > 0
+              ? <span className="text-xs font-semibold text-brand">-{formatBytes(show.predicted_savings_bytes)}</span>
+              : null
           }
         </div>
       </div>
@@ -138,75 +146,166 @@ function MovieCard({ file, onClick }: { file: MediaFile; onClick: () => void }) 
   const title = baseName(file.path).replace(/\.[^/.]+$/, '');
   const isConverted = file.candidate_state === 'already_hevc' || file.candidate_state === 'completed';
   const isCandidate = file.candidate_state === 'candidate';
-  const posterURL = tmdbPosterURL(file.poster_path, 'w342');
+  const imageURL = tmdbPosterURL(file.backdrop_path, 'w780') ?? tmdbPosterURL(file.poster_path, 'w342');
 
   return (
     <div
       onClick={onClick}
-      className="relative bg-surface border border-line rounded-[14px] overflow-hidden cursor-pointer hover:border-[var(--brand-line)] transition-[border-color]"
+      className="relative bg-surface border border-line rounded-2xl overflow-hidden cursor-pointer hover:border-[var(--brand-line)] transition-[border-color] group"
     >
-      <div className="relative h-[160px] overflow-hidden" style={{ background: 'var(--surface-2)' }}>
-        {posterURL ? (
-          <img
-            src={posterURL}
-            alt={title}
-            className="w-full h-full object-cover"
-            loading="lazy"
-          />
+      <div className="relative h-48 overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+        {imageURL ? (
+          <>
+            <img
+              src={imageURL}
+              alt={title}
+              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+              loading="lazy"
+            />
+            <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom, transparent 35%, rgba(10,10,10,0.88) 100%)' }} />
+            <div className="absolute bottom-0 left-0 right-0 px-3 pb-2.5">
+              <div className="font-bold text-sm leading-snug line-clamp-2 text-white drop-shadow">{title}</div>
+            </div>
+          </>
         ) : (
-          <div className="w-full h-full flex items-center justify-center gap-[6px] flex-wrap px-3">
-            <CodecBadge codec={file.video_codec} />
-            {file.width && file.height && (
-              <span className="text-[0.7rem] text-muted-dim">{resolutionLabel(file.width, file.height)}</span>
-            )}
-          </div>
+          <>
+            <div className="w-full h-full flex items-center justify-center gap-1.5 flex-wrap px-3">
+              <CodecBadge codec={file.video_codec} />
+              {file.width && file.height && (
+                <span className="text-xs text-muted-dim">{resolutionLabel(file.width, file.height)}</span>
+              )}
+            </div>
+            <div className="absolute bottom-0 left-0 right-0 px-3 pb-2.5">
+              <div className="font-bold text-sm leading-snug line-clamp-2">{title}</div>
+            </div>
+          </>
         )}
       </div>
 
-      <div className="px-[14px] pt-[10px] pb-[13px] flex flex-col gap-[6px]">
-        <div className="font-bold text-[0.88rem] leading-snug line-clamp-2">{title}</div>
-        <div className="flex items-center gap-[6px] flex-wrap">
+      <div className="px-3 pt-2 pb-3 flex flex-col gap-1">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <CodecBadge codec={file.video_codec} />
           {file.width && file.height && (
-            <span className="text-[0.7rem] text-muted-dim">{resolutionLabel(file.width, file.height)}</span>
+            <span className="text-xs text-muted-dim">{resolutionLabel(file.width, file.height)}</span>
           )}
         </div>
-        <div className="text-[0.72rem] text-muted-fg font-mono">{formatBytes(file.size_bytes)}</div>
-        <div className="mt-auto pt-1">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-muted-fg font-mono">{formatBytes(file.size_bytes)}</span>
           {isCandidate && file.predicted_savings_bytes > 0
-            ? <span className="text-[0.78rem] font-semibold text-brand">-{formatBytes(file.predicted_savings_bytes)} recoverable</span>
+            ? <span className="text-xs font-semibold text-brand">-{formatBytes(file.predicted_savings_bytes)}</span>
             : isConverted
-              ? <span className="text-[0.72rem] font-medium text-green">Converted</span>
+              ? <span className="text-xs font-medium text-green">Converted</span>
               : null
           }
         </div>
       </div>
-      <div
-        className="h-[3px] w-full"
-        style={{ background: isConverted ? 'var(--green)' : isCandidate ? 'var(--brand)' : 'var(--surface-3)' }}
-      />
+      <div className="h-1 w-full" style={{ background: isConverted ? 'var(--green)' : isCandidate ? 'var(--brand)' : 'var(--surface-3)' }} />
     </div>
   );
 }
 
 function CardSkeleton() {
   return (
-    <div className="bg-surface border border-line rounded-[14px] overflow-hidden">
-      <Skeleton className="h-[160px] w-full rounded-none" />
-      <div className="px-[14px] pt-[10px] pb-[13px] flex flex-col gap-[6px]">
-        <Skeleton className="h-4 w-3/4" />
-        <Skeleton className="h-3 w-1/2 mt-0.5" />
-        <Skeleton className="h-3 w-1/3" />
-        <div className="mt-auto pt-1"><Skeleton className="h-3 w-2/3" /></div>
+    <div className="bg-surface border border-line rounded-2xl overflow-hidden">
+      <Skeleton className="h-48 w-full rounded-none" />
+      <div className="px-3 pt-2 pb-3 flex flex-col gap-1">
+        <Skeleton className="h-3 w-1/2" />
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-3 w-1/3" />
+          <Skeleton className="h-3 w-1/4" />
+        </div>
       </div>
-      <div className="h-[3px]" style={{ background: 'var(--surface-3)' }} />
+      <div className="h-1" style={{ background: 'var(--surface-3)' }} />
+    </div>
+  );
+}
+
+// ── List rows ─────────────────────────────────────────────────────────────────
+
+function ShowRow({ show, onClick }: { show: LibrarySeriesGroup; onClick: () => void }) {
+  const fullyConverted = show.eligible_count === 0;
+  return (
+    <div
+      onClick={onClick}
+      className="grid items-center gap-3 px-4 py-2.5 border-b border-line-soft last:border-b-0 cursor-pointer hover:bg-surface-2 transition-colors"
+      style={{ gridTemplateColumns: '1fr auto auto auto auto' }}
+    >
+      <div className="min-w-0 truncate font-medium text-sm">{show.title}</div>
+      <span className="text-xs text-muted-dim hidden sm:inline whitespace-nowrap">
+        {show.season_count} {show.season_count === 1 ? 'season' : 'seasons'}
+      </span>
+      <span className="text-xs text-muted-dim hidden md:inline whitespace-nowrap">
+        {formatInt(show.file_count)} files
+      </span>
+      <span className="font-mono text-xs text-muted-fg">{formatBytes(show.total_bytes)}</span>
+      <div className="text-right w-24">
+        {fullyConverted
+          ? <span className="text-xs font-medium text-green">All converted</span>
+          : show.predicted_savings_bytes > 0
+            ? <span className="text-xs font-semibold text-brand font-mono">-{formatBytes(show.predicted_savings_bytes)}</span>
+            : <span className="text-xs text-muted-dim">—</span>
+        }
+      </div>
+    </div>
+  );
+}
+
+function MovieRow({ file, onClick }: { file: MediaFile; onClick: () => void }) {
+  const title = baseName(file.path).replace(/\.[^/.]+$/, '');
+  const isConverted = file.candidate_state === 'already_hevc' || file.candidate_state === 'completed';
+  const isCandidate = file.candidate_state === 'candidate';
+  return (
+    <div
+      onClick={onClick}
+      className="grid items-center gap-3 px-4 py-2.5 border-b border-line-soft last:border-b-0 cursor-pointer hover:bg-surface-2 transition-colors"
+      style={{ gridTemplateColumns: '1fr auto auto auto auto' }}
+    >
+      <div className="min-w-0 truncate font-medium text-sm">{title}</div>
+      <CodecBadge codec={file.video_codec} />
+      <span className="text-xs text-muted-dim hidden sm:inline">
+        {file.width && file.height ? resolutionLabel(file.width, file.height) : '—'}
+      </span>
+      <span className="font-mono text-xs text-muted-fg hidden md:inline">{formatBytes(file.size_bytes)}</span>
+      <div className="text-right w-24">
+        {isCandidate && file.predicted_savings_bytes > 0
+          ? <span className="text-xs font-semibold text-brand font-mono">-{formatBytes(file.predicted_savings_bytes)}</span>
+          : isConverted
+            ? <span className="text-xs font-medium text-green">Converted</span>
+            : <span className="text-xs text-muted-dim">—</span>
+        }
+      </div>
+    </div>
+  );
+}
+
+function ListSkeleton() {
+  return (
+    <div className="bg-surface border border-line rounded-xl overflow-hidden">
+      <div className="px-4 py-2 border-b border-line bg-surface-2">
+        <div className="flex gap-3">
+          <Skeleton className="h-3 flex-1" />
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-14" />
+          <Skeleton className="h-3 w-16" />
+        </div>
+      </div>
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 px-4 py-2.5 border-b border-line-soft last:border-b-0">
+          <Skeleton className="h-3 flex-1" />
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-12" />
+          <Skeleton className="h-3 w-14" />
+          <Skeleton className="h-3 w-16" />
+        </div>
+      ))}
     </div>
   );
 }
 
 // ── Tab content ───────────────────────────────────────────────────────────────
 
-function TVContent({ search, sort }: { search: string; sort: TVSortValue }) {
+function TVContent({ search, sort, view }: { search: string; sort: TVSortValue; view: string }) {
   const router = useRouter();
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -238,9 +337,11 @@ function TVContent({ search, sort }: { search: string; sort: TVSortValue }) {
   const shows = useMemo(() => sortShows(rawShows, sort), [rawShows, sort]);
   const totalCount = data?.pages[0]?.total_count;
 
+  const isList = view === VIEW_MODE.LIST;
+
   return (
     <>
-      <div className="text-[0.8rem] text-muted-dim mb-4">
+      <div className="text-xs text-muted-dim mb-4">
         {isLoading && shows.length === 0
           ? <Skeleton className="h-3 w-20" />
           : `${formatInt(totalCount ?? shows.length)} shows`
@@ -248,32 +349,49 @@ function TVContent({ search, sort }: { search: string; sort: TVSortValue }) {
       </div>
 
       {isLoading && shows.length === 0 ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {Array.from({ length: 12 }).map((_, i) => <CardSkeleton key={i} />)}
-        </div>
+        isList ? <ListSkeleton /> : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {Array.from({ length: 12 }).map((_, i) => <CardSkeleton key={i} />)}
+          </div>
+        )
       ) : shows.length === 0 ? (
-        <div className="text-center py-24 text-muted-dim text-[0.88rem]">
+        <div className="text-center py-24 text-muted-dim text-sm">
           {search ? 'No shows match your search.' : 'No TV shows found. Run a scan to index your library.'}
+        </div>
+      ) : isList ? (
+        <div className="bg-surface border border-line rounded-xl overflow-hidden">
+          <div className="grid items-center gap-3 px-4 py-2 border-b border-line text-xs uppercase tracking-wider text-muted-dim font-bold" style={{ gridTemplateColumns: '1fr auto auto auto auto' }}>
+            <span>Title</span>
+            <span className="hidden sm:inline">Seasons</span>
+            <span className="hidden md:inline">Files</span>
+            <span>Size</span>
+            <span className="w-24 text-right">Savings</span>
+          </div>
+          {shows.map((s) => (
+            <ShowRow key={s.title} show={s} onClick={() => router.push(BROWSE_ROUTES.TV_SHOW(s.title, view))} />
+          ))}
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {shows.map((s) => (
-            <ShowCard key={s.title} show={s} onClick={() => router.push(BROWSE_ROUTES.TV_SHOW(s.title))} />
+            <ShowCard key={s.title} show={s} onClick={() => router.push(BROWSE_ROUTES.TV_SHOW(s.title, view))} />
           ))}
         </div>
       )}
 
       <div ref={sentinelRef} className="h-px" />
       {isFetchingNextPage && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-3">
-          {Array.from({ length: 4 }).map((_, i) => <CardSkeleton key={i} />)}
-        </div>
+        isList ? null : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-3">
+            {Array.from({ length: 4 }).map((_, i) => <CardSkeleton key={i} />)}
+          </div>
+        )
       )}
     </>
   );
 }
 
-function MoviesContent({ search, sort }: { search: string; sort: MovieSortValue }) {
+function MoviesContent({ search, sort, view }: { search: string; sort: MovieSortValue; view: string }) {
   const router = useRouter();
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -301,10 +419,11 @@ function MoviesContent({ search, sort }: { search: string; sort: MovieSortValue 
 
   const movies = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
   const totalCount = data?.pages[0]?.total_count;
+  const isList = view === VIEW_MODE.LIST;
 
   return (
     <>
-      <div className="text-[0.8rem] text-muted-dim mb-4">
+      <div className="text-xs text-muted-dim mb-4">
         {isLoading && movies.length === 0
           ? <Skeleton className="h-3 w-20" />
           : `${formatInt(totalCount ?? movies.length)} movies`
@@ -312,12 +431,27 @@ function MoviesContent({ search, sort }: { search: string; sort: MovieSortValue 
       </div>
 
       {isLoading && movies.length === 0 ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {Array.from({ length: 12 }).map((_, i) => <CardSkeleton key={i} />)}
-        </div>
+        isList ? <ListSkeleton /> : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {Array.from({ length: 12 }).map((_, i) => <CardSkeleton key={i} />)}
+          </div>
+        )
       ) : movies.length === 0 ? (
-        <div className="text-center py-24 text-muted-dim text-[0.88rem]">
+        <div className="text-center py-24 text-muted-dim text-sm">
           {search ? 'No movies match your search.' : 'No movies found. Run a scan to index your library.'}
+        </div>
+      ) : isList ? (
+        <div className="bg-surface border border-line rounded-xl overflow-hidden">
+          <div className="grid items-center gap-3 px-4 py-2 border-b border-line text-xs uppercase tracking-wider text-muted-dim font-bold" style={{ gridTemplateColumns: '1fr auto auto auto auto' }}>
+            <span>Title</span>
+            <span>Codec</span>
+            <span className="hidden sm:inline">Res</span>
+            <span className="hidden md:inline">Size</span>
+            <span className="w-24 text-right">Savings</span>
+          </div>
+          {movies.map((f) => (
+            <MovieRow key={f.id} file={f} onClick={() => router.push(BROWSE_ROUTES.MOVIE(f.id))} />
+          ))}
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -329,9 +463,11 @@ function MoviesContent({ search, sort }: { search: string; sort: MovieSortValue 
 
       <div ref={sentinelRef} className="h-px" />
       {isFetchingNextPage && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-3">
-          {Array.from({ length: 4 }).map((_, i) => <CardSkeleton key={i} />)}
-        </div>
+        isList ? null : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-3">
+            {Array.from({ length: 4 }).map((_, i) => <CardSkeleton key={i} />)}
+          </div>
+        )
       )}
     </>
   );
@@ -349,6 +485,9 @@ function BrowsePage() {
   const [movieSortRaw, setMovieSort] = useQueryParam(QUERY_PARAMS.MOVIE_SORT, MOVIE_SORT.ALPHA);
   const movieSort = parseQueryEnum(movieSortRaw, MOVIE_SORT_OPTIONS.map((o) => o.value), MOVIE_SORT.ALPHA);
 
+  const [viewRaw, setView] = useQueryParam(QUERY_PARAMS.VIEW, VIEW_MODE.GRID);
+  const view = parseQueryEnum(viewRaw, [VIEW_MODE.GRID, VIEW_MODE.LIST] as const, VIEW_MODE.GRID);
+
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
@@ -358,6 +497,7 @@ function BrowsePage() {
   }, [search]);
 
   const isTV = tab === LIBRARY_TYPE.TV;
+  const isList = view === VIEW_MODE.LIST;
   const sortOptions = isTV ? TV_SORT_OPTIONS : MOVIE_SORT_OPTIONS;
   const sortValue = isTV ? tvSort : movieSort;
   const setSort = isTV ? setTVSort : setMovieSort;
@@ -365,22 +505,22 @@ function BrowsePage() {
   return (
     <div className="flex flex-col min-w-0 h-screen overflow-hidden max-sm:h-full">
       <div
-        className="flex flex-col gap-2 px-4 py-[14px] border-b border-line shrink-0 sm:flex-row sm:items-center sm:gap-4 sm:px-7 sm:py-[18px]"
+        className="flex flex-col gap-2 px-4 py-3.5 border-b border-line shrink-0 sm:flex-row sm:items-center sm:gap-4 sm:px-7 sm:py-4"
         style={{ background: 'rgba(22,22,22,.82)', backdropFilter: 'blur(10px)' }}
       >
         <div className="min-w-0">
           <div className="text-title font-bold tracking-tight">Browse</div>
-          <div className="text-[0.82rem] text-muted-fg mt-px">Your media library at a glance</div>
+          <div className="text-sm text-muted-fg mt-px">Your media library at a glance</div>
         </div>
       </div>
 
       <div className="border-b border-line-soft shrink-0" style={{ background: 'var(--bg)' }}>
         <div className="flex items-center gap-3 px-4 py-3 sm:px-7 flex-wrap">
-          <div className="inline-flex bg-surface border border-line rounded-[11px] p-[3px] gap-[2px] shrink-0">
+          <div className="inline-flex bg-surface border border-line rounded-xl p-1 gap-0.5 shrink-0">
             <button
               onClick={() => { setTabRaw(LIBRARY_TYPE.TV); setSearch(''); }}
               className={cn(
-                'rounded-[8px] text-xs font-semibold py-[7px] px-[13px] transition-colors cursor-pointer',
+                'rounded-lg text-xs font-semibold py-2 px-3 transition-colors cursor-pointer',
                 isTV ? 'bg-brand-soft text-brand' : 'text-muted-fg hover:text-text',
               )}
             >
@@ -389,7 +529,7 @@ function BrowsePage() {
             <button
               onClick={() => { setTabRaw(LIBRARY_TYPE.MOVIES); setSearch(''); }}
               className={cn(
-                'rounded-[8px] text-xs font-semibold py-[7px] px-[13px] transition-colors cursor-pointer',
+                'rounded-lg text-xs font-semibold py-2 px-3 transition-colors cursor-pointer',
                 !isTV ? 'bg-brand-soft text-brand' : 'text-muted-fg hover:text-text',
               )}
             >
@@ -398,7 +538,7 @@ function BrowsePage() {
           </div>
 
           <Select value={sortValue} onValueChange={setSort}>
-            <SelectTrigger className="rounded-[11px] bg-surface text-sm h-auto py-[7px] gap-1 w-[160px]">
+            <SelectTrigger className="rounded-xl bg-surface text-sm h-auto py-2 gap-1 w-40">
               <span className="text-xs text-muted-dim shrink-0">Sort</span>
               <span className="text-muted-dim mx-px">·</span>
               <SelectValue />
@@ -408,24 +548,56 @@ function BrowsePage() {
             </SelectContent>
           </Select>
 
-          <div className="flex-1 relative max-w-[300px]">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-[14px] h-[14px] absolute left-[11px] top-1/2 -translate-y-1/2 text-muted-dim pointer-events-none">
+          <div className="flex-1 relative max-w-xs">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-dim pointer-events-none">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={isTV ? 'Search TV shows…' : 'Search movies…'}
-              className="rounded-[11px] pl-[34px] text-sm"
+              className="rounded-xl pl-8 text-sm"
             />
+          </div>
+
+          <div className="inline-flex bg-surface border border-line rounded-xl p-1 gap-0.5 shrink-0">
+            <button
+              onClick={() => setView(VIEW_MODE.GRID)}
+              className={cn(
+                'rounded-lg p-2 transition-colors cursor-pointer',
+                !isList ? 'bg-brand-soft text-brand' : 'text-muted-fg hover:text-text',
+              )}
+              aria-label="Grid view"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+              </svg>
+            </button>
+            <button
+              onClick={() => setView(VIEW_MODE.LIST)}
+              className={cn(
+                'rounded-lg p-2 transition-colors cursor-pointer',
+                isList ? 'bg-brand-soft text-brand' : 'text-muted-fg hover:text-text',
+              )}
+              aria-label="List view"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+                <line x1="8" y1="18" x2="21" y2="18"/>
+                <circle cx="3" cy="6" r="1" fill="currentColor" stroke="none"/>
+                <circle cx="3" cy="12" r="1" fill="currentColor" stroke="none"/>
+                <circle cx="3" cy="18" r="1" fill="currentColor" stroke="none"/>
+              </svg>
+            </button>
           </div>
         </div>
       </div>
 
       <div className="flex-1 overflow-auto px-4 pt-4 pb-6 sm:px-7">
         {isTV
-          ? <TVContent search={debouncedSearch} sort={tvSort} />
-          : <MoviesContent search={debouncedSearch} sort={movieSort} />
+          ? <TVContent search={debouncedSearch} sort={tvSort} view={view} />
+          : <MoviesContent search={debouncedSearch} sort={movieSort} view={view} />
         }
       </div>
     </div>
@@ -435,7 +607,7 @@ function BrowsePage() {
 function BrowseSkeleton() {
   return (
     <div className="flex flex-col min-w-0 h-screen overflow-hidden max-sm:h-full">
-      <div className="px-4 py-[14px] border-b border-line sm:px-7 sm:py-[18px]">
+      <div className="px-4 py-3.5 border-b border-line sm:px-7 sm:py-4">
         <Skeleton className="h-7 w-28 mb-2" />
         <Skeleton className="h-3 w-48" />
       </div>

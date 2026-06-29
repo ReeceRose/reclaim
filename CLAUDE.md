@@ -96,7 +96,7 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 3. `store.Open()` — opens SQLite (WAL mode, two pools: 1 writer / 25 readers), runs goose migrations, bootstraps defaults
 4. `config.NewLive(cfg)` — creates the runtime-mutable settings holder (encode window, scan interval, probe concurrency); read by the scanner and worker on every use so PUT `/api/settings` takes effect without a restart
 5. `scanner.New()` + `sc.Start(ctx)` — runs startup scan, starts fsnotify watcher, schedules periodic rescans
-6. `api.New()` — wires routes on Echo v5; full route list: `/healthz`, `/api/{setup,login,logout,session}`, `/api/{stats,candidates,candidates/grouped,files/:id,dry-run}`, `/api/scan{,/full}`, `/api/profiles{,/:id}`, `/api/jobs{,/:id/cancel}`, `/api/settings{,/credentials}`, `/api/ws`
+6. `api.New()` — wires routes on Echo v5; full route list: `/healthz`, `/api/{setup,login,logout,session}`, `/api/{stats,candidates,candidates/grouped,files/:id,dry-run}`, `/api/scan{,/full}`, `/api/profiles{,/:id}`, `/api/jobs{,/:id/cancel}`, `/api/settings{,/credentials}`, `/api/files/grouped{,/seasons,/episodes}`, `/api/metadata{/search,/refresh}`, `/api/ws`
 7. `worker.New()` + `wk.Run(ctx)` — encode loop; polls for queued jobs inside the window
 
 ### Package map
@@ -104,7 +104,7 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 | Package | Role |
 |---|---|
 | `internal/config` | Env parsing (`Config`) + runtime-mutable holder (`Live`) |
-| `internal/store` | SQLite access — typed sub-stores: `Media`, `Jobs`, `Profiles`, `Scans`, `Settings`, `Stats` |
+| `internal/store` | SQLite access — typed sub-stores: `Media`, `Jobs`, `Profiles`, `Scans`, `Settings`, `Stats`, `Metadata` |
 | `internal/scanner` | Walk+ffprobe indexer, fsnotify watcher, rename detection via fingerprint |
 | `internal/worker` | Encode loop: claim job → ffmpeg → verify → atomic swap |
 | `internal/ffprobe` | Thin `ffprobe -v quiet -print_format json -show_streams -show_format` wrapper |
@@ -113,6 +113,8 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 | `internal/jobs` | Pure state machine — legal transitions for the job lifecycle |
 | `internal/api` | Echo v5 HTTP server, WebSocket hub, auth middleware |
 | `internal/startup` | Pre-flight checks (binaries, mounts) |
+| `internal/tmdb` | Rate-limited TMDB API client (3 req/s) — movie/TV search, detail fetching, image URL helpers |
+| `internal/metadata` | Background fetcher: runs after each scan, populates `media_metadata` with staleness rules (14/30/90 days by status) |
 | `web/` | Next.js 16 static export embedded into the binary via `web/embed.go` |
 
 ### Store

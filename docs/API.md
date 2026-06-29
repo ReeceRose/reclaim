@@ -147,15 +147,16 @@ A candidate/file object has these fields:
 `id, path, library_type, size_bytes, mtime, video_codec, video_codec_profile,
 width, height, duration_seconds, bitrate_kbps, audio_codec, audio_channels,
 container_format, is_already_hevc, predicted_savings_bytes, last_probed_at,
-probe_error, status`. Nullable columns serialize as `null`.
+probe_error, status, poster_path, backdrop_path`. Nullable columns serialize as
+`null`. `poster_path` and `backdrop_path` are TMDB image paths (e.g.
+`/abc123.jpg`); prefix with `https://image.tmdb.org/t/p/<size>` to build a URL.
+Present only for movies when a TMDB API key is configured.
 
 ### `GET /api/files/grouped`
 TV series/season summaries for the Library **By series** view. Movies use the
 paginated `/api/files` endpoint.
 
-**Query params:** same filters as `/api/files` (`library_type`, `video_codec`,
-`height`, `search`, `status`, `candidate_state`), plus `limit` (default 50,
-max 200) and `offset`.
+**Query params:** `search`, `limit` (default 50, max 200), `offset`.
 
 ```json
 {
@@ -163,9 +164,25 @@ max 200) and `offset`.
     { "title": "Breaking Bad", "library_type": "tv", "file_count": 12,
       "eligible_count": 8, "season_count": 2, "total_bytes": 50000000000,
       "predicted_savings_bytes": 15000000000,
-      "seasons": [ { "season": 1, "file_count": 6, "eligible_count": 4, "episode_ids": [1, 2] } ] }
+      "poster_path": "/abc123.jpg", "backdrop_path": null }
   ],
   "total_count": 42
+}
+```
+
+`poster_path` and `backdrop_path` are present when a TMDB API key is configured.
+
+### `GET /api/files/grouped/seasons`
+Season breakdown for one TV series.
+
+**Query params:** `series` (required).
+
+```json
+{
+  "seasons": [
+    { "season": 1, "file_count": 6, "eligible_count": 4,
+      "total_bytes": 25000000000, "predicted_savings_bytes": 7000000000 }
+  ]
 }
 ```
 
@@ -353,11 +370,15 @@ re-seeds from env.
   "encode_window_start": "00:00",
   "encode_window_end": "06:00",
   "scan_interval": "24h0m0s",
+  "scan_anchor": "00:00",
   "probe_concurrency": 4,
   "movies_path": "/media/movies",
-  "tv_path": "/media/tv"
+  "tv_path": "/media/tv",
+  "tmdb_configured": true
 }
 ```
+
+`tmdb_configured` is `true` when a TMDB API key is present (set via `TMDB_API_KEY` env var).
 
 ### `PUT /api/settings`
 Any subset of the mutable fields. Validated as a set before applying.
@@ -367,6 +388,54 @@ Any subset of the mutable fields. Validated as a set before applying.
 ```
 - `200` → the full settings object (same shape as GET)
 - `400` → invalid value (e.g. `encode_window_start: "99:99"`, non-positive interval/concurrency)
+
+---
+
+## Metadata (TMDB)
+
+Requires `TMDB_API_KEY` to be set. The background fetcher runs after each scan
+and populates the `media_metadata` table. All endpoints return `400` if the key
+is not configured (except `PUT /api/metadata`, which stores manual overrides and
+works without a key).
+
+### `GET /api/metadata/search`
+Search TMDB for a movie or TV title.
+
+**Query params:** `query` (required), `type` (`movie` or `tv`, default `tv`).
+
+```json
+{
+  "results": [
+    { "tmdb_id": 1396, "title": "Breaking Bad", "year": 2008,
+      "poster_url": "https://image.tmdb.org/t/p/w185/abc.jpg" }
+  ]
+}
+```
+
+### `PUT /api/metadata`
+Manually override poster/backdrop for a key (movie path key or TV series title).
+
+**Body**
+```json
+{
+  "key": "Breaking Bad",
+  "media_type": "tv",
+  "poster_url": "https://image.tmdb.org/t/p/w500/abc.jpg",
+  "backdrop_url": null
+}
+```
+- `200` → `{ "status": "ok" }`
+
+### `POST /api/metadata/refresh`
+Trigger a re-fetch run. With an empty body, queues a full background refresh.
+With `key` + `media_type`, force-refreshes a single entry immediately.
+
+**Body (optional)**
+```json
+{ "key": "Breaking Bad", "media_type": "tv" }
+```
+- `200` → `{ "status": "ok" }` (single key) or `{ "status": "queued" }` (full run)
+- `503` → metadata fetcher unavailable (key not configured)
 
 ---
 

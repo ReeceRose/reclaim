@@ -7,6 +7,7 @@ import {
   ExternalLink,
   FolderSearch,
   HardDrive,
+  Image,
   ListOrdered,
   Moon,
   Shield,
@@ -59,6 +60,12 @@ const features = [
     accent: "var(--green)",
   },
   {
+    icon: Image,
+    title: "TMDB artwork",
+    body: "Optional TMDB integration fetches poster and backdrop images for your library. Browse cards show artwork automatically — no manual tagging.",
+    accent: "var(--sky)",
+  },
+  {
     icon: HardDrive,
     title: "Single container",
     body: "Go API + embedded web UI + ffmpeg/ffprobe. No database server, Redis, or sidecar services.",
@@ -92,6 +99,7 @@ const steps = [
 const does = [
   "Scans mounted library folders directly",
   "Ranks candidates by savings estimates that improve over time",
+  "Fetches TMDB poster art for movies and TV shows (optional)",
   "Helps spot files better re-downloaded than re-encoded",
   "Replaces files in-place after verification",
   "Runs encodes in a configurable overnight window",

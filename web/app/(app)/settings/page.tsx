@@ -291,7 +291,6 @@ function SettingsContent() {
 
   const [credPassword, setCredPassword] = useState('');
   const [credConfirm, setCredConfirm] = useState('');
-  const [tmdbKey, setTmdbKey] = useState(settings.tmdb_api_key ?? '');
 
   const settingsMutation = useMutation({
     mutationFn: () =>
@@ -317,15 +316,6 @@ function SettingsContent() {
       setCredConfirm('');
     },
     onError: () => toast.error('Failed to update credentials'),
-  });
-
-  const tmdbMutation = useMutation({
-    mutationFn: () => api.updateSettings({ tmdb_api_key: tmdbKey }),
-    onSuccess: () => {
-      toast.success('TMDB API key saved');
-      qc.invalidateQueries({ queryKey: ['settings'] });
-    },
-    onError: () => toast.error('Failed to save TMDB key'),
   });
 
   const refreshMetaMutation = useMutation({
@@ -559,36 +549,25 @@ function SettingsContent() {
 
       <div className="border border-line rounded-(--radius) p-5 mt-[18px]" style={{ background: 'var(--surface)' }}>
         <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">Metadata</div>
-        <div className="mb-4">
-          <Label className="text-[0.8rem] font-semibold mb-1.5 block">TMDB API key</Label>
-          <Input
-            type="text"
-            value={tmdbKey}
-            onChange={(e) => setTmdbKey(e.target.value)}
-            placeholder="eyJhbGci…"
-            autoComplete="off"
-          />
-          <p className="text-[0.75rem] text-muted-dim mt-1.5">
-            Get a free key at <span className="font-mono">themoviedb.org</span> → Settings → API
-          </p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <Button
-            onClick={() => tmdbMutation.mutate()}
-            disabled={tmdbMutation.isPending}
-            className="rounded-[11px]"
-            style={{ background: 'linear-gradient(145deg, var(--brand), var(--brand-2))' }}
-          >
-            {tmdbMutation.isPending ? 'Saving…' : 'Save key'}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => refreshMetaMutation.mutate()}
-            disabled={refreshMetaMutation.isPending}
-            className="rounded-[11px]"
-          >
-            {refreshMetaMutation.isPending ? 'Refreshing…' : 'Refresh all metadata'}
-          </Button>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <Label className="text-[0.8rem] font-semibold block mb-0.5">TMDB API key</Label>
+            {settings.tmdb_configured ? (
+              <p className="text-[0.78rem] text-green font-mono">Configured · TMDB_API_KEY env var</p>
+            ) : (
+              <p className="text-[0.78rem] text-muted-dim font-mono">Not configured · set <span className="text-muted-fg">TMDB_API_KEY</span> env var</p>
+            )}
+          </div>
+          {settings.tmdb_configured && (
+            <Button
+              variant="outline"
+              onClick={() => refreshMetaMutation.mutate()}
+              disabled={refreshMetaMutation.isPending}
+              className="rounded-[11px]"
+            >
+              {refreshMetaMutation.isPending ? 'Refreshing…' : 'Refresh all metadata'}
+            </Button>
+          )}
         </div>
       </div>
 

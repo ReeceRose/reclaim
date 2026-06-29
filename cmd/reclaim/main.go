@@ -71,7 +71,7 @@ func main() {
 
 	live := config.NewLive(cfg)
 
-	metaFetcher := metadata.New(db, cfg.MoviesPath, cfg.TVPath)
+	metaFetcher := metadata.New(db, cfg.MoviesPath, cfg.TVPath, cfg.TMDBKey)
 
 	sc, err := scanner.New(db, cfg, scanner.WithLiveConfig(live))
 	if err != nil {
@@ -88,6 +88,7 @@ func main() {
 		Live:            live,
 		MoviesPath:      cfg.MoviesPath,
 		TVPath:          cfg.TVPath,
+		TMDBKey:         cfg.TMDBKey,
 		DisableAuth:     cfg.DisableAuth,
 		StaticFS:        web.FS(),
 		MetadataFetcher: metaFetcher,

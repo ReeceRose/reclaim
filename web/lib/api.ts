@@ -112,6 +112,13 @@ export interface MediaFile {
   candidate_state: CandidateState;
   poster_path?: string | null;
   backdrop_path?: string | null;
+  overview?: string | null;
+  tagline?: string | null;
+  genres?: string[] | null;
+  vote_average?: number | null;
+  vote_count?: number | null;
+  release_year?: number | null;
+  runtime_mins?: number | null;
 }
 
 export type CandidateState =
@@ -244,7 +251,7 @@ export interface Settings {
   probe_concurrency: number;
   movies_path: string;
   tv_path: string;
-  tmdb_api_key?: string | null;
+  tmdb_configured?: boolean;
 }
 
 export interface MetadataSearchResult {
@@ -252,6 +259,33 @@ export interface MetadataSearchResult {
   title: string;
   year: number;
   poster_url: string;
+}
+
+export interface MediaMetadata {
+  key: string;
+  media_type: string;
+  tmdb_id: number | null;
+  title: string | null;
+  tagline: string | null;
+  overview: string | null;
+  poster_path: string | null;
+  backdrop_path: string | null;
+  release_year: number | null;
+  runtime_mins: number | null;
+  vote_average: number | null;
+  vote_count: number | null;
+  genres: string[] | null;
+  status: string | null;
+  network: string | null;
+  in_production: boolean | null;
+  is_manual: boolean;
+  no_match: boolean;
+}
+
+export function tmdbImageURL(path: string | null | undefined, size: string): string | null {
+  if (!path) return null;
+  if (path.startsWith('http')) return path;
+  return `https://image.tmdb.org/t/p/${size}${path}`;
 }
 
 export interface QueuedItem {
@@ -402,10 +436,12 @@ export const api = {
 
   // Settings
   settings: () => request<Settings>("GET", "/api/settings"),
-  updateSettings: (s: Partial<Pick<Settings, "encode_window_start" | "encode_window_end" | "scan_interval" | "scan_anchor" | "probe_concurrency" | "tmdb_api_key">>) =>
+  updateSettings: (s: Partial<Pick<Settings, "encode_window_start" | "encode_window_end" | "scan_interval" | "scan_anchor" | "probe_concurrency">>) =>
     request<Settings>("PUT", "/api/settings", s),
 
   // Metadata
+  getMetadata: (key: string) =>
+    request<MediaMetadata | null>("GET", `/api/metadata${buildQuery({ key })}`),
   searchMetadata: (query: string, type: 'tv' | 'movie') =>
     request<{ results: MetadataSearchResult[] }>("GET", `/api/metadata/search${buildQuery({ query, type })}`),
   overrideMetadata: (key: string, mediaType: string, posterUrl: string | null, backdropUrl: string | null) =>

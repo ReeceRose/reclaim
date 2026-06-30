@@ -16,35 +16,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { useQueryParams } from '@/hooks/use-query-params';
 import { CodecBadge } from '@/components/media/codec-badge';
 import { EncodeHealthBar } from '@/components/media/encode-health-bar';
+import { StateBadge } from '@/components/media/candidate-state';
 import { BROWSE_ROUTES, EPISODES_PER_PAGE, LIBRARY_TYPE } from '../browse';
-
-const STATE_LABELS: Record<string, string> = {
-  candidate:     'Candidate',
-  already_hevc:  'HEVC',
-  probe_failed:  'Probe failed',
-  unknown_codec: 'Unknown codec',
-  queued:        'Queued',
-  completed:     'Completed',
-  missing:       'Missing',
-};
-
-function StateBadge({ state }: { state: string }) {
-  const isGood   = state === 'already_hevc' || state === 'completed';
-  const isBrand  = state === 'candidate';
-  const isQueued = state === 'queued';
-  const cls = isGood
-    ? 'text-green border-green-soft bg-green-soft'
-    : isBrand
-      ? 'text-brand border-brand-line bg-brand-soft'
-      : isQueued
-        ? 'text-sky border-[rgba(51,177,255,.32)] bg-[rgba(51,177,255,.1)]'
-        : 'text-muted-fg border-line bg-surface-3';
-  return (
-    <Badge className={`text-xs rounded-md font-semibold ${cls}`}>
-      {STATE_LABELS[state] ?? state}
-    </Badge>
-  );
-}
 
 function EpisodeRow({ ep, onClick }: { ep: Episode; onClick: () => void }) {
   const dimmed = ep.candidate_state === 'already_hevc' || ep.candidate_state === 'completed';

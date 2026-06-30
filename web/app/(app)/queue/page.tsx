@@ -11,6 +11,8 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { Suspense } from 'react';
 import { BROWSE_ROUTES } from '@/app/(app)/browse/browse';
+import { PageHeader } from '@/components/ui/page-header';
+import { EmptyState } from '@/components/ui/empty-state';
 
 // jobName renders the originating file name, falling back to the temp output
 // path and finally a synthetic label if the media row was deleted.
@@ -124,17 +126,10 @@ function QueueContent() {
 
   return (
     <>
-      <div
-        className="flex flex-col gap-2 px-4 py-[14px] border-b border-line sm:flex-row sm:items-center sm:gap-4 sm:px-7 sm:py-[18px]"
-        style={{ background: 'rgba(22,22,22,.82)', backdropFilter: 'blur(10px)' }}
+      <PageHeader
+        title="Queue & history"
+        subtitle={`${running.length > 0 ? `${running.length} running · ` : ''}${queued.length} queued · window ${win.label}`}
       >
-        <div className="min-w-0">
-          <div className="text-title font-bold tracking-tight">Queue &amp; history</div>
-          <div className="text-[0.82rem] text-muted-fg mt-px">
-            {running.length > 0 ? `${running.length} running · ` : ''}{queued.length} queued
-            {` · window ${win.label}`}
-          </div>
-        </div>
         <div className="sm:ml-auto">
           <Badge variant="outline" className="gap-2 text-[0.82rem] font-semibold px-[13px] py-[7px] rounded-[10px] border-line bg-surface">
             <span className={`w-[7px] h-[7px] rounded-full shrink-0 ${win.open ? 'bg-green' : 'bg-muted-dim'}`}
@@ -143,7 +138,7 @@ function QueueContent() {
             Window {win.open ? 'open' : 'closed'} · {win.detail}
           </Badge>
         </div>
-      </div>
+      </PageHeader>
 
       <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
         {runningJob && (
@@ -293,24 +288,15 @@ function QueueContent() {
         )}
 
         {all.length === 0 && (
-          <div className="flex flex-col items-center gap-4 py-20 text-center">
-            <div
-              className="w-12 h-12 rounded-[14px] border border-line grid place-items-center text-muted-dim"
-              style={{ background: 'var(--surface-2)' }}
-            >
+          <EmptyState
+            icon={
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
                 <polygon points="5 3 19 12 5 21 5 3"/>
               </svg>
-            </div>
-            <div>
-              <div className="text-[0.9rem] font-semibold text-text">Queue is empty</div>
-              <div className="text-[0.78rem] text-muted-dim mt-1 max-w-[260px]">
-                Jobs run inside your encode window.{' '}
-                <Link href="/candidates" className="text-brand hover:underline">Browse candidates</Link>
-                {' '}to select files.
-              </div>
-            </div>
-          </div>
+            }
+            title="Queue is empty"
+            description={<>Jobs run inside your encode window. <Link href="/candidates" className="text-brand hover:underline">Browse candidates</Link> to select files.</>}
+          />
         )}
       </div>
     </>
@@ -322,15 +308,7 @@ export default function Page() {
     <div className="flex flex-col min-w-0">
       <Suspense fallback={
         <>
-          <div
-            className="flex items-center gap-4 px-4 py-[14px] border-b border-line sm:px-7 sm:py-[18px]"
-            style={{ background: 'rgba(22,22,22,.82)', backdropFilter: 'blur(10px)' }}
-          >
-            <div>
-              <div className="text-title font-bold tracking-tight">Queue &amp; history</div>
-              <Skeleton className="h-3 w-40 mt-1.5" />
-            </div>
-          </div>
+          <PageHeader title="Queue & history" subtitle={<Skeleton className="h-3 w-40 mt-1.5" />} />
           <QueueSkeleton />
         </>
       }>

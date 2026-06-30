@@ -19,27 +19,8 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useQueryParams } from '@/hooks/use-query-params';
-
-function DetailRow({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
-  if (value == null || value === '' || value === '—') return null;
-  return (
-    <div className="flex items-baseline justify-between gap-4 py-2 border-b border-line-soft last:border-b-0">
-      <span className="text-xs text-muted-fg shrink-0">{label}</span>
-      <span className={`text-sm text-right ${mono ? 'font-mono' : ''}`}>{value}</span>
-    </div>
-  );
-}
-
-function DetailSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-5 last:mb-0">
-      <div className="text-xs uppercase tracking-widest text-muted-dim font-bold mb-2">{title}</div>
-      <div className="rounded-xl border border-line px-3" style={{ background: 'var(--surface-2)' }}>
-        {children}
-      </div>
-    </div>
-  );
-}
+import { DetailRow, DetailSection } from '@/components/ui/detail';
+import { StateBadge } from '@/components/media/candidate-state';
 
 function candidateStateReason(file: MediaFile): string | null {
   switch (file.candidate_state) {
@@ -58,31 +39,6 @@ function candidateStateReason(file: MediaFile): string | null {
     default:
       return null;
   }
-}
-
-const STATE_LABELS: Record<string, string> = {
-  already_hevc:  'HEVC',
-  completed:     'Completed',
-  queued:        'Queued',
-  probe_failed:  'Probe failed',
-  unknown_codec: 'Unknown codec',
-  missing:       'Missing',
-};
-
-function StateBadge({ state }: { state: string }) {
-  if (state === 'candidate') return null;
-  const isGood   = state === 'already_hevc' || state === 'completed';
-  const isQueued = state === 'queued';
-  const cls = isGood
-    ? 'text-green border-green-soft bg-green-soft'
-    : isQueued
-      ? 'text-sky border-[rgba(51,177,255,.32)] bg-[rgba(51,177,255,.1)]'
-      : 'text-muted-fg border-line bg-surface-3';
-  return (
-    <Badge className={`text-xs rounded-md font-semibold ${cls}`}>
-      {STATE_LABELS[state] ?? state}
-    </Badge>
-  );
 }
 
 function EditPosterDialog({
@@ -382,7 +338,7 @@ function FilePageContent() {
                 >
                   {isTV ? 'TV' : 'Movie'}
                 </Badge>
-                <StateBadge state={file.candidate_state} />
+                {file.candidate_state !== 'candidate' && <StateBadge state={file.candidate_state} />}
                 {file.release_year != null && (
                   <span className="text-xs text-muted-dim">{file.release_year}</span>
                 )}

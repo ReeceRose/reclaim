@@ -11,7 +11,7 @@ export function ShowCard({ show, onClick }: { show: LibrarySeriesGroup; onClick:
   return (
     <div
       onClick={onClick}
-      className="relative bg-surface border border-line rounded-2xl overflow-hidden cursor-pointer hover:border-[var(--brand-line)] transition-[border-color] group"
+      className="relative bg-surface border border-line rounded-2xl overflow-hidden cursor-pointer hover:border-brand-line transition-colors group"
     >
       <div className="relative h-48 overflow-hidden" style={{ background: 'var(--surface-2)' }}>
         {imageURL ? (

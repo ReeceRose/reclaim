@@ -139,7 +139,7 @@ export function Features() {
           {features.map((f) => (
             <div
               key={f.title}
-              className="rounded-[var(--radius)] border border-line bg-surface p-5 transition-colors hover:border-line/80 hover:bg-surface/80"
+              className="rounded-lg border border-line bg-surface p-5 transition-colors hover:border-line/80 hover:bg-surface/80"
             >
               <div
                 className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-lg border"
@@ -181,7 +181,7 @@ export function HowItWorks() {
           {steps.map((s) => (
             <div
               key={s.n}
-              className="relative rounded-[var(--radius)] border border-line bg-surface p-5"
+              className="relative rounded-lg border border-line bg-surface p-5"
             >
               <span className="font-mono text-2xs font-bold tracking-widest text-brand">
                 {s.n}
@@ -214,7 +214,7 @@ export function Safety() {
             </p>
           </div>
 
-          <div className="rounded-[var(--radius)] border border-line bg-surface p-5 font-mono text-sm">
+          <div className="rounded-lg border border-line bg-surface p-5 font-mono text-sm">
             <div className="mb-4 text-2xs font-bold uppercase tracking-wider text-muted-fg">
               Replace sequence
             </div>
@@ -270,7 +270,7 @@ export function Comparison() {
         </div>
 
         <div className="mt-10 grid gap-5 sm:grid-cols-2">
-          <div className="rounded-[var(--radius)] border border-green/20 bg-green-soft/30 p-5">
+          <div className="rounded-lg border border-green/20 bg-green-soft/30 p-5">
             <h3 className="flex items-center gap-2 text-sm font-bold text-green">
               <Zap className="h-4 w-4" />
               Does
@@ -284,7 +284,7 @@ export function Comparison() {
               ))}
             </ul>
           </div>
-          <div className="rounded-[var(--radius)] border border-line bg-surface p-5">
+          <div className="rounded-lg border border-line bg-surface p-5">
             <h3 className="flex items-center gap-2 text-sm font-bold text-muted-fg">
               <Clock className="h-4 w-4" />
               Does not
@@ -343,7 +343,7 @@ volumes:
         </div>
 
         <div className="mt-10 grid gap-5 lg:grid-cols-[1.2fr_1fr]">
-          <div className="overflow-hidden rounded-[var(--radius)] border border-line bg-surface">
+          <div className="overflow-hidden rounded-lg border border-line bg-surface">
             <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
               <span className="font-mono text-xs text-muted-fg">docker-compose.yml</span>
               <CopyButton text={composeSnippet} label="Copy docker-compose.yml" />
@@ -354,7 +354,7 @@ volumes:
           </div>
 
           <div className="flex flex-col gap-4">
-            <div className="rounded-[var(--radius)] border border-line bg-surface p-5">
+            <div className="rounded-lg border border-line bg-surface p-5">
               <h3 className="text-sm font-bold">1. Pull and start</h3>
               <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-line bg-bg px-3 py-2.5">
                 <code className="font-mono text-xs text-text">{runCmd}</code>
@@ -362,7 +362,7 @@ volumes:
               </div>
             </div>
 
-            <div className="rounded-[var(--radius)] border border-line bg-surface p-5">
+            <div className="rounded-lg border border-line bg-surface p-5">
               <h3 className="text-sm font-bold">2. Open the UI</h3>
               <p className="mt-2 text-sm text-muted-fg">
                 Navigate to{" "}
@@ -373,7 +373,7 @@ volumes:
               </p>
             </div>
 
-            <div className="rounded-[var(--radius)] border border-line bg-surface p-5">
+            <div className="rounded-lg border border-line bg-surface p-5">
               <h3 className="text-sm font-bold">3. Read the docs</h3>
               <p className="mt-2 text-sm text-muted-fg">
                 Full deployment guide for Unraid, Synology, and standalone binary.
@@ -412,7 +412,7 @@ export function Throughput() {
           </p>
         </div>
 
-        <div className="mt-10 overflow-hidden rounded-[var(--radius)] border border-line">
+        <div className="mt-10 overflow-hidden rounded-lg border border-line">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-line bg-surface">

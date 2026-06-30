@@ -3,33 +3,13 @@
 import { useSuspenseQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { formatBytes, formatInt, formatPct, resolutionBucketLabel } from '@/lib/format';
+import { CODEC_COLORS, codecCSSColor } from '@/lib/codec';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { Suspense } from 'react';
-
-const CODEC_COLORS: Record<string, string> = {
-  h264: 'var(--gold)',
-  hevc: 'var(--green)',
-  mpeg2: 'var(--rose)',
-  vc1: 'var(--violet)',
-};
-
-function codecColor(codec: string): string {
-  return CODEC_COLORS[codec.toLowerCase()] ?? 'var(--slate)';
-}
-
-function codecClass(codec: string): string {
-  const map: Record<string, string> = {
-    h264: 'text-gold',
-    hevc: 'text-green',
-    mpeg2: 'text-rose',
-    vc1: 'text-violet',
-  };
-  return map[codec.toLowerCase()] ?? 'text-slate';
-}
 
 function DashboardSkeleton() {
   return (
@@ -229,14 +209,14 @@ function DashboardContent() {
             <div key={c.codec} className="flex items-center gap-3 mb-3.5 last:mb-0 text-sm">
               <div className="min-w-[78px] shrink-0 font-semibold flex items-center gap-1.5 flex-wrap">
                 <Badge
-                  className={`font-mono text-xs rounded-[7px] font-semibold ${codecClass(c.codec)}`}
-                  style={{ borderColor: `color-mix(in srgb, ${codecColor(c.codec)} 30%, transparent)`, background: `color-mix(in srgb, ${codecColor(c.codec)} 10%, transparent)` }}
+                  className={`font-mono text-xs rounded-[7px] font-semibold ${CODEC_COLORS[c.codec.toLowerCase()] ?? 'text-slate'}`}
+                  style={{ borderColor: `color-mix(in srgb, ${codecCSSColor(c.codec)} 30%, transparent)`, background: `color-mix(in srgb, ${codecCSSColor(c.codec)} 10%, transparent)` }}
                 >
                   {c.codec}
                 </Badge>
               </div>
               <div className="flex-1 h-[10px] bg-surface-2 rounded-[6px] overflow-hidden">
-                <div className="h-full rounded-[6px]" style={{ width: `${Math.round((c.file_count / maxCodecFiles) * 100)}%`, background: codecColor(c.codec) }} />
+                <div className="h-full rounded-[6px]" style={{ width: `${Math.round((c.file_count / maxCodecFiles) * 100)}%`, background: codecCSSColor(c.codec) }} />
               </div>
               <div className="w-[112px] sm:w-[148px] shrink-0 text-right text-muted-fg text-xs tnum">
                 {formatInt(c.file_count)}<span className="hidden sm:inline"> ({formatPct(c.file_count, stats.total_files)})</span> · {formatBytes(c.total_bytes)}<span className="hidden sm:inline"> ({formatPct(c.total_bytes, total)})</span>

@@ -12,6 +12,20 @@ export const CODEC_COLORS: Record<string, string> = {
   av1: 'text-sky',
 };
 
+export const CODEC_CSS_COLORS: Record<string, string> = {
+  h264: 'var(--gold)',
+  hevc: 'var(--green)',
+  h265: 'var(--green)',
+  mpeg2: 'var(--rose)',
+  mpeg2video: 'var(--rose)',
+  vc1: 'var(--violet)',
+  av1: 'var(--sky)',
+};
+
+export function codecCSSColor(codec: string): string {
+  return CODEC_CSS_COLORS[codec.toLowerCase()] ?? 'var(--slate)';
+}
+
 export const CODEC_BORDER: Record<string, string> = {
   h264: 'border-[rgba(241,194,27,.3)] bg-[rgba(241,194,27,.1)]',
   hevc: 'border-green-soft bg-green-soft',

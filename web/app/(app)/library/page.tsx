@@ -23,6 +23,7 @@ import { QueueSelectionBar } from '@/components/media/selection-bar';
 import { GroupedSkeleton } from '@/components/media/grouped-skeleton';
 import { ShowRow } from '@/components/media/show-row';
 import { STATE_OPTIONS, isQueueable } from '@/components/media/candidate-state';
+import { PageHeader } from '@/components/ui/page-header';
 
 const PAGE_SIZE = 100;
 
@@ -378,20 +379,18 @@ function LibraryPage() {
 
   return (
     <div className="flex flex-col min-w-0 h-screen overflow-hidden max-sm:h-full">
-      <div className="flex flex-col gap-2 px-4 py-[14px] border-b border-line shrink-0 sm:flex-row sm:items-center sm:gap-4 sm:px-7 sm:py-[18px]" style={{ background: 'rgba(22,22,22,.82)', backdropFilter: 'blur(10px)' }}>
-        <div className="min-w-0">
-          <div className="text-title font-bold tracking-tight">Library</div>
-          <div className="text-[0.82rem] text-muted-fg mt-px">
-            {data === undefined
-              ? <Skeleton className="h-3 w-52 mt-1" />
-              : totalCount != null
-                ? `${formatInt(totalCount)} scanned files`
-                : hasNextPage
-                  ? `${formatInt(allItems.length)}+ scanned files`
-                  : `${formatInt(allItems.length)} scanned files`}
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title="Library"
+        subtitle={
+          data === undefined
+            ? <Skeleton className="h-3 w-52 mt-1" />
+            : totalCount != null
+              ? `${formatInt(totalCount)} scanned files`
+              : hasNextPage
+                ? `${formatInt(allItems.length)}+ scanned files`
+                : `${formatInt(allItems.length)} scanned files`
+        }
+      />
 
       <div className="border-b border-line-soft shrink-0" style={{ background: 'var(--bg)' }}>
         <div className="flex items-center gap-2 px-4 py-3 sm:px-7">

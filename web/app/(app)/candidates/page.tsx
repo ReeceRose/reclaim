@@ -3,7 +3,7 @@
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { api, type MediaFile, type CandidateFilters, type Episode, type SeriesGroup } from '@/lib/api';
-import { formatBytes, formatInt, formatCoverage, baseName } from '@/lib/format';
+import { formatBytes, formatInt, formatCoverage } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
@@ -18,11 +18,12 @@ import { Input } from '@/components/ui/input';
 import { FilterSelect } from '@/components/filter-select';
 import { BROWSE_ROUTES } from '@/app/(app)/browse/browse';
 import { codecFilterOptions, libraryFilterOptions, resolutionFilterOptions } from '@/lib/filter-options';
-import { CodecBadge } from '@/components/media/codec-badge';
 import { MediaFlatRow } from '@/components/media/media-flat-row';
 import { QueueConfirmDialog } from '@/components/media/queue-confirm-dialog';
 import { QueueSelectionBar } from '@/components/media/selection-bar';
 import { GroupedSkeleton } from '@/components/media/grouped-skeleton';
+import { PageHeader } from '@/components/ui/page-header';
+import { EmptyState } from '@/components/ui/empty-state';
 
 const PAGE_SIZE = 100;
 
@@ -36,36 +37,10 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'codec', label: 'Source codec' },
 ];
 
-function EpisodeRow({
-  ep,
-  selected,
-  onToggle,
-  onOpen,
-}: {
-  ep: Episode;
-  selected: boolean;
-  onToggle: (id: number) => void;
-  onOpen: (file: MediaFile) => void;
-}) {
+function EpisodeRow(props: { ep: Episode; selected: boolean; onToggle: (id: number) => void; onOpen: (file: MediaFile) => void }) {
   return (
-    <div
-      className={`flex items-center gap-[10px] px-4 py-[10px] pl-[42px] border-b border-line-soft hover:bg-surface-2 cursor-pointer transition-colors ${selected ? 'bg-brand-soft' : ''}`}
-      onClick={() => onOpen(ep)}
-    >
-      <Checkbox
-        checked={selected}
-        onCheckedChange={() => onToggle(ep.id)}
-        onClick={(e) => e.stopPropagation()}
-        className="size-[17px] rounded-[5px] shrink-0"
-      />
-      <div className="flex-1 min-w-0">
-        <div className="text-sm truncate">{baseName(ep.path)}</div>
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        <CodecBadge codec={ep.video_codec} />
-        <span className="text-[0.78rem] text-muted-fg font-mono">{formatBytes(ep.size_bytes)}</span>
-        <span className="text-brand font-semibold text-[0.82rem] font-mono">-{formatBytes(ep.predicted_savings_bytes)}</span>
-      </div>
+    <div className="pl-[42px]">
+      <MediaFlatRow item={props.ep} selected={props.selected} onToggle={props.onToggle} onOpen={props.onOpen} />
     </div>
   );
 }
@@ -504,29 +479,25 @@ function CandidatesPage() {
 
   return (
     <div className="flex flex-col min-w-0 h-screen overflow-hidden max-sm:h-full">
-      <div
-        className="flex flex-col gap-2 px-4 py-[14px] border-b border-line shrink-0 sm:flex-row sm:items-center sm:gap-4 sm:px-7 sm:py-[18px]"
-        style={{ background: 'rgba(22,22,22,.82)', backdropFilter: 'blur(10px)' }}
+      <PageHeader
+        title="Candidate browser"
+        subtitle={
+          data === undefined
+            ? <Skeleton className="h-3 w-52 mt-1" />
+            : totalCount != null
+              ? `${formatInt(totalCount)} files · ranked by predicted savings`
+              : hasNextPage
+                ? `${formatInt(allItems.length)}+ files · ranked by predicted savings`
+                : `${formatInt(allItems.length)} files · ranked by predicted savings`
+        }
       >
-        <div className="min-w-0">
-          <div className="text-title font-bold tracking-tight">Candidate browser</div>
-          <div className="text-[0.82rem] text-muted-fg mt-px">
-            {data === undefined
-              ? <Skeleton className="h-3 w-52 mt-1" />
-              : totalCount != null
-                ? `${formatInt(totalCount)} files · ranked by predicted savings`
-                : hasNextPage
-                  ? `${formatInt(allItems.length)}+ files · ranked by predicted savings`
-                  : `${formatInt(allItems.length)} files · ranked by predicted savings`}
-          </div>
-        </div>
         {profiles[0] && (
           <Badge variant="outline" className="sm:ml-auto self-start text-[0.82rem] font-semibold px-[13px] py-[7px] rounded-[10px] border-line bg-surface gap-1.5">
             <span className="font-mono text-[0.8rem]">Profile</span>
             {profiles.find((p) => p.is_default)?.name ?? profiles[0].name}
           </Badge>
         )}
-      </div>
+      </PageHeader>
 
       <div className="border-b border-line-soft shrink-0" style={{ background: 'var(--bg)' }}>
         <div className="flex items-center gap-2 px-4 py-3 sm:px-7">
@@ -617,22 +588,16 @@ function CandidatesPage() {
                 ))}
               </div>
             ) : data !== undefined && allItems.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center gap-3 py-20 text-center">
-                <div
-                  className="w-12 h-12 rounded-[14px] border border-line grid place-items-center text-muted-dim"
-                  style={{ background: 'var(--surface-2)' }}
-                >
+              <EmptyState
+                className="flex-1"
+                icon={
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
                     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                   </svg>
-                </div>
-                <div>
-                  <div className="text-[0.9rem] font-semibold text-text">No candidates match</div>
-                  <div className="text-[0.78rem] text-muted-dim mt-1 max-w-[260px]">
-                    Try adjusting your filters or trigger a scan to index new files.
-                  </div>
-                </div>
-              </div>
+                }
+                title="No candidates match"
+                description="Try adjusting your filters or trigger a scan to index new files."
+              />
             ) : (
             <div ref={parentRef} className="flex-1 overflow-auto">
               <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>

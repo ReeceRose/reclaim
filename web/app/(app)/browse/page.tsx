@@ -1,21 +1,21 @@
 'use client';
 
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { api, type LibrarySeriesGroup, type MediaFile } from '@/lib/api';
-import { baseName, formatBytes, formatInt, resolutionLabel } from '@/lib/format';
+import { formatInt } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { parseQueryEnum, useQueryParam } from '@/hooks/use-query-params';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ShowCard } from '@/components/media/show-card';
+import { ShowRow } from '@/components/media/show-row';
+import { MovieCard } from '@/components/media/movie-card';
+import { MovieRow } from '@/components/media/movie-row';
 import {
   BROWSE_ROUTES,
-  CODEC_BORDER,
-  CODEC_COLORS,
   LIBRARY_TYPE,
   MOVIE_SORT,
   PAGE_SIZE,
@@ -48,165 +48,6 @@ function sortShows(shows: LibrarySeriesGroup[], sort: TVSortValue): LibrarySerie
   return s;
 }
 
-function tmdbPosterURL(path: string | null | undefined, size: string): string | undefined {
-  if (!path) return undefined;
-  return `https://image.tmdb.org/t/p/${size}${path}`;
-}
-
-// ── Shared UI ─────────────────────────────────────────────────────────────────
-
-export function CodecBadge({ codec }: { codec: string | null }) {
-  if (!codec) return <Badge variant="outline" className="font-mono text-xs rounded-md">unknown</Badge>;
-  const c = codec.toLowerCase();
-  return (
-    <Badge className={`font-mono text-xs rounded-md font-semibold ${CODEC_COLORS[c] ?? 'text-slate'} ${CODEC_BORDER[c] ?? 'border-line bg-surface-3'}`}>
-      {codec}
-    </Badge>
-  );
-}
-
-export function EncodeHealthBar({ fileCount, eligibleCount }: {
-  fileCount: number;
-  eligibleCount: number;
-}) {
-  const donePct = fileCount > 0 ? Math.round(Math.max(0, fileCount - eligibleCount) / fileCount * 100) : 100;
-  return (
-    <div className="w-full h-1 overflow-hidden rounded-full" style={{ background: 'var(--surface-3)' }}>
-      <div
-        className="h-full transition-[width] duration-500"
-        style={{
-          width: `${donePct}%`,
-          background: donePct === 100 ? 'var(--green)' : 'linear-gradient(90deg, var(--green), var(--brand))',
-        }}
-      />
-    </div>
-  );
-}
-
-// ── Cards ─────────────────────────────────────────────────────────────────────
-
-function ShowCard({ show, onClick }: { show: LibrarySeriesGroup; onClick: () => void }) {
-  const letter = show.title.replace(/^(the |a |an )/i, '').charAt(0).toUpperCase();
-  const fullyConverted = show.eligible_count === 0;
-  const imageURL = tmdbPosterURL(show.backdrop_path, 'w780') ?? tmdbPosterURL(show.poster_path, 'w342');
-
-  return (
-    <div
-      onClick={onClick}
-      className="relative bg-surface border border-line rounded-2xl overflow-hidden cursor-pointer hover:border-[var(--brand-line)] transition-[border-color] group"
-    >
-      <div className="relative h-48 overflow-hidden" style={{ background: 'var(--surface-2)' }}>
-        {imageURL ? (
-          <>
-            <Image
-              src={imageURL}
-              alt={show.title}
-              fill
-              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 240px"
-              className="object-cover transition-transform duration-300 group-hover:scale-105"
-            />
-            <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom, transparent 35%, rgba(10,10,10,0.88) 100%)' }} />
-            <div className="absolute bottom-0 left-0 right-0 px-3 pb-2.5">
-              <div className="font-bold text-sm leading-snug line-clamp-2 text-white drop-shadow">{show.title}</div>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="w-full h-full flex items-center justify-center">
-              <span className="font-black select-none pointer-events-none leading-none opacity-10 text-8xl" aria-hidden>
-                {letter}
-              </span>
-            </div>
-            <div className="absolute bottom-0 left-0 right-0 px-3 pb-2.5">
-              <div className="font-bold text-sm leading-snug line-clamp-2">{show.title}</div>
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="px-3 pt-2 pb-3 flex flex-col gap-1">
-        <div className="text-xs text-muted-dim">
-          {show.season_count} {show.season_count === 1 ? 'season' : 'seasons'} · {formatInt(show.file_count)} files
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-fg font-mono">{formatBytes(show.total_bytes)}</span>
-          {fullyConverted
-            ? <span className="text-xs font-medium text-green">All converted</span>
-            : show.predicted_savings_bytes > 0
-              ? <span className="text-xs font-semibold text-brand">-{formatBytes(show.predicted_savings_bytes)}</span>
-              : null
-          }
-        </div>
-      </div>
-
-      <EncodeHealthBar fileCount={show.file_count} eligibleCount={show.eligible_count} />
-    </div>
-  );
-}
-
-function MovieCard({ file, onClick }: { file: MediaFile; onClick: () => void }) {
-  const title = baseName(file.path).replace(/\.[^/.]+$/, '');
-  const isConverted = file.candidate_state === 'already_hevc' || file.candidate_state === 'completed';
-  const isCandidate = file.candidate_state === 'candidate';
-  const imageURL = tmdbPosterURL(file.backdrop_path, 'w780') ?? tmdbPosterURL(file.poster_path, 'w342');
-
-  return (
-    <div
-      onClick={onClick}
-      className="relative bg-surface border border-line rounded-2xl overflow-hidden cursor-pointer hover:border-[var(--brand-line)] transition-[border-color] group"
-    >
-      <div className="relative h-48 overflow-hidden" style={{ background: 'var(--surface-2)' }}>
-        {imageURL ? (
-          <>
-            <Image
-              src={imageURL}
-              alt={title}
-              fill
-              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 240px"
-              className="object-cover transition-transform duration-300 group-hover:scale-105"
-            />
-            <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom, transparent 35%, rgba(10,10,10,0.88) 100%)' }} />
-            <div className="absolute bottom-0 left-0 right-0 px-3 pb-2.5">
-              <div className="font-bold text-sm leading-snug line-clamp-2 text-white drop-shadow">{title}</div>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="w-full h-full flex items-center justify-center gap-1.5 flex-wrap px-3">
-              <CodecBadge codec={file.video_codec} />
-              {file.width && file.height && (
-                <span className="text-xs text-muted-dim">{resolutionLabel(file.width, file.height)}</span>
-              )}
-            </div>
-            <div className="absolute bottom-0 left-0 right-0 px-3 pb-2.5">
-              <div className="font-bold text-sm leading-snug line-clamp-2">{title}</div>
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="px-3 pt-2 pb-3 flex flex-col gap-1">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <CodecBadge codec={file.video_codec} />
-          {file.width && file.height && (
-            <span className="text-xs text-muted-dim">{resolutionLabel(file.width, file.height)}</span>
-          )}
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-fg font-mono">{formatBytes(file.size_bytes)}</span>
-          {isCandidate && file.predicted_savings_bytes > 0
-            ? <span className="text-xs font-semibold text-brand">-{formatBytes(file.predicted_savings_bytes)}</span>
-            : isConverted
-              ? <span className="text-xs font-medium text-green">Converted</span>
-              : null
-          }
-        </div>
-      </div>
-      <div className="h-1 w-full" style={{ background: isConverted ? 'var(--green)' : isCandidate ? 'var(--brand)' : 'var(--surface-3)' }} />
-    </div>
-  );
-}
-
 function CardSkeleton() {
   return (
     <div className="bg-surface border border-line rounded-2xl overflow-hidden">
@@ -219,64 +60,6 @@ function CardSkeleton() {
         </div>
       </div>
       <div className="h-1" style={{ background: 'var(--surface-3)' }} />
-    </div>
-  );
-}
-
-// ── List rows ─────────────────────────────────────────────────────────────────
-
-function ShowRow({ show, onClick }: { show: LibrarySeriesGroup; onClick: () => void }) {
-  const fullyConverted = show.eligible_count === 0;
-  return (
-    <div
-      onClick={onClick}
-      className="grid items-center gap-3 px-4 py-2.5 border-b border-line-soft last:border-b-0 cursor-pointer hover:bg-surface-2 transition-colors"
-      style={{ gridTemplateColumns: '1fr auto auto auto auto' }}
-    >
-      <div className="min-w-0 truncate font-medium text-sm">{show.title}</div>
-      <span className="text-xs text-muted-dim hidden sm:inline whitespace-nowrap">
-        {show.season_count} {show.season_count === 1 ? 'season' : 'seasons'}
-      </span>
-      <span className="text-xs text-muted-dim hidden md:inline whitespace-nowrap">
-        {formatInt(show.file_count)} files
-      </span>
-      <span className="font-mono text-xs text-muted-fg">{formatBytes(show.total_bytes)}</span>
-      <div className="text-right w-24">
-        {fullyConverted
-          ? <span className="text-xs font-medium text-green">All converted</span>
-          : show.predicted_savings_bytes > 0
-            ? <span className="text-xs font-semibold text-brand font-mono">-{formatBytes(show.predicted_savings_bytes)}</span>
-            : <span className="text-xs text-muted-dim">—</span>
-        }
-      </div>
-    </div>
-  );
-}
-
-function MovieRow({ file, onClick }: { file: MediaFile; onClick: () => void }) {
-  const title = baseName(file.path).replace(/\.[^/.]+$/, '');
-  const isConverted = file.candidate_state === 'already_hevc' || file.candidate_state === 'completed';
-  const isCandidate = file.candidate_state === 'candidate';
-  return (
-    <div
-      onClick={onClick}
-      className="grid items-center gap-3 px-4 py-2.5 border-b border-line-soft last:border-b-0 cursor-pointer hover:bg-surface-2 transition-colors"
-      style={{ gridTemplateColumns: '1fr auto auto auto auto' }}
-    >
-      <div className="min-w-0 truncate font-medium text-sm">{title}</div>
-      <CodecBadge codec={file.video_codec} />
-      <span className="text-xs text-muted-dim hidden sm:inline">
-        {file.width && file.height ? resolutionLabel(file.width, file.height) : '—'}
-      </span>
-      <span className="font-mono text-xs text-muted-fg hidden md:inline">{formatBytes(file.size_bytes)}</span>
-      <div className="text-right w-24">
-        {isCandidate && file.predicted_savings_bytes > 0
-          ? <span className="text-xs font-semibold text-brand font-mono">-{formatBytes(file.predicted_savings_bytes)}</span>
-          : isConverted
-            ? <span className="text-xs font-medium text-green">Converted</span>
-            : <span className="text-xs text-muted-dim">—</span>
-        }
-      </div>
     </div>
   );
 }
@@ -305,8 +88,6 @@ function ListSkeleton() {
     </div>
   );
 }
-
-// ── Tab content ───────────────────────────────────────────────────────────────
 
 function TVContent({ search, sort, view }: { search: string; sort: TVSortValue; view: string }) {
   const router = useRouter();
@@ -452,13 +233,13 @@ function MoviesContent({ search, sort, view }: { search: string; sort: MovieSort
             <span className="hidden md:inline">Size</span>
             <span className="w-24 text-right">Savings</span>
           </div>
-          {movies.map((f) => (
+          {movies.map((f: MediaFile) => (
             <MovieRow key={f.id} file={f} onClick={() => router.push(BROWSE_ROUTES.MOVIE(f.id))} />
           ))}
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {movies.map((f) => (
+          {movies.map((f: MediaFile) => (
             <MovieCard key={f.id} file={f} onClick={() => router.push(BROWSE_ROUTES.MOVIE(f.id))} />
           ))}
         </div>
@@ -475,8 +256,6 @@ function MoviesContent({ search, sort, view }: { search: string; sort: MovieSort
     </>
   );
 }
-
-// ── Page ──────────────────────────────────────────────────────────────────────
 
 function BrowsePage() {
   const [tabRaw, setTabRaw] = useQueryParam(QUERY_PARAMS.TAB, LIBRARY_TYPE.TV);

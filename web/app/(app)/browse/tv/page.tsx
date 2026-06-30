@@ -14,7 +14,8 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useQueryParams } from '@/hooks/use-query-params';
-import { CodecBadge, EncodeHealthBar } from '../page';
+import { CodecBadge } from '@/components/media/codec-badge';
+import { EncodeHealthBar } from '@/components/media/encode-health-bar';
 import { BROWSE_ROUTES, EPISODES_PER_PAGE, LIBRARY_TYPE } from '../browse';
 
 const STATE_LABELS: Record<string, string> = {

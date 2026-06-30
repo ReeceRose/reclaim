@@ -12,7 +12,6 @@ import { codecFilterOptions, libraryFilterOptions, resolutionFilterOptions } fro
 import { useRouter } from 'next/navigation';
 import { BROWSE_ROUTES } from '@/app/(app)/browse/browse';
 import { FilterSelect } from '@/components/filter-select';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -22,6 +21,7 @@ import { MediaFlatRow } from '@/components/media/media-flat-row';
 import { QueueConfirmDialog } from '@/components/media/queue-confirm-dialog';
 import { QueueSelectionBar } from '@/components/media/selection-bar';
 import { GroupedSkeleton } from '@/components/media/grouped-skeleton';
+import { ShowRow } from '@/components/media/show-row';
 import { STATE_OPTIONS, isQueueable } from '@/components/media/candidate-state';
 
 const PAGE_SIZE = 100;
@@ -100,6 +100,60 @@ function SeasonEpisodes({ seriesTitle, season, filters, selectedIds, onToggle, o
   );
 }
 
+function SeriesSeasonList({ seriesTitle, filters, selectedIds, onToggle, onOpen, onEpisodesLoaded }: {
+  seriesTitle: string;
+  filters: FileFilters;
+  selectedIds: Set<number>;
+  onToggle: (id: number) => void;
+  onOpen: (file: MediaFile) => void;
+  onEpisodesLoaded: (files: MediaFile[]) => void;
+}) {
+  const [expandedSeasons, setExpandedSeasons] = useState<Set<string>>(new Set());
+  const { data, isLoading } = useQuery({
+    queryKey: ['library', 'grouped', 'seasons', seriesTitle],
+    queryFn: () => api.groupedFileSeasons(seriesTitle),
+  });
+
+  function toggleSeason(key: string) {
+    setExpandedSeasons((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) { next.delete(key); } else { next.add(key); }
+      return next;
+    });
+  }
+
+  if (isLoading) {
+    return (
+      <div style={{ background: 'var(--bg)' }}>
+        <div className="px-4 py-3 pl-[18px] text-[0.76rem] text-muted-dim border-b border-line-soft">Loading seasons...</div>
+      </div>
+    );
+  }
+
+  const seasons = data?.seasons ?? [];
+  return (
+    <div style={{ background: 'var(--bg)' }}>
+      {seasons.map((se) => {
+        const seasonKey = `${seriesTitle}-${se.season}`;
+        const seasonExpanded = expandedSeasons.has(seasonKey);
+        return (
+          <div key={se.season}>
+            <div className="flex items-center gap-[10px] px-4 py-[9px] pl-[18px] text-[0.76rem] font-semibold text-muted-fg bg-surface-2 border-b border-line-soft cursor-pointer" onClick={() => toggleSeason(seasonKey)}>
+              <span className={`w-[18px] h-[18px] shrink-0 grid place-items-center transition-transform ${seasonExpanded ? 'rotate-90' : ''}`}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3"><path d="M9 18l6-6-6-6"/></svg>
+              </span>
+              Season {se.season}
+              <span className="text-muted-dim">{formatCoverage(se.file_count, se.eligible_count)}</span>
+              <span className="ml-auto text-brand font-semibold">{formatBytes(se.predicted_savings_bytes)}</span>
+            </div>
+            {seasonExpanded && <SeasonEpisodes seriesTitle={seriesTitle} season={se.season} filters={filters} selectedIds={selectedIds} onToggle={onToggle} onOpen={onOpen} onEpisodesLoaded={onEpisodesLoaded} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function GroupedContent({ selectedIds, onToggle, onOpen, filters, onEpisodesLoaded }: {
   selectedIds: Set<number>;
   onToggle: (id: number) => void;
@@ -137,8 +191,6 @@ function GroupedContent({ selectedIds, onToggle, onOpen, filters, onEpisodesLoad
   }, [movies, onEpisodesLoaded]);
 
   const [expandedSeries, setExpandedSeries] = useState<Set<string>>(new Set());
-  const [expandedSeasons, setExpandedSeasons] = useState<Set<string>>(new Set());
-
   function toggleSet(key: string, setter: Dispatch<SetStateAction<Set<string>>>) {
     setter((prev) => {
       const next = new Set(prev);
@@ -153,44 +205,9 @@ function GroupedContent({ selectedIds, onToggle, onOpen, filters, onEpisodesLoad
         const expanded = expandedSeries.has(s.title);
         return (
           <div key={s.title}>
-            <div className="flex items-center gap-[11px] px-4 py-[13px] border-b border-line-soft hover:bg-surface-2 cursor-pointer transition-colors" onClick={() => toggleSet(s.title, setExpandedSeries)}>
-              <span className={`w-[18px] h-[18px] shrink-0 grid place-items-center text-muted-fg transition-transform ${expanded ? 'rotate-90' : ''}`}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3"><path d="M9 18l6-6-6-6"/></svg>
-              </span>
-              <div className="flex-1 min-w-0">
-                <div className="font-bold text-[0.92rem] flex items-center gap-2">
-                  {s.title}
-                  <Badge className="text-[0.7rem] rounded text-sky border-[rgba(51,177,255,.32)] bg-[rgba(51,177,255,.1)]">TV</Badge>
-                </div>
-                <div className="text-[0.76rem] text-muted-fg mt-0.5">
-                  {s.season_count} seasons · {formatCoverage(s.file_count, s.eligible_count)} · {formatBytes(s.total_bytes)}
-                </div>
-              </div>
-              <div className="text-right shrink-0">
-                <div className="text-[0.78rem] text-muted-fg">{formatBytes(s.total_bytes)}</div>
-                <div className="text-[0.92rem] font-semibold text-brand">{formatBytes(s.predicted_savings_bytes)}</div>
-              </div>
-            </div>
+            <ShowRow show={s} expanded={expanded} onClick={() => toggleSet(s.title, setExpandedSeries)} />
             {expanded && (
-              <div style={{ background: 'var(--bg)' }}>
-                {s.seasons.map((se) => {
-                  const seasonKey = `${s.title}-${se.season}`;
-                  const seasonExpanded = expandedSeasons.has(seasonKey);
-                  return (
-                    <div key={se.season}>
-                      <div className="flex items-center gap-[10px] px-4 py-[9px] pl-[18px] text-[0.76rem] font-semibold text-muted-fg bg-surface-2 border-b border-line-soft cursor-pointer" onClick={() => toggleSet(seasonKey, setExpandedSeasons)}>
-                        <span className={`w-[18px] h-[18px] shrink-0 grid place-items-center transition-transform ${seasonExpanded ? 'rotate-90' : ''}`}>
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3"><path d="M9 18l6-6-6-6"/></svg>
-                        </span>
-                        Season {se.season}
-                        <span className="text-muted-dim">{formatCoverage(se.file_count, se.eligible_count)}</span>
-                        <span className="ml-auto text-brand font-semibold">{formatBytes(se.predicted_savings_bytes)}</span>
-                      </div>
-                      {seasonExpanded && <SeasonEpisodes seriesTitle={s.title} season={se.season} filters={filters} selectedIds={selectedIds} onToggle={onToggle} onOpen={onOpen} onEpisodesLoaded={onEpisodesLoaded} />}
-                    </div>
-                  );
-                })}
-              </div>
+              <SeriesSeasonList seriesTitle={s.title} filters={filters} selectedIds={selectedIds} onToggle={onToggle} onOpen={onOpen} onEpisodesLoaded={onEpisodesLoaded} />
             )}
           </div>
         );

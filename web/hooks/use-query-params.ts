@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 
 export function parseQueryEnum<T extends string>(
   value: string | null,
@@ -14,13 +14,9 @@ export function parseQueryEnum<T extends string>(
 
 export function useQueryParams() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
 
   // Keep the latest values in refs so `set` can stay referentially stable.
-  // Without this, every `router.replace` produces a new searchParams object,
-  // which would change the callback identity and re-trigger any effect that
-  // depends on it — an infinite navigation loop.
   const searchParamsRef = useRef(searchParams);
   const pathnameRef = useRef(pathname);
   useEffect(() => {
@@ -30,6 +26,10 @@ export function useQueryParams() {
 
   const get = useCallback((key: string) => searchParams.get(key), [searchParams]);
 
+  // Next.js 16 docs recommend window.history.replaceState for search-param-only
+  // updates ("shallow routing") — this integrates with useSearchParams() in both
+  // dev and static-export production, whereas router.replace() does not reliably
+  // trigger useSearchParams() re-renders in the static export.
   const set = useCallback(
     (updates: Record<string, string | null | undefined>) => {
       const current = searchParamsRef.current.toString();
@@ -39,12 +39,11 @@ export function useQueryParams() {
         else params.set(key, value);
       }
       const qs = params.toString();
-      // No-op if nothing actually changed — avoids a redundant navigation that
-      // would re-render and re-run effects in a loop.
       if (qs === current) return;
-      router.replace(qs ? `${pathnameRef.current}?${qs}` : pathnameRef.current, { scroll: false });
+      const url = qs ? `${pathnameRef.current}?${qs}` : pathnameRef.current;
+      window.history.replaceState(null, '', url);
     },
-    [router],
+    [],
   );
 
   return useMemo(() => ({ get, set, searchParams }), [get, set, searchParams]);

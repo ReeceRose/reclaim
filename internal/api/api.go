@@ -199,7 +199,9 @@ func (s *Server) Handler() http.Handler {
 	// it never shadows the API/health routes. Unknown paths fall back to the
 	// shell so client-side routes resolve.
 	if s.staticFS != nil {
-		e.GET("/*", echo.WrapHandler(newStaticHandler(s.staticFS)))
+		staticHandler := echo.WrapHandler(newStaticHandler(s.staticFS))
+		e.GET("/*", staticHandler)
+		e.HEAD("/*", staticHandler)
 	}
 
 	return e

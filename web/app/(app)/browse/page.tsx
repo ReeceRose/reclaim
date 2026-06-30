@@ -264,8 +264,8 @@ function BrowsePage() {
   const [tvSortRaw, setTVSort] = useQueryParam(QUERY_PARAMS.TV_SORT, TV_SORT.ALPHA);
   const tvSort = parseQueryEnum(tvSortRaw, TV_SORT_OPTIONS.map((o) => o.value), TV_SORT.ALPHA);
 
-  const [movieSortRaw, setMovieSort] = useQueryParam(QUERY_PARAMS.MOVIE_SORT, MOVIE_SORT.ALPHA);
-  const movieSort = parseQueryEnum(movieSortRaw, MOVIE_SORT_OPTIONS.map((o) => o.value), MOVIE_SORT.ALPHA);
+  const [movieSortRaw, setMovieSort] = useQueryParam(QUERY_PARAMS.MOVIE_SORT, MOVIE_SORT.RECENT);
+  const movieSort = parseQueryEnum(movieSortRaw, MOVIE_SORT_OPTIONS.map((o) => o.value), MOVIE_SORT.RECENT);
 
   const [viewRaw, setView] = useQueryParam(QUERY_PARAMS.VIEW, VIEW_MODE.GRID);
   const view = parseQueryEnum(viewRaw, [VIEW_MODE.GRID, VIEW_MODE.LIST] as const, VIEW_MODE.GRID);

@@ -178,7 +178,7 @@ function GroupedContent({ selectedIds, onToggle, onOpen, filters, onEpisodesLoad
   const { data: movieData, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ['library', 'grouped', 'movies', movieFilters],
     queryFn: ({ pageParam }: { pageParam: Record<string, number | undefined> }) =>
-      api.files({ ...movieFilters, sort: 'path_asc', limit: PAGE_SIZE, ...pageParam }),
+      api.files({ ...movieFilters, sort: filters.sort, limit: PAGE_SIZE, ...pageParam }),
     initialPageParam: {} as Record<string, number | undefined>,
     getNextPageParam: (lastPage, allPages) => lastPage.items.length === PAGE_SIZE
       ? { offset: allPages.flatMap((p) => p.items).length }
@@ -248,8 +248,8 @@ function LibraryPage() {
   const { get, set: setQuery } = useQueryParams();
   const [search, setSearch] = useState(() => get('q') ?? '');
   const [debouncedSearch, setDebouncedSearch] = useState(() => get('q') ?? '');
-  const [sortRaw, setSortRaw] = useQueryParam('sort', 'path_asc');
-  const sort = parseQueryEnum(sortRaw, SORT_OPTIONS.map((o) => o.value), 'path_asc');
+  const [sortRaw, setSortRaw] = useQueryParam('sort', 'mtime_desc');
+  const sort = parseQueryEnum(sortRaw, SORT_OPTIONS.map((o) => o.value), 'mtime_desc');
   const [codec, setCodec] = useQueryParam('codec');
   const [resolution, setResolution] = useQueryParam('res');
   const [library, setLibrary] = useQueryParam('library');

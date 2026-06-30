@@ -141,7 +141,7 @@ function GroupedContent({
   } = useInfiniteQuery({
     queryKey: ['candidates', 'grouped', 'movies', movieFilters],
     queryFn: ({ pageParam }: { pageParam: Record<string, number | undefined> }) =>
-      api.candidates({ ...movieFilters, sort: 'savings_desc', limit: PAGE_SIZE, ...pageParam }),
+      api.candidates({ ...movieFilters, sort: filters.sort, limit: PAGE_SIZE, ...pageParam }),
     initialPageParam: {} as Record<string, number | undefined>,
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.next_cursor) {

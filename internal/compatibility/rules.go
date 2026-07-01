@@ -105,4 +105,9 @@ type Rules struct {
 	// clients with no passthrough path (e.g. plex_web); on
 	// passthrough-capable clients it reflects the HDMI/eARC channel cap.
 	MaxAudioChannels int
+
+	// SupportsHDR is true when the client profile can display HDR content
+	// (HDR10, HLG, Dolby Vision). SDR-only profiles like plex_web flag HDR
+	// metadata as a Hard reason; there is no automatable fix in v1 (Phase 1.5).
+	SupportsHDR bool
 }

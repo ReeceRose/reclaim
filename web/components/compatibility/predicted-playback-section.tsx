@@ -5,9 +5,19 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DetailSection } from "@/components/ui/detail";
-import { api, type CompatibilityInfo, type StreamInfo } from "@/lib/api";
+import {
+  api,
+  type CandidateState,
+  type CompatibilityInfo,
+  type StreamInfo,
+} from "@/lib/api";
+import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { ACTION_LABELS, SEVERITY_LABELS } from "./constants";
+import {
+  ACTION_LABELS,
+  isCompatibilityQueueable,
+  SEVERITY_LABELS,
+} from "./constants";
 import { DirectPlayBadge, RiskBadge } from "./risk-badge";
 
 function StreamTable({ streams }: { streams: StreamInfo[] }) {
@@ -50,13 +60,27 @@ function StreamTable({ streams }: { streams: StreamInfo[] }) {
  * Renders nothing when the file hasn't been evaluated yet (probed before
  * the compatibility engine shipped and not yet through a full rescan —
  * see §5 "Backfill").
+ *
+ * `onQueueReencode` is Phase 2's "Queue re-encode" button (§10 — previously
+ * deferred): shown only when the active profile's verdict recommends
+ * reencode_hevc and the file has no blocking job already. It's gated on
+ * `candidateState` rather than `is_already_hevc` — the compatibility rule
+ * (server-validated too, see docs/COMPATIBILITY PLAN.md §8) can recommend a
+ * re-encode for a file that's already HEVC (e.g. wrong bit depth for a
+ * future profile).
  */
 export function PredictedPlaybackSection({
   compatibility,
   streams,
+  candidateState,
+  predictedSavingsBytes,
+  onQueueReencode,
 }: {
   compatibility: CompatibilityInfo[];
   streams: StreamInfo[];
+  candidateState?: CandidateState;
+  predictedSavingsBytes?: number;
+  onQueueReencode?: (clientProfile: string) => void;
 }) {
   const { data: profilesData } = useQuery({
     queryKey: ["compatibility-profiles"],
@@ -106,6 +130,30 @@ export function PredictedPlaybackSection({
           <span className="text-xs text-muted-dim">
             Recommended: {ACTION_LABELS[active.recommended_action]}
           </span>
+          {onQueueReencode &&
+            isCompatibilityQueueable(active.recommended_action) &&
+            candidateState !== "queued" &&
+            candidateState !== "completed" && (
+              <div className="ml-auto flex items-center gap-2">
+                {!!predictedSavingsBytes && predictedSavingsBytes > 0 && (
+                  <span className="text-[0.7rem] text-brand">
+                    also reclaims {formatBytes(predictedSavingsBytes)}
+                  </span>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => onQueueReencode(active.client_profile)}
+                  className="h-6 text-xs gap-1 rounded-[7px]"
+                  style={{
+                    background:
+                      "linear-gradient(145deg, var(--brand), var(--brand-2))",
+                  }}
+                >
+                  Queue re-encode
+                </Button>
+              </div>
+            )}
         </div>
 
         {active.reasons.length > 0 ? (

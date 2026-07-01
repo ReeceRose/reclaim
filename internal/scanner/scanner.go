@@ -755,9 +755,14 @@ func (s *Scanner) persistCompatibility(ctx context.Context, path string, fileID 
 // since ffprobe.StreamInfo doesn't carry per-stream bit depth —
 // compatibility.Evaluate only consults the first video stream anyway.
 func compatibilityEvalInputFromProbe(result *ffprobe.Result) compatibility.EvalInput {
-	input := compatibility.EvalInput{}
+	input := compatibility.EvalInput{
+		DolbyVisionProfile: result.DolbyVisionProfile,
+	}
 	if result.ContainerFormat != nil {
 		input.ContainerFormat = *result.ContainerFormat
+	}
+	if result.ColorTransfer != nil {
+		input.ColorTransfer = *result.ColorTransfer
 	}
 
 	seenVideo := false

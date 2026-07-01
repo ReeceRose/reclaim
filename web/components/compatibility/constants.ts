@@ -34,6 +34,9 @@ const REASON_LABELS: Record<string, string> = {
   "audio_dts-hd": "DTS-HD MA audio",
   audio_dtsx: "DTS:X audio",
   audio_truehd: "Dolby TrueHD audio",
+  hdr_hdr10: "HDR10",
+  hdr_hlg: "HLG HDR",
+  hdr_dolby_vision: "Dolby Vision",
 };
 
 export function reasonLabel(code: string): string {
@@ -49,7 +52,9 @@ export function reasonLabel(code: string): string {
           ? "Container"
           : prefix === "subtitle"
             ? "Subtitle"
-            : prefix;
+            : prefix === "hdr"
+              ? "HDR"
+              : prefix;
   return suffix ? `${prefixLabel}: ${suffix}` : prefixLabel;
 }
 
@@ -66,6 +71,22 @@ export const ACTION_LABELS: Record<CompatibilityAction, string> = {
   manual: "Manual review",
 };
 
+// isCompatibilityQueueable reports whether a file's compatibility verdict
+// can be queued today — Phase 2 (docs/COMPATIBILITY PLAN.md §3) only wires
+// up the HEVC re-encode overlap; remux/audio-transcode job types arrive in
+// Phase 3.
+export function isCompatibilityQueueable(action: CompatibilityAction): boolean {
+  return action === "reencode_hevc";
+}
+
+/** compatibilityQueueBlockReason explains why a row's checkbox is disabled. */
+export function compatibilityQueueBlockReason(
+  action: CompatibilityAction,
+): string {
+  if (action === "none") return "No fix needed";
+  return `Recommended: ${ACTION_LABELS[action]} (not queueable yet)`;
+}
+
 /** riskBand buckets a 0-100 risk score into a 3-tier color band for the UI. */
 export function riskBand(score: number): "low" | "medium" | "high" {
   if (score >= 60) return "high";
@@ -78,3 +99,13 @@ export const RISK_BAND_CLASSES: Record<"low" | "medium" | "high", string> = {
   medium: "text-gold border-[rgba(241,194,27,.32)] bg-[rgba(241,194,27,.1)]",
   high: "text-red border-[rgba(255,120,120,.28)] bg-[rgba(255,120,120,.09)]",
 };
+
+export const RISK_BAND_LABELS: Record<"low" | "medium" | "high", string> = {
+  low: "Likely to direct-play",
+  medium: "May transcode",
+  high: "Likely to transcode",
+};
+
+export function riskBandLabel(score: number): string {
+  return RISK_BAND_LABELS[riskBand(score)];
+}

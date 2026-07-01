@@ -1,5 +1,12 @@
+"use client";
+
 import { Badge } from "@/components/ui/badge";
-import { RISK_BAND_CLASSES, riskBand } from "./constants";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { RISK_BAND_CLASSES, riskBand, riskBandLabel } from "./constants";
 
 /**
  * RiskBadge renders a compatibility risk_score as a color-coded pill
@@ -9,11 +16,20 @@ import { RISK_BAND_CLASSES, riskBand } from "./constants";
 export function RiskBadge({ score }: { score: number }) {
   const band = riskBand(score);
   return (
-    <Badge
-      className={`text-[0.72rem] rounded-[7px] font-bold tabular-nums ${RISK_BAND_CLASSES[band]}`}
-    >
-      {score}
-    </Badge>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge
+          className={`text-[0.72rem] rounded-[7px] font-bold tabular-nums cursor-default ${RISK_BAND_CLASSES[band]}`}
+        >
+          {score}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[220px] leading-relaxed">
+        <span className="font-semibold tabular-nums">{score}</span> —{" "}
+        {riskBandLabel(score)}. Scores sum weighted compatibility issues for
+        this profile (0 = direct play, 100 = certain transcode).
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

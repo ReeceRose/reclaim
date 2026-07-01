@@ -19,6 +19,8 @@ func subtitle(index int, codec string) StreamInfo {
 	return StreamInfo{Index: index, CodecType: "subtitle", CodecName: codec}
 }
 
+func ptr[T any](v T) *T { return &v }
+
 func hasReason(reasons []Reason, code string) bool {
 	for _, r := range reasons {
 		if r.Code == code {
@@ -156,6 +158,47 @@ func TestEvaluate(t *testing.T) {
 			wantDirectPlay: false,
 			wantAction:     ActionAudioTranscode,
 			wantHardCodes:  []string{"audio_channels_exceeded"},
+		},
+		{
+			// Phase 1.5: HDR10 on an SDR-only profile (plex_web). Rare in
+			// practice (most HDR is HEVC), but H.264+HDR10 exists and must be
+			// flagged; no automatable fix in v1.
+			name: "hdr10 h264 mp4 fails on plex web, manual fix only",
+			input: EvalInput{
+				ContainerFormat: "mov,mp4,m4a,3gp,3g2,mj2",
+				ColorTransfer:   "smpte2084",
+				Streams:         []StreamInfo{video("h264", 8), audio(1, "aac", "", 2)},
+			},
+			profile:        PlexWeb,
+			wantDirectPlay: false,
+			wantAction:     ActionManual,
+			wantHardCodes:  []string{"hdr_hdr10"},
+		},
+		{
+			// HDR-capable profiles ignore transfer-function metadata.
+			name: "hdr10 hevc mkv direct plays on apple tv for hdr purposes",
+			input: EvalInput{
+				ContainerFormat: "matroska,webm",
+				ColorTransfer:   "smpte2084",
+				Streams:         []StreamInfo{video("hevc", 10), audio(1, "ac3", "", 6)},
+			},
+			profile:        AppleTV4K,
+			wantDirectPlay: false, // advisory MKV only
+			wantAction:     ActionRemux,
+			wantAdvisory:   []string{"container_mkv"},
+			wantNoHard:     true,
+		},
+		{
+			name: "dolby vision fails on plex web",
+			input: EvalInput{
+				ContainerFormat:    "mov,mp4,m4a,3gp,3g2,mj2",
+				DolbyVisionProfile: ptr(5),
+				Streams:            []StreamInfo{video("hevc", 10), audio(1, "aac", "", 2)},
+			},
+			profile:        PlexWeb,
+			wantDirectPlay: false,
+			wantAction:     ActionManual,
+			wantHardCodes:  []string{"video_codec_hevc", "hdr_dolby_vision"},
 		},
 		{
 			// Sourced by §6 "Jellyfin / generic_hevc": Kodi/JMP direct-play

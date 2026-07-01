@@ -9,13 +9,26 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"reclaim/internal/compatibility"
 	ijobs "reclaim/internal/jobs"
 	"reclaim/internal/store"
 )
 
+// jobSourceCompatibility marks a queue request as originating from the
+// Direct-play view (docs/COMPATIBILITY PLAN.md §3 Phase 2, §8 "Phase 2 queue
+// API", Option A: extend the existing endpoint). It switches the
+// per-file eligibility rule from "not already HEVC" (the savings rule) to
+// "this client profile's stored verdict recommends reencode_hevc" — the two
+// are deliberately different: a compatibility fix can target a file that's
+// already HEVC (e.g. wrong bit depth for a future profile), which the
+// savings rule would otherwise skip.
+const jobSourceCompatibility = "compatibility"
+
 type createJobsRequest struct {
-	FileIDs   []int64 `json:"file_ids"`
-	ProfileID *int64  `json:"profile_id"`
+	FileIDs       []int64 `json:"file_ids"`
+	ProfileID     *int64  `json:"profile_id"`
+	Source        string  `json:"source"`
+	ClientProfile string  `json:"client_profile"`
 }
 
 // handleCreateJobs enqueues one job per eligible file and echoes the resolved
@@ -29,6 +42,17 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 	}
 	if len(req.FileIDs) == 0 {
 		return badRequest(c, "file_ids must not be empty")
+	}
+	if req.Source != "" && req.Source != jobSourceCompatibility {
+		return badRequest(c, "unknown source")
+	}
+	if req.Source == jobSourceCompatibility {
+		if req.ClientProfile == "" {
+			return badRequest(c, "client_profile is required when source is \"compatibility\"")
+		}
+		if _, ok := compatibility.Profile(req.ClientProfile); !ok {
+			return badRequest(c, "unknown client_profile")
+		}
 	}
 
 	// Resolve the profile: explicit id, else the default.
@@ -76,7 +100,20 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 			skipped = append(skipped, skippedItem{fid, "file is not active"})
 			continue
 		}
-		if f.IsAlreadyHEVC {
+		if req.Source == jobSourceCompatibility {
+			verdict, err := s.store.Media.CompatibilityVerdict(ctx, fid, req.ClientProfile)
+			if errors.Is(err, store.ErrNotFound) {
+				skipped = append(skipped, skippedItem{fid, "no compatibility verdict for this client profile"})
+				continue
+			}
+			if err != nil {
+				return serverError(c, err)
+			}
+			if verdict.RecommendedAction != string(compatibility.ActionReencodeHEVC) {
+				skipped = append(skipped, skippedItem{fid, "recommended action for this client profile is not reencode_hevc"})
+				continue
+			}
+		} else if f.IsAlreadyHEVC {
 			skipped = append(skipped, skippedItem{fid, "file is already HEVC"})
 			continue
 		}

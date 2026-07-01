@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -373,6 +374,41 @@ func (m *Media) CompatibilityForFile(ctx context.Context, fileID int64) ([]Compa
 		out = append(out, row)
 	}
 	return out, rows.Err()
+}
+
+// CompatibilityVerdict returns the stored verdict for one file × client
+// profile, used by the Phase 2 job-queue path (POST /api/jobs with
+// source="compatibility") to validate recommended_action == reencode_hevc
+// server-side before enqueuing — see docs/COMPATIBILITY PLAN.md §8 "Server
+// validates each file's recommended_action == reencode_hevc before
+// accepting." Returns ErrNotFound if the file hasn't been evaluated against
+// this profile yet (e.g. probed before the engine shipped, pending
+// backfill).
+func (m *Media) CompatibilityVerdict(ctx context.Context, fileID int64, clientProfile string) (*CompatibilityRow, error) {
+	row := m.r.QueryRowContext(ctx, `
+		SELECT risk_score, direct_play_predicted, reasons_json, recommended_action, evaluated_at
+		FROM media_compatibility
+		WHERE media_file_id = ? AND client_profile = ?`, fileID, clientProfile)
+
+	var r CompatibilityRow
+	var directPlay int
+	var reasonsJSON string
+	err := row.Scan(&r.RiskScore, &directPlay, &reasonsJSON, &r.RecommendedAction, &r.EvaluatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	r.MediaFile.ID = fileID
+	r.ClientProfile = clientProfile
+	r.DirectPlayPredicted = directPlay != 0
+	if reasonsJSON != "" {
+		if err := json.Unmarshal([]byte(reasonsJSON), &r.Reasons); err != nil {
+			return nil, err
+		}
+	}
+	return &r, nil
 }
 
 // UpsertCompatibility replaces the stored verdicts for fileID, one per

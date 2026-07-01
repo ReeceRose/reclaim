@@ -43,6 +43,7 @@ var AppleTV4K = ClientProfile{
 		AudioCodecs:         []string{"aac", "ac3", "eac3"},
 		AudioCodecsAdvisory: []string{"dts", "dts-hd", "truehd"},
 		MaxAudioChannels:    6, // AC3/EAC3 5.1 ok natively
+		SupportsHDR:         true,
 	},
 }
 
@@ -73,6 +74,7 @@ var NvidiaShield = ClientProfile{
 		AudioCodecs:         []string{"aac", "ac3", "eac3", "mp3", "flac", "pcm"},
 		AudioCodecsAdvisory: []string{"truehd", "dts-hd", "dtsx"},
 		MaxAudioChannels:    8, // 7.1 passthrough over HDMI
+		SupportsHDR:         true,
 	},
 }
 
@@ -106,6 +108,9 @@ var PlexWeb = ClientProfile{
 		// path, so there's no "might work with the right AVR" hedge here.
 		AudioCodecs:      []string{"aac"},
 		MaxAudioChannels: 6,
+		// Plex Web's default browser profile is H.264 8-bit SDR in MP4 — no
+		// HDR direct-play path even when the browser hardware-decodes HEVC.
+		SupportsHDR: false,
 	},
 }
 
@@ -136,6 +141,7 @@ var GenericHEVC = ClientProfile{
 		// apple_tv_4k/nvidia_shield — nothing here is Advisory.
 		AudioCodecs:      []string{"aac", "ac3", "eac3", "dts", "truehd", "flac", "mp3", "pcm"},
 		MaxAudioChannels: 8,
+		SupportsHDR:      true,
 	},
 }
 

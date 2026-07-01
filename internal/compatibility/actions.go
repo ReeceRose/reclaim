@@ -20,11 +20,13 @@ func recommendedAction(reasons []Reason, profile ClientProfile) Action {
 		return ActionNone
 	}
 
-	var hasVideo, hasSubtitle, hasContainer, hasAudio bool
+	var hasVideo, hasHDR, hasSubtitle, hasContainer, hasAudio bool
 	for _, r := range reasons {
 		switch {
 		case strings.HasPrefix(r.Code, "video_codec_") || strings.HasPrefix(r.Code, "hevc_"):
 			hasVideo = true
+		case strings.HasPrefix(r.Code, "hdr_"):
+			hasHDR = true
 		case r.Code == "subtitle_pgs":
 			hasSubtitle = true
 		case strings.HasPrefix(r.Code, "container_"):
@@ -43,6 +45,9 @@ func recommendedAction(reasons []Reason, profile ClientProfile) Action {
 		if contains(profile.Rules.VideoCodecs, "hevc") {
 			return ActionReencodeHEVC
 		}
+		return ActionManual
+	case hasHDR:
+		// Tone-mapping / HDR→SDR is not automatable in v1 (Phase 1.5).
 		return ActionManual
 	case hasSubtitle:
 		return ActionManual

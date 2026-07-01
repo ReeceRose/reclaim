@@ -250,6 +250,13 @@ function FilePageContent() {
   const [refreshing, setRefreshing] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
+  // Set only when the queue dialog was opened from the "Queue re-encode"
+  // button in the Predicted Playback section (Phase 2, docs/COMPATIBILITY
+  // PLAN.md §10) — the header "Queue" button leaves this null, which keeps
+  // the default savings-eligibility rule on the server.
+  const [queueClientProfile, setQueueClientProfile] = useState<string | null>(
+    null,
+  );
 
   const {
     data: file,
@@ -279,11 +286,15 @@ function FilePageContent() {
   const queueMutation = useMutation({
     mutationFn: (profileId: number | null) =>
       // biome-ignore lint/style/noNonNullAssertion: mutation is only triggered from UI gated on a valid id
-      api.createJobs([id!], profileId ?? undefined),
+      api.createJobs([id!], profileId ?? undefined, {
+        source: queueClientProfile ? "compatibility" : undefined,
+        clientProfile: queueClientProfile ?? undefined,
+      }),
     onSuccess: () => {
       toast.success("Job queued");
       void queryClient.invalidateQueries({ queryKey: ["jobs"] });
       void queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      void queryClient.invalidateQueries({ queryKey: ["compatibility"] });
       void queryClient.invalidateQueries({ queryKey: ["file", id] });
     },
     onError: () => toast.error("Failed to queue job"),
@@ -417,7 +428,10 @@ function FilePageContent() {
               {file.candidate_state === "candidate" && (
                 <Button
                   size="sm"
-                  onClick={() => setQueueOpen(true)}
+                  onClick={() => {
+                    setQueueClientProfile(null);
+                    setQueueOpen(true);
+                  }}
                   className="h-7 text-xs gap-1.5"
                   style={{
                     background:
@@ -619,6 +633,12 @@ function FilePageContent() {
           <PredictedPlaybackSection
             compatibility={file.compatibility ?? []}
             streams={file.streams ?? []}
+            candidateState={file.candidate_state}
+            predictedSavingsBytes={file.predicted_savings_bytes}
+            onQueueReencode={(clientProfile) => {
+              setQueueClientProfile(clientProfile);
+              setQueueOpen(true);
+            }}
           />
 
           <DetailSection title="File">

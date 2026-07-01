@@ -16,7 +16,14 @@ type EvalInput struct {
 	// family shares one demuxer name), so matching happens against the
 	// whole containerFamilies set, not an exact string.
 	ContainerFormat string
-	Streams         []StreamInfo
+	// ColorTransfer is the primary video stream's color_transfer (e.g.
+	// "smpte2084" for HDR10 PQ, "arib-std-b67" for HLG). Empty means SDR or
+	// unknown.
+	ColorTransfer string
+	// DolbyVisionProfile is set when ffprobe reports a Dolby Vision
+	// configuration record on the primary video stream.
+	DolbyVisionProfile *int
+	Streams            []StreamInfo
 }
 
 // StreamInfo is one ffprobe stream, trimmed to what rule evaluation needs.
@@ -65,6 +72,7 @@ func Evaluate(input EvalInput, profile ClientProfile) Verdict {
 	var reasons []Reason
 
 	reasons = append(reasons, evaluateVideo(*video, profile)...)
+	reasons = append(reasons, evaluateHDR(input, *video, profile)...)
 	reasons = append(reasons, evaluateContainer(input.ContainerFormat, profile)...)
 	if audio != nil {
 		reasons = append(reasons, evaluateAudio(*audio, profile)...)
@@ -111,6 +119,49 @@ func evaluateVideo(video StreamInfo, profile ClientProfile) []Reason {
 	}
 
 	return nil
+}
+
+func evaluateHDR(input EvalInput, video StreamInfo, profile ClientProfile) []Reason {
+	if profile.Rules.SupportsHDR {
+		return nil
+	}
+	kind, ok := hdrKind(input)
+	if !ok {
+		return nil
+	}
+	idx := video.Index
+	return []Reason{{
+		Code:     "hdr_" + kind,
+		Severity: Hard,
+		Stream:   &idx,
+		Message:  hdrMessage(profile.Name, kind),
+	}}
+}
+
+func hdrKind(input EvalInput) (string, bool) {
+	if input.DolbyVisionProfile != nil {
+		return "dolby_vision", true
+	}
+	switch strings.ToLower(strings.TrimSpace(input.ColorTransfer)) {
+	case "smpte2084":
+		return "hdr10", true
+	case "arib-std-b67":
+		return "hlg", true
+	}
+	return "", false
+}
+
+func hdrMessage(profileName, kind string) string {
+	switch kind {
+	case "dolby_vision":
+		return fmt.Sprintf("Dolby Vision is not supported on %s (SDR-only client profile)", profileName)
+	case "hdr10":
+		return fmt.Sprintf("HDR10 (PQ transfer) is not supported on %s (SDR-only client profile)", profileName)
+	case "hlg":
+		return fmt.Sprintf("HLG HDR is not supported on %s (SDR-only client profile)", profileName)
+	default:
+		return fmt.Sprintf("HDR content is not supported on %s", profileName)
+	}
 }
 
 // containerFamilies maps ffprobe's format_name (a demuxer alias list, often
@@ -283,6 +334,8 @@ func weight(code string, sev Severity) int {
 		return 45
 	case strings.HasPrefix(code, "hevc_"):
 		return 40
+	case strings.HasPrefix(code, "hdr_"):
+		return 38
 	case code == "subtitle_pgs":
 		return 40
 	case code == "audio_channels_exceeded":

@@ -1,7 +1,20 @@
 "use client";
 
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Suspense, useEffect, useRef, useState, useTransition } from "react";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import { toast } from "sonner";
 import { CompatibilityBackfillBanner } from "@/components/compatibility/compatibility-backfill-banner";
 import { CompatibilityFilterBar } from "@/components/compatibility/compatibility-filter-bar";
 import { CompatibilityFlatList } from "@/components/compatibility/compatibility-flat-list";
@@ -9,16 +22,20 @@ import { CompatibilityPageSkeleton } from "@/components/compatibility/compatibil
 import {
   COMPATIBILITY_PAGE_SIZE,
   type CompatibilitySortKey,
+  isCompatibilityQueueable,
   reasonLabel,
 } from "@/components/compatibility/constants";
+import { QueueConfirmDialog } from "@/components/media/queue-confirm-dialog";
+import { QueueSelectionBar } from "@/components/media/selection-bar";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useIdSelection } from "@/hooks/use-id-selection";
 import {
   parseQueryEnum,
   useQueryParam,
   useQueryParams,
 } from "@/hooks/use-query-params";
-import { api } from "@/lib/api";
+import { api, type CompatibilityItem, type MediaFile } from "@/lib/api";
 import {
   codecFilterOptions,
   libraryFilterOptions,
@@ -30,6 +47,7 @@ import { cn } from "@/lib/utils";
 const DEFAULT_PROFILE_FALLBACK = "apple_tv_4k";
 
 function CompatibilityPage() {
+  const qc = useQueryClient();
   const [isPending, startTransition] = useTransition();
   const { get, set: setQuery } = useQueryParams();
   const [search, setSearch] = useState(() => get("q") ?? "");
@@ -45,6 +63,20 @@ function CompatibilityPage() {
   const [codec, setCodec] = useQueryParam("codec");
   const [resolution, setResolution] = useQueryParam("res");
   const [library, setLibrary] = useQueryParam("library");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const itemMapRef = useRef<Map<number, CompatibilityItem>>(new Map());
+  const isSelectable = useCallback((id: number) => {
+    const item = itemMapRef.current.get(id);
+    return item
+      ? isCompatibilityQueueable(item.compatibility.recommended_action)
+      : false;
+  }, []);
+  const {
+    selectedIds,
+    toggle: toggleId,
+    clear: clearSel,
+    toggleAll: selectAllToggle,
+  } = useIdSelection({ isSelectable });
   const parentRef = useRef<HTMLDivElement>(null);
 
   const { data: settings } = useQuery({
@@ -149,7 +181,71 @@ function CompatibilityPage() {
   });
 
   const allItems = data?.pages.flatMap((p) => p.items) ?? [];
+  const orderedIds = allItems.map((i) => i.id);
   const totalCount = data?.pages[0]?.total_count;
+
+  useEffect(() => {
+    allItems.forEach((item) => {
+      itemMapRef.current.set(item.id, item);
+    });
+  }, [allItems]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reason: intentionally scoped to `profile` only — recommended_action (and thus queueability) can differ per profile, so switching profiles must clear whatever was selected under the old one; clearSel is stable (empty-deps useCallback).
+  useEffect(() => {
+    clearSel();
+  }, [profile]);
+
+  const { data: encodeProfilesData } = useQuery({
+    queryKey: ["profiles"],
+    queryFn: api.profiles,
+    staleTime: 60_000,
+  });
+  const encodeProfiles = encodeProfilesData?.items ?? [];
+
+  // QueueConfirmDialog is generic over MediaFile; CompatibilityItem is a
+  // MediaFile with `compatibility` narrowed to a single verdict instead of
+  // one-per-profile, so drop it rather than widen the shared dialog's type.
+  const selectedFiles: MediaFile[] = [...selectedIds]
+    .map((id) => itemMapRef.current.get(id))
+    .filter((f): f is CompatibilityItem => Boolean(f))
+    .map(({ compatibility, ...f }) => f);
+  const totalSavings = selectedFiles.reduce(
+    (s, f) => s + f.predicted_savings_bytes,
+    0,
+  );
+
+  const queueMutation = useMutation({
+    mutationFn: ({
+      ids,
+      profileId,
+    }: {
+      ids: number[];
+      profileId: number | null;
+    }) =>
+      api.createJobs(ids, profileId ?? undefined, {
+        source: "compatibility",
+        clientProfile: profile,
+      }),
+    onSuccess: (result) => {
+      toast.success(`${result.queued.length} jobs queued`);
+      clearSel();
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["compatibility"] });
+      qc.invalidateQueries({ queryKey: ["candidates"] });
+    },
+    onError: () => toast.error("Failed to queue jobs"),
+  });
+
+  const eligibleLoaded = allItems.filter((i) =>
+    isCompatibilityQueueable(i.compatibility.recommended_action),
+  );
+  const allSelected =
+    eligibleLoaded.length > 0 &&
+    eligibleLoaded.every((i) => selectedIds.has(i.id));
+
+  function toggleAll() {
+    selectAllToggle(eligibleLoaded.map((i) => i.id));
+  }
 
   return (
     <div className="flex flex-col min-w-0 h-screen overflow-hidden max-sm:h-full">
@@ -202,6 +298,11 @@ function CompatibilityPage() {
         <CompatibilityFlatList
           parentRef={parentRef}
           allItems={allItems}
+          orderedIds={orderedIds}
+          selectedIds={selectedIds}
+          onToggle={toggleId}
+          allSelected={allSelected}
+          onToggleAll={toggleAll}
           showError={isError && !data}
           error={error}
           onRetry={() => void refetch()}
@@ -211,6 +312,30 @@ function CompatibilityPage() {
           onLoadMore={() => void fetchNextPage()}
         />
       </div>
+
+      {selectedFiles.length > 0 && (
+        <QueueSelectionBar
+          count={selectedFiles.length}
+          totalSavings={totalSavings}
+          onClear={clearSel}
+          onQueue={() => setConfirmOpen(true)}
+        />
+      )}
+
+      <QueueConfirmDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        selectedFiles={selectedFiles}
+        profiles={encodeProfiles}
+        subtitle="Re-encoding to HEVC often fixes both direct-play compatibility and savings. Nothing runs until you confirm."
+        showSafetyNote
+        onConfirm={async (profileId) => {
+          await queueMutation.mutateAsync({
+            ids: selectedFiles.map((f) => f.id),
+            profileId,
+          });
+        }}
+      />
     </div>
   );
 }

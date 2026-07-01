@@ -510,10 +510,22 @@ export const api = {
   deleteProfile: (id: number) => request<void>("DELETE", `/api/profiles/${id}`),
 
   // Jobs
-  createJobs: (fileIds: number[], profileId?: number) =>
+  //
+  // `opts.source: "compatibility"` queues from the Direct-play view (Phase 2,
+  // docs/COMPATIBILITY PLAN.md §8): the server validates each file's stored
+  // verdict for `opts.clientProfile` recommends reencode_hevc, instead of
+  // the default "not already HEVC" savings rule.
+  createJobs: (
+    fileIds: number[],
+    profileId?: number,
+    opts?: { source?: "compatibility"; clientProfile?: string },
+  ) =>
     request<CreateJobsResult>("POST", "/api/jobs", {
       file_ids: fileIds,
       profile_id: profileId ?? null,
+      ...(opts?.source
+        ? { source: opts.source, client_profile: opts.clientProfile }
+        : {}),
     }),
   jobs: (params?: { status?: string; limit?: number; offset?: number }) =>
     request<{ items: Job[]; total_count?: number }>(

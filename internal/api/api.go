@@ -175,6 +175,7 @@ func (s *Server) Handler() http.Handler {
 	api.GET("/jobs", s.handleListJobs)
 	api.POST("/jobs/:id/cancel", s.handleCancelJob)
 	api.POST("/jobs/:id/force", s.handleForceJob)
+	api.DELETE("/jobs/:id", s.handleDeleteJob)
 
 	// Events audit log.
 	api.GET("/events", s.handleListEvents)

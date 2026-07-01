@@ -320,6 +320,14 @@ encode window.
 - `200` → `{ "job_id": 10, "forced": true }`
 - `404` → not found · `409` → job is not in the `queued` state
 
+### `DELETE /api/jobs/:id`
+Removes a `completed`/`failed`/`cancelled` job from the history list. The row
+isn't actually deleted — it's hidden from `GET /api/jobs` but still counts
+toward learned compression ratios and prevents the file from being re-queued
+as a duplicate. Queued/running/verifying jobs must be cancelled first.
+- `204` → dismissed
+- `404` → not found · `409` → job is still queued/running/verifying
+
 ---
 
 ## Events

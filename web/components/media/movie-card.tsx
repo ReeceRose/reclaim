@@ -1,18 +1,19 @@
 import Image from 'next/image';
+import Link from 'next/link';
 import { tmdbImageURL, type MediaFile } from '@/lib/api';
 import { baseName, formatBytes, resolutionLabel } from '@/lib/format';
 import { CodecBadge } from './codec-badge';
 
-export function MovieCard({ file, onClick }: { file: MediaFile; onClick: () => void }) {
+export function MovieCard({ file, href }: { file: MediaFile; href: string }) {
   const title = baseName(file.path).replace(/\.[^/.]+$/, '');
   const isConverted = file.candidate_state === 'already_hevc' || file.candidate_state === 'completed';
   const isCandidate = file.candidate_state === 'candidate';
   const imageURL = tmdbImageURL(file.backdrop_path, 'w780') ?? tmdbImageURL(file.poster_path, 'w342');
 
   return (
-    <div
-      onClick={onClick}
-      className="relative bg-surface border border-line rounded-2xl overflow-hidden cursor-pointer hover:border-brand-line transition-colors group"
+    <Link
+      href={href}
+      className="relative bg-surface border border-line rounded-2xl overflow-hidden cursor-pointer hover:border-brand-line transition-colors group block"
     >
       <div className="relative h-48 overflow-hidden" style={{ background: 'var(--surface-2)' }}>
         {imageURL ? (
@@ -62,6 +63,6 @@ export function MovieCard({ file, onClick }: { file: MediaFile; onClick: () => v
         </div>
       </div>
       <div className="h-1 w-full" style={{ background: isConverted ? 'var(--green)' : isCandidate ? 'var(--brand)' : 'var(--surface-3)' }} />
-    </div>
+    </Link>
   );
 }

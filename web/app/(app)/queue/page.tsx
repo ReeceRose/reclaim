@@ -4,7 +4,6 @@ import { useQuery, useSuspenseQuery, useMutation, useQueryClient } from '@tansta
 import { api, type Job, type VerificationResult } from '@/lib/api';
 import { formatBytes, baseName, dirName, windowInfo, relativeTime } from '@/lib/format';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -81,7 +80,6 @@ function QueueSkeleton() {
 
 function QueueContent() {
   const qc = useQueryClient();
-  const router = useRouter();
 
   const { data: jobsAll } = useSuspenseQuery({
     queryKey: ['jobs'],
@@ -113,6 +111,14 @@ function QueueContent() {
       qc.invalidateQueries({ queryKey: ['jobs'] });
     },
     onError: () => toast.error('Force failed'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.deleteJob(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jobs'] });
+    },
+    onError: () => toast.error('Delete failed'),
   });
 
   const all = jobsAll.items ?? [];
@@ -153,20 +159,17 @@ function QueueContent() {
               </span>
               <span className="text-muted-fg text-[0.8rem]">libx265 · CRF 26 · preset medium</span>
             </div>
-            <button
-              type="button"
-              onClick={() => router.push(BROWSE_ROUTES.FILE(runningJob.media_file_id))}
-              className="font-semibold text-[0.88rem] text-left hover:text-brand transition-colors cursor-pointer"
+            <Link
+              href={BROWSE_ROUTES.FILE(runningJob.media_file_id)}
+              className="block group cursor-pointer"
             >
-              {jobName(runningJob)}
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push(BROWSE_ROUTES.FILE(runningJob.media_file_id))}
-              className="text-left text-[0.74rem] text-muted-dim font-mono mt-0.5 hover:text-brand transition-colors cursor-pointer"
-            >
-              {dirName(runningJob.source_path ?? runningJob.output_path ?? '')}
-            </button>
+              <div className="font-semibold text-[0.88rem] group-hover:text-brand transition-colors">
+                {jobName(runningJob)}
+              </div>
+              <div className="text-[0.74rem] text-muted-dim font-mono mt-0.5 group-hover:text-brand transition-colors">
+                {dirName(runningJob.source_path ?? runningJob.output_path ?? '')}
+              </div>
+            </Link>
             <div className="h-[11px] bg-surface-2 rounded-[7px] overflow-hidden my-3 shadow-[inset_0_0_0_1px_var(--line)]">
               <div
                 className="h-full rounded-[7px] transition-[width_.4s]"
@@ -192,14 +195,13 @@ function QueueContent() {
                 <div className="w-7 h-7 rounded-[9px] bg-surface-3 text-muted-fg grid place-items-center font-bold text-[0.82rem] shrink-0">
                   {job.queue_position}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => router.push(BROWSE_ROUTES.FILE(job.media_file_id))}
-                  className="flex-1 min-w-0 text-left hover:opacity-80 transition-opacity cursor-pointer"
+                <Link
+                  href={BROWSE_ROUTES.FILE(job.media_file_id)}
+                  className="block flex-1 min-w-0 hover:opacity-80 transition-opacity cursor-pointer"
                 >
                   <div className="font-semibold text-[0.88rem] truncate">{jobName(job)}</div>
                   <div className="text-[0.74rem] text-muted-dim font-mono mt-0.5 truncate">{formatBytes(job.original_size_bytes)}</div>
-                </button>
+                </Link>
                 {job.forced
                   ? <Badge className="text-[0.72rem] rounded-[20px] border-transparent text-brand bg-brand-soft shrink-0">forced</Badge>
                   : <Badge variant="secondary" className="text-[0.72rem] rounded-[20px] text-muted-fg shrink-0">queued</Badge>
@@ -243,13 +245,12 @@ function QueueContent() {
               return (
                 <div
                   key={job.id}
-                  className="flex flex-wrap items-start gap-3.5 px-4 py-[13px] border rounded-[12px] bg-surface mb-2.5"
+                  className="group flex flex-wrap items-start gap-3.5 px-4 py-[13px] border rounded-[12px] bg-surface mb-2.5"
                   style={{ borderColor: failed ? 'color-mix(in srgb, var(--red) 35%, transparent)' : 'var(--line)' }}
                 >
-                  <button
-                    type="button"
-                    onClick={() => router.push(BROWSE_ROUTES.FILE(job.media_file_id))}
-                    className="flex-1 min-w-[60%] text-left hover:opacity-80 transition-opacity cursor-pointer"
+                  <Link
+                    href={BROWSE_ROUTES.FILE(job.media_file_id)}
+                    className="block flex-1 min-w-[60%] hover:opacity-80 transition-opacity cursor-pointer"
                   >
                     <div className="font-semibold text-sm">{jobName(job)}</div>
                     <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">
@@ -272,7 +273,7 @@ function QueueContent() {
                         <span className="font-mono text-[0.72rem]">{job.output_path}</span>
                       </div>
                     )}
-                  </button>
+                  </Link>
                   <div className="ml-auto flex items-center gap-2 shrink-0">
                     {job.completed_at && (
                       <span className="text-xs text-muted-dim">{relativeTime(job.completed_at)}</span>
@@ -280,6 +281,19 @@ function QueueContent() {
                     <Badge className={`text-xs rounded-[20px] border-transparent ${failed ? 'text-red bg-red-soft' : 'text-green bg-green-soft'}`}>
                       {failed ? 'failed' : 'completed'}
                     </Badge>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => deleteMutation.mutate(job.id)}
+                      disabled={deleteMutation.isPending}
+                      aria-label="Remove from history"
+                      className="text-muted-dim opacity-0 max-sm:opacity-100 transition-opacity hover:bg-surface-2 hover:text-text group-hover:opacity-100 focus:opacity-100 disabled:opacity-40"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </Button>
                   </div>
                 </div>
               );

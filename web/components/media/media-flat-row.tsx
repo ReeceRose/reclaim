@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { Checkbox } from '@/components/ui/checkbox';
 import { baseName, dirName, formatBytes, resolutionLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -7,28 +8,18 @@ import type { MediaFile } from '@/lib/api';
 import { CodecBadge } from './codec-badge';
 import { StateBadge, isQueueable, queueBlockReason } from './candidate-state';
 
-/**
- * MediaFlatRow is the single 52px file row shared by the candidate browser and
- * the full library.
- *
- * - `showState` adds the candidate-state column and the "unknown" codec pill
- *   (the library shows both; the candidate browser does not).
- * - `gateSelection` restricts selection to queueable files and renders the
- *   predicted-savings cell as "-" for everything else (library behaviour). The
- *   candidate browser only ever lists queueable files, so it leaves this off.
- */
 export function MediaFlatRow({
   item,
   selected,
   onToggle,
-  onOpen,
+  href,
   showState = false,
   gateSelection = false,
 }: {
   item: MediaFile;
   selected: boolean;
   onToggle: (id: number) => void;
-  onOpen: (file: MediaFile) => void;
+  href: string;
   showState?: boolean;
   gateSelection?: boolean;
 }) {
@@ -37,15 +28,15 @@ export function MediaFlatRow({
   return (
     <div
       className={cn(
-        'flex items-center gap-0 border-b border-line-soft hover:bg-surface-2 cursor-pointer transition-colors',
+        'relative flex items-center gap-0 border-b border-line-soft hover:bg-surface-2 transition-colors',
         selected && 'bg-brand-soft',
         missing && 'opacity-70',
       )}
       style={{ height: 52 }}
-      onClick={() => onOpen(item)}
     >
+      <Link href={href} className="absolute inset-0 cursor-pointer" tabIndex={-1} aria-hidden />
       <div
-        className="w-[52px] flex justify-center shrink-0"
+        className="relative z-10 w-[52px] flex justify-center shrink-0"
         title={gateSelection ? (queueable ? 'Queue candidate' : queueBlockReason(item)) : undefined}
       >
         <Checkbox

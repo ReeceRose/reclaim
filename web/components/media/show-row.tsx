@@ -1,16 +1,17 @@
+import Link from 'next/link';
 import { type LibrarySeriesGroup } from '@/lib/api';
 import { formatBytes, formatInt } from '@/lib/format';
 
-export function ShowRow({ show, onClick, expanded }: {
+export function ShowRow({ show, href, expanded }: {
   show: LibrarySeriesGroup;
-  onClick: () => void;
+  href: string;
   expanded?: boolean;
 }) {
   const fullyConverted = show.eligible_count === 0;
   const hasChevron = expanded !== undefined;
   return (
-    <div
-      onClick={onClick}
+    <Link
+      href={href}
       className="grid items-center gap-3 px-4 py-2.5 border-b border-line-soft last:border-b-0 cursor-pointer hover:bg-surface-2 transition-colors"
       style={{ gridTemplateColumns: hasChevron ? 'auto 1fr auto auto auto auto' : '1fr auto auto auto auto' }}
     >
@@ -37,6 +38,6 @@ export function ShowRow({ show, onClick, expanded }: {
             : <span className="text-xs text-muted-dim">—</span>
         }
       </div>
-    </div>
+    </Link>
   );
 }

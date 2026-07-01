@@ -9,7 +9,6 @@ import { api, type CandidateState, type FileFilters, type MediaFile } from '@/li
 import { formatInt } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { codecFilterOptions, libraryFilterOptions, resolutionFilterOptions } from '@/lib/filter-options';
-import { useRouter } from 'next/navigation';
 import { BROWSE_ROUTES } from '@/app/(app)/browse/browse';
 import { FilterSelect } from '@/components/filter-select';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -41,7 +40,6 @@ const STATUS_OPTIONS = [
 
 function LibraryPage() {
   const qc = useQueryClient();
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const { get, set: setQuery } = useQueryParams();
   const [search, setSearch] = useState(() => get('q') ?? '');
@@ -237,7 +235,7 @@ function LibraryPage() {
                 {virtualItems.map((vRow) => (
                   <div key={vRow.key} style={{ position: 'absolute', top: vRow.start, height: vRow.size, width: '100%' }}>
                     {vRow.index < allItems.length ? (
-                      <MediaFlatRow item={allItems[vRow.index]} selected={selectedIds.has(allItems[vRow.index].id)} onToggle={toggleId} onOpen={(file) => router.push(BROWSE_ROUTES.FILE(file.id))} showState gateSelection />
+                      <MediaFlatRow item={allItems[vRow.index]} selected={selectedIds.has(allItems[vRow.index].id)} onToggle={toggleId} href={BROWSE_ROUTES.FILE(allItems[vRow.index].id)} showState gateSelection />
                     ) : (
                       <div className="flex items-center justify-center h-full text-muted-dim text-sm">{isFetchingNextPage ? 'Loading more...' : hasNextPage ? 'Scroll to load more' : 'End of list'}</div>
                     )}

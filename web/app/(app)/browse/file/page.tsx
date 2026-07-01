@@ -3,7 +3,8 @@
 import { Suspense, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { api, tmdbImageURL, type MediaFile, type MetadataSearchResult } from '@/lib/api';
 import {
   baseName,
@@ -21,6 +22,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { useQueryParams } from '@/hooks/use-query-params';
 import { DetailRow, DetailSection } from '@/components/ui/detail';
 import { StateBadge } from '@/components/media/candidate-state';
+import { QueueConfirmDialog } from '@/components/media/queue-confirm-dialog';
+import { BROWSE_ROUTES } from '@/app/(app)/browse/browse';
+
+function goBack(router: ReturnType<typeof useRouter>) {
+  if (window.history.length > 1) {
+    router.back();
+  } else {
+    router.push(BROWSE_ROUTES.ROOT());
+  }
+}
 
 function candidateStateReason(file: MediaFile): string | null {
   switch (file.candidate_state) {
@@ -190,6 +201,7 @@ function FilePageContent() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
 
   const { data: file, isLoading, isError } = useQuery({
     queryKey: ['file', id],
@@ -197,11 +209,45 @@ function FilePageContent() {
     enabled: id !== null && !Number.isNaN(id),
   });
 
+  const { data: profilesData } = useQuery({
+    queryKey: ['profiles'],
+    queryFn: api.profiles,
+    staleTime: 60_000,
+  });
+  const profiles = profilesData?.items ?? [];
+
+  const { data: queuedJobsData } = useQuery({
+    queryKey: ['jobs', 'queued'],
+    queryFn: () => api.jobs({ status: 'queued', limit: 200 }),
+    enabled: file?.candidate_state === 'queued',
+  });
+  const activeJob = queuedJobsData?.items.find((j) => j.media_file_id === id);
+
+  const queueMutation = useMutation({
+    mutationFn: (profileId: number | null) => api.createJobs([id!], profileId ?? undefined),
+    onSuccess: () => {
+      toast.success('Job queued');
+      void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      void queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      void queryClient.invalidateQueries({ queryKey: ['file', id] });
+    },
+    onError: () => toast.error('Failed to queue job'),
+  });
+
+  const forceMutation = useMutation({
+    mutationFn: (jobId: number) => api.forceJob(jobId),
+    onSuccess: () => {
+      toast.success('Job will run immediately');
+      void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+    onError: () => toast.error('Force failed'),
+  });
+
   if (!id || Number.isNaN(id)) {
     return (
       <div className="flex flex-col items-center justify-center h-full py-32 text-center">
         <div className="text-sm font-semibold text-text">No file selected</div>
-        <button onClick={() => router.back()} className="text-sm text-brand hover:underline mt-3 cursor-pointer">
+        <button onClick={() => goBack(router)} className="text-sm text-brand hover:underline mt-3 cursor-pointer">
           ← Back
         </button>
       </div>
@@ -215,7 +261,7 @@ function FilePageContent() {
       <div className="flex flex-col items-center justify-center h-full py-32 text-center">
         <div className="text-sm font-semibold text-text">File not found</div>
         <div className="text-xs text-muted-dim mt-2 mb-5">This file could not be found in the library.</div>
-        <button onClick={() => router.back()} className="text-sm text-brand hover:underline cursor-pointer">
+        <button onClick={() => goBack(router)} className="text-sm text-brand hover:underline cursor-pointer">
           ← Back
         </button>
       </div>
@@ -278,7 +324,7 @@ function FilePageContent() {
         <div className="relative">
           <div className="flex items-center justify-between mb-3">
             <button
-              onClick={() => router.back()}
+              onClick={() => goBack(router)}
               className="inline-flex items-center gap-1 text-xs text-muted-dim hover:text-text transition-colors cursor-pointer"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3">
@@ -288,6 +334,28 @@ function FilePageContent() {
             </button>
 
             <div className="flex items-center gap-2">
+              {file.candidate_state === 'candidate' && (
+                <Button
+                  size="sm"
+                  onClick={() => setQueueOpen(true)}
+                  className="h-7 text-xs gap-1.5"
+                  style={{ background: 'linear-gradient(145deg, var(--brand), var(--brand-2))', boxShadow: '0 4px 14px var(--brand-soft)' }}
+                >
+                  Queue
+                </Button>
+              )}
+              {file.candidate_state === 'queued' && activeJob && !activeJob.forced && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => forceMutation.mutate(activeJob.id)}
+                  disabled={forceMutation.isPending}
+                  className="h-7 text-xs"
+                  title="Run now, bypassing the encode window"
+                >
+                  {forceMutation.isPending ? 'Forcing…' : 'Run now'}
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -440,6 +508,18 @@ function FilePageContent() {
         currentPosterPath={file.poster_path}
         currentBackdropPath={file.backdrop_path}
         onSaved={() => void queryClient.invalidateQueries({ queryKey: ['file', id] })}
+      />
+
+      <QueueConfirmDialog
+        open={queueOpen}
+        onClose={() => setQueueOpen(false)}
+        selectedFiles={[file]}
+        profiles={profiles}
+        subtitle="Review the file. Nothing runs until you confirm."
+        showSafetyNote
+        onConfirm={async (profileId) => {
+          await queueMutation.mutateAsync(profileId);
+        }}
       />
     </div>
   );

@@ -1,7 +1,6 @@
 'use client';
 
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { api, type LibrarySeriesGroup, type MediaFile } from '@/lib/api';
 import { formatInt } from '@/lib/format';
@@ -90,7 +89,6 @@ function ListSkeleton() {
 }
 
 function TVContent({ search, sort, view }: { search: string; sort: TVSortValue; view: string }) {
-  const router = useRouter();
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
@@ -152,13 +150,13 @@ function TVContent({ search, sort, view }: { search: string; sort: TVSortValue; 
             <span className="w-24 text-right">Savings</span>
           </div>
           {shows.map((s) => (
-            <ShowRow key={s.title} show={s} onClick={() => router.push(BROWSE_ROUTES.TV_SHOW(s.title, view))} />
+            <ShowRow key={s.title} show={s} href={BROWSE_ROUTES.TV_SHOW(s.title, view)} />
           ))}
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {shows.map((s) => (
-            <ShowCard key={s.title} show={s} onClick={() => router.push(BROWSE_ROUTES.TV_SHOW(s.title, view))} />
+            <ShowCard key={s.title} show={s} href={BROWSE_ROUTES.TV_SHOW(s.title, view)} />
           ))}
         </div>
       )}
@@ -176,7 +174,6 @@ function TVContent({ search, sort, view }: { search: string; sort: TVSortValue; 
 }
 
 function MoviesContent({ search, sort, view }: { search: string; sort: MovieSortValue; view: string }) {
-  const router = useRouter();
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
@@ -234,13 +231,13 @@ function MoviesContent({ search, sort, view }: { search: string; sort: MovieSort
             <span className="w-24 text-right">Savings</span>
           </div>
           {movies.map((f: MediaFile) => (
-            <MovieRow key={f.id} file={f} onClick={() => router.push(BROWSE_ROUTES.MOVIE(f.id))} />
+            <MovieRow key={f.id} file={f} href={BROWSE_ROUTES.MOVIE(f.id)} />
           ))}
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {movies.map((f: MediaFile) => (
-            <MovieCard key={f.id} file={f} onClick={() => router.push(BROWSE_ROUTES.MOVIE(f.id))} />
+            <MovieCard key={f.id} file={f} href={BROWSE_ROUTES.MOVIE(f.id)} />
           ))}
         </div>
       )}

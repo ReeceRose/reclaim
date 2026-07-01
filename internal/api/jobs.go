@@ -244,6 +244,26 @@ func (s *Server) handleForceJob(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"job_id": id, "forced": true})
 }
 
+// handleDeleteJob hides a completed/failed/cancelled job from the history
+// list. The row is kept (not deleted) so it still counts toward learned
+// compression ratios and the completed-job dedupe guard. Queued/running/
+// verifying jobs must be cancelled first.
+func (s *Server) handleDeleteJob(c *echo.Context) error {
+	ctx := c.Request().Context()
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		return badRequest(c, "invalid job id")
+	}
+	if err := s.store.Jobs.Dismiss(ctx, id, time.Now().Unix()); errors.Is(err, store.ErrNotFound) {
+		return c.JSON(http.StatusNotFound, errorBody("job not found"))
+	} else if errors.Is(err, store.ErrIllegalTransition) {
+		return c.JSON(http.StatusConflict, errorBody("job must be cancelled before it can be deleted"))
+	} else if err != nil {
+		return serverError(c, err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
 func dedupeIDs(ids []int64) []int64 {
 	seen := make(map[int64]struct{}, len(ids))
 	out := make([]int64, 0, len(ids))

@@ -8,7 +8,6 @@ import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { useRef, useState, useEffect, useMemo, useCallback, useTransition, Suspense } from 'react';
-import { useRouter } from 'next/navigation';
 import { parseQueryEnum, useQueryParam, useQueryParams } from '@/hooks/use-query-params';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -37,10 +36,10 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'codec', label: 'Source codec' },
 ];
 
-function EpisodeRow(props: { ep: Episode; selected: boolean; onToggle: (id: number) => void; onOpen: (file: MediaFile) => void }) {
+function EpisodeRow(props: { ep: Episode; selected: boolean; onToggle: (id: number) => void }) {
   return (
     <div className="pl-[42px]">
-      <MediaFlatRow item={props.ep} selected={props.selected} onToggle={props.onToggle} onOpen={props.onOpen} />
+      <MediaFlatRow item={props.ep} selected={props.selected} onToggle={props.onToggle} href={BROWSE_ROUTES.FILE(props.ep.id)} />
     </div>
   );
 }
@@ -51,7 +50,6 @@ function SeasonEpisodes({
   filters,
   selectedIds,
   onToggle,
-  onOpen,
   onEpisodesLoaded,
 }: {
   seriesTitle: string;
@@ -59,7 +57,6 @@ function SeasonEpisodes({
   filters: CandidateFilters;
   selectedIds: Set<number>;
   onToggle: (id: number) => void;
-  onOpen: (file: MediaFile) => void;
   onEpisodesLoaded: (files: MediaFile[]) => void;
 }) {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
@@ -91,7 +88,7 @@ function SeasonEpisodes({
   return (
     <>
       {episodes.map((ep) => (
-        <EpisodeRow key={ep.id} ep={ep} selected={selectedIds.has(ep.id)} onToggle={onToggle} onOpen={onOpen} />
+        <EpisodeRow key={ep.id} ep={ep} selected={selectedIds.has(ep.id)} onToggle={onToggle} />
       ))}
       {(hasNextPage || isFetchingNextPage) && (
         <div className="px-4 py-2 pl-[42px] border-b border-line-soft">
@@ -108,14 +105,12 @@ function GroupedContent({
   selectedIds,
   onToggle,
   onToggleSeries,
-  onOpen,
   filters,
   onEpisodesLoaded,
 }: {
   selectedIds: Set<number>;
   onToggle: (id: number) => void;
   onToggleSeries: (ids: number[]) => void;
-  onOpen: (file: MediaFile) => void;
   filters: CandidateFilters;
   onEpisodesLoaded: (files: MediaFile[]) => void;
 }) {
@@ -258,7 +253,6 @@ function GroupedContent({
                           filters={filters}
                           selectedIds={selectedIds}
                           onToggle={onToggle}
-                          onOpen={onOpen}
                           onEpisodesLoaded={onEpisodesLoaded}
                         />
                       )}
@@ -283,7 +277,7 @@ function GroupedContent({
             Movies
           </div>
           {movies.map((f) => (
-            <MediaFlatRow key={f.id} item={f} selected={selectedIds.has(f.id)} onToggle={onToggle} onOpen={onOpen} />
+            <MediaFlatRow key={f.id} item={f} selected={selectedIds.has(f.id)} onToggle={onToggle} href={BROWSE_ROUTES.FILE(f.id)} />
           ))}
           {(hasMoreMovies || isFetchingMovies) && (
             <div className="px-4 py-3 text-center border-t border-line-soft">
@@ -308,7 +302,6 @@ function GroupedView(props: {
   selectedIds: Set<number>;
   onToggle: (id: number) => void;
   onToggleSeries: (ids: number[]) => void;
-  onOpen: (file: MediaFile) => void;
   filters: CandidateFilters;
   onEpisodesLoaded: (files: MediaFile[]) => void;
 }) {
@@ -317,7 +310,6 @@ function GroupedView(props: {
 
 function CandidatesPage() {
   const qc = useQueryClient();
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const { get, set: setQuery } = useQueryParams();
   const [search, setSearch] = useState(() => get('q') ?? '');
@@ -611,7 +603,7 @@ function CandidatesPage() {
                         item={allItems[vRow.index]}
                         selected={selectedIds.has(allItems[vRow.index].id)}
                         onToggle={toggleId}
-                        onOpen={(file) => router.push(BROWSE_ROUTES.FILE(file.id))}
+                        href={BROWSE_ROUTES.FILE(allItems[vRow.index].id)}
                       />
                     ) : (
                       <div className="flex items-center justify-center h-full text-muted-dim text-sm">
@@ -630,7 +622,6 @@ function CandidatesPage() {
               selectedIds={selectedIds}
               onToggle={toggleId}
               onToggleSeries={toggleSeries}
-              onOpen={(file) => router.push(BROWSE_ROUTES.FILE(file.id))}
               filters={filters}
               onEpisodesLoaded={registerLoadedFiles}
             />

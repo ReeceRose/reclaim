@@ -8,47 +8,47 @@ It reads the filesystem directly. No Sonarr, Radarr, Plex, Jellyfin, or Emby API
 
 ## Quick reference
 
-| Item | Value |
-|---|---|
-| **Web UI** | `http://<host>:8080` |
-| **Host port** | `8080` → container `8080` |
-| **Health check** | `GET /healthz` (no auth) |
-| **Image (releases)** | `ghcr.io/reecerose/reclaim:<version>` |
-| **Compose file** | [`docker-compose.yml`](../docker-compose.yml) in the repo root |
+| Item                 | Value                                                          |
+| -------------------- | -------------------------------------------------------------- |
+| **Web UI**           | `http://<host>:8080`                                           |
+| **Host port**        | `8080` → container `8080`                                      |
+| **Health check**     | `GET /healthz` (no auth)                                       |
+| **Image (releases)** | `ghcr.io/reecerose/reclaim:<version>`                          |
+| **Compose file**     | [`docker-compose.yml`](../docker-compose.yml) in the repo root |
 
 ### Required volumes
 
 All three mounts are required. Media paths **must be read-write**.
 
-| Container path | Purpose | Example host path (Unraid) |
-|---|---|---|
-| `/movies` | Movie library root | `/mnt/user/media/movies` |
-| `/tv` | TV library root | `/mnt/user/media/tv` |
-| `/data` | SQLite database | `/mnt/user/appdata/reclaim` |
+| Container path | Purpose            | Example host path (Unraid)  |
+| -------------- | ------------------ | --------------------------- |
+| `/movies`      | Movie library root | `/mnt/user/media/movies`    |
+| `/tv`          | TV library root    | `/mnt/user/media/tv`        |
+| `/data`        | SQLite database    | `/mnt/user/appdata/reclaim` |
 
 On Unraid, map `/data` to `appdata`. The repo Compose file uses a named volume for quick trials; NAS users may prefer a host path like `/mnt/user/appdata/reclaim:/data`.
 
 ### Required environment variables
 
-| Variable | Example | Description |
-|---|---|---|
-| `MOVIES_PATH` | `/movies` | Must match the movies volume mount |
-| `TV_PATH` | `/tv` | Must match the TV volume mount |
-| `DB_PATH` | `/data/reclaim.db` | SQLite file on the data volume |
+| Variable      | Example            | Description                        |
+| ------------- | ------------------ | ---------------------------------- |
+| `MOVIES_PATH` | `/movies`          | Must match the movies volume mount |
+| `TV_PATH`     | `/tv`              | Must match the TV volume mount     |
+| `DB_PATH`     | `/data/reclaim.db` | SQLite file on the data volume     |
 
 ### Recommended environment variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `TZ` | container default | **Set this.** Encode window times use local time |
-| `PUID` | `1000` | Set to the uid that owns your media library so the container can write re-encoded files |
-| `PGID` | `1000` | Set to the gid that owns your media library |
-| `ENCODE_WINDOW_START` | `00:00` | Start of overnight encode window (`HH:MM`, 24h) |
-| `ENCODE_WINDOW_END` | `06:00` | End of encode window |
-| `SCAN_INTERVAL` | `24h` | Diff-based rescan interval (Go duration) |
-| `PROBE_CONCURRENCY` | `4` | Parallel `ffprobe` calls during scans |
-| `SCAN_ANCHOR` | `00:00` | Daily scan anchor time (`HH:MM`) |
-| `TMDB_API_KEY` | unset | Optional TMDB API key for movie/TV posters, backdrops, and metadata |
+| Variable              | Default           | Description                                                                             |
+| --------------------- | ----------------- | --------------------------------------------------------------------------------------- |
+| `TZ`                  | container default | **Set this.** Encode window times use local time                                        |
+| `PUID`                | `1000`            | Set to the uid that owns your media library so the container can write re-encoded files |
+| `PGID`                | `1000`            | Set to the gid that owns your media library                                             |
+| `ENCODE_WINDOW_START` | `00:00`           | Start of overnight encode window (`HH:MM`, 24h)                                         |
+| `ENCODE_WINDOW_END`   | `06:00`           | End of encode window                                                                    |
+| `SCAN_INTERVAL`       | `24h`             | Diff-based rescan interval (Go duration)                                                |
+| `PROBE_CONCURRENCY`   | `4`               | Parallel `ffprobe` calls during scans                                                   |
+| `SCAN_ANCHOR`         | `00:00`           | Daily scan anchor time (`HH:MM`)                                                        |
+| `TMDB_API_KEY`        | unset             | Optional TMDB API key for movie/TV posters, backdrops, and metadata                     |
 
 `PUID`/`PGID` matter because the container writes re-encoded files back into `/movies` and `/tv`. If they don't match the uid/gid that owns your library on the host, encodes fail with `Permission denied` (verification never even runs). On Unraid, find the right values with `id nobody` on the host (typically `99`/`100`); on most other Linux hosts, `id <your-user>`.
 
@@ -56,10 +56,10 @@ To enable artwork and metadata fetching, create a TMDB API key at [themoviedb.or
 
 ### Optional (recovery only)
 
-| Variable | Default | Description |
-|---|---|---|
+| Variable       | Default | Description                                                 |
+| -------------- | ------- | ----------------------------------------------------------- |
 | `DISABLE_AUTH` | `false` | Skip login — trusted LAN only, never expose to the internet |
-| `RESET_AUTH` | `false` | Clear credentials on boot → first-run setup again |
+| `RESET_AUTH`   | `false` | Clear credentials on boot → first-run setup again           |
 
 ---
 
@@ -104,21 +104,21 @@ In `docker-compose.yml`, comment out `build: .` and set `image:` to the tag you 
 
 ### Add Container (manual template)
 
-| Field | Value |
-|---|---|
-| **Name** | `reclaim` |
-| **Repository** | `ghcr.io/reecerose/reclaim:latest` (or a pinned `:1.0.0` tag) |
-| **Network Type** | `bridge` |
-| **WebUI** | `8080` |
-| **Console shell** | `sh` (for debugging only) |
+| Field             | Value                                                         |
+| ----------------- | ------------------------------------------------------------- |
+| **Name**          | `reclaim`                                                     |
+| **Repository**    | `ghcr.io/reecerose/reclaim:latest` (or a pinned `:1.0.0` tag) |
+| **Network Type**  | `bridge`                                                      |
+| **WebUI**         | `8080`                                                        |
+| **Console shell** | `sh` (for debugging only)                                     |
 
 **Path mappings** (adjust host paths to your shares):
 
-| Container | Host | Access |
-|---|---|---|
-| `/movies` | `/mnt/user/media/movies` | Read/Write |
-| `/tv` | `/mnt/user/media/tv` | Read/Write |
-| `/data` | `/mnt/user/appdata/reclaim` | Read/Write |
+| Container | Host                        | Access     |
+| --------- | --------------------------- | ---------- |
+| `/movies` | `/mnt/user/media/movies`    | Read/Write |
+| `/tv`     | `/mnt/user/media/tv`        | Read/Write |
+| `/data`   | `/mnt/user/appdata/reclaim` | Read/Write |
 
 **Environment variables:**
 

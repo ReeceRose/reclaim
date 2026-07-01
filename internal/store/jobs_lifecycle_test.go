@@ -149,6 +149,54 @@ func TestTerminalSetters(t *testing.T) {
 	})
 }
 
+func TestDismiss(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+
+	t.Run("rejects non-terminal job", func(t *testing.T) {
+		_, jid := seedJobFixture(t, st)
+		if err := st.Jobs.Dismiss(ctx, jid, 100); !errors.Is(err, ErrIllegalTransition) {
+			t.Fatalf("dismiss queued job err = %v, want ErrIllegalTransition", err)
+		}
+	})
+
+	t.Run("hides a cancelled job from ListWithPath without deleting it", func(t *testing.T) {
+		_, jid := seedJobFixture(t, st)
+		if err := st.Jobs.MarkCancelled(ctx, jid, 7); err != nil {
+			t.Fatalf("cancel: %v", err)
+		}
+		if err := st.Jobs.Dismiss(ctx, jid, 100); err != nil {
+			t.Fatalf("dismiss: %v", err)
+		}
+
+		// Row still exists...
+		job, err := st.Jobs.GetByID(ctx, jid)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if job.Status != "cancelled" {
+			t.Fatalf("status = %q, want cancelled", job.Status)
+		}
+
+		// ...but no longer shows up in the history list.
+		jobs, err := st.Jobs.ListWithPath(ctx, JobListQuery{})
+		if err != nil {
+			t.Fatalf("list: %v", err)
+		}
+		for _, j := range jobs {
+			if j.ID == jid {
+				t.Fatalf("dismissed job %d still present in ListWithPath", jid)
+			}
+		}
+	})
+
+	t.Run("unknown job", func(t *testing.T) {
+		if err := st.Jobs.Dismiss(ctx, 999999, 100); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("dismiss unknown job err = %v, want ErrNotFound", err)
+		}
+	})
+}
+
 func TestListInterrupted(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
@@ -225,6 +273,48 @@ func TestReplaceWithEncodedUpdatesStatsAndDropsCandidate(t *testing.T) {
 	}
 	reco, _ := st.Stats.Overview(ctx)
 	if reco.TotalBytes != got.TotalBytes || reco.TotalRecoverableBytes != got.TotalRecoverableBytes {
+		t.Errorf("incremental stats drifted from recompute: %+v vs %+v", got, reco)
+	}
+}
+
+// TestReplaceWithEncodedReactivatesMissingRow guards against a regression where
+// a file marked "missing" (e.g. a transient NAS hiccup) before a successful
+// re-encode stayed stuck as "missing" forever afterward, even though the swap
+// succeeded and the row's codec/size were updated.
+func TestReplaceWithEncodedReactivatesMissingRow(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	codec := "h264"
+	mid, err := st.Media.Insert(ctx, &MediaFile{
+		Path: "/media/tv/missing-then-encoded.mkv", LibraryType: "tv", SizeBytes: 5000,
+		Mtime: 1, Fingerprint: "fpmissing", VideoCodec: &codec,
+		PredictedSavingsBytes: 2000, Status: "active",
+	})
+	if err != nil {
+		t.Fatalf("insert media: %v", err)
+	}
+	if err := st.Media.MarkMissing(ctx, mid); err != nil {
+		t.Fatalf("mark missing: %v", err)
+	}
+
+	if err := st.Media.ReplaceWithEncoded(ctx, mid, 2000, "newfp", 12345); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+
+	f, _ := st.Media.GetByID(ctx, mid)
+	if f.Status != MediaStatusActive {
+		t.Fatalf("status = %q, want active — file should be reactivated after a successful re-encode", f.Status)
+	}
+
+	got, _ := st.Stats.Overview(ctx)
+	if got.TotalBytes != 2000 {
+		t.Errorf("total bytes = %d, want 2000 — row should count toward stats once reactivated", got.TotalBytes)
+	}
+	if err := st.Stats.Recompute(ctx); err != nil {
+		t.Fatalf("recompute: %v", err)
+	}
+	reco, _ := st.Stats.Overview(ctx)
+	if reco.TotalBytes != got.TotalBytes {
 		t.Errorf("incremental stats drifted from recompute: %+v vs %+v", got, reco)
 	}
 }

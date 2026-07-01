@@ -70,10 +70,10 @@ func (j *Jobs) ListWithPath(ctx context.Context, q JobListQuery) ([]TranscodeJob
 		limit = maxJobLimit
 	}
 
-	query := jobWithPathQ
+	query := jobWithPathQ + " WHERE j.dismissed_at IS NULL"
 	var args []any
 	if q.Status != "" {
-		query += " WHERE j.status = ?"
+		query += " AND j.status = ?"
 		args = append(args, q.Status)
 	}
 	query += " ORDER BY j.queued_at DESC, j.id DESC LIMIT ? OFFSET ?"
@@ -96,12 +96,12 @@ func (j *Jobs) ListWithPath(ctx context.Context, q JobListQuery) ([]TranscodeJob
 	return out, rows.Err()
 }
 
-// CountJobs returns how many jobs match an optional status filter.
+// CountJobs returns how many non-dismissed jobs match an optional status filter.
 func (j *Jobs) CountJobs(ctx context.Context, status string) (int64, error) {
-	query := `SELECT COUNT(*) FROM transcode_jobs`
+	query := `SELECT COUNT(*) FROM transcode_jobs WHERE dismissed_at IS NULL`
 	var args []any
 	if status != "" {
-		query += " WHERE status = ?"
+		query += " AND status = ?"
 		args = append(args, status)
 	}
 	var n int64
@@ -369,6 +369,33 @@ func terminalTx(ctx context.Context, tx *sql.Tx, id int64, to string, from []str
 		return err
 	}
 	if n == 0 {
+		return ErrIllegalTransition
+	}
+	return nil
+}
+
+// Dismiss hides a job from the history list without deleting its row, so it
+// keeps contributing to LearnedRatios and the completed-job dedupe guard in
+// jobExclusionSQL. Only terminal jobs (completed, failed, cancelled) can be
+// dismissed. Returns ErrNotFound if no such row exists, or
+// ErrIllegalTransition if the job is still queued/running/verifying.
+func (j *Jobs) Dismiss(ctx context.Context, id, dismissedAt int64) error {
+	res, err := j.w.ExecContext(ctx,
+		"UPDATE transcode_jobs SET dismissed_at = ? WHERE id = ? AND status IN ('completed', 'failed', 'cancelled')",
+		dismissedAt, id,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		var count int
+		if serr := j.r.QueryRowContext(ctx, "SELECT COUNT(1) FROM transcode_jobs WHERE id = ?", id).Scan(&count); serr == nil && count == 0 {
+			return ErrNotFound
+		}
 		return ErrIllegalTransition
 	}
 	return nil

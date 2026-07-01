@@ -1,14 +1,15 @@
+import Link from 'next/link';
 import { type MediaFile } from '@/lib/api';
 import { baseName, formatBytes, resolutionLabel } from '@/lib/format';
 import { CodecBadge } from './codec-badge';
 
-export function MovieRow({ file, onClick }: { file: MediaFile; onClick: () => void }) {
+export function MovieRow({ file, href }: { file: MediaFile; href: string }) {
   const title = baseName(file.path).replace(/\.[^/.]+$/, '');
   const isConverted = file.candidate_state === 'already_hevc' || file.candidate_state === 'completed';
   const isCandidate = file.candidate_state === 'candidate';
   return (
-    <div
-      onClick={onClick}
+    <Link
+      href={href}
       className="grid items-center gap-3 px-4 py-2.5 border-b border-line-soft last:border-b-0 cursor-pointer hover:bg-surface-2 transition-colors"
       style={{ gridTemplateColumns: '1fr auto auto auto auto' }}
     >
@@ -26,6 +27,6 @@ export function MovieRow({ file, onClick }: { file: MediaFile; onClick: () => vo
             : <span className="text-xs text-muted-dim">—</span>
         }
       </div>
-    </div>
+    </Link>
   );
 }

@@ -271,9 +271,9 @@ func (m *Media) ReplaceWithEncoded(ctx context.Context, id, newSize int64, newFi
 		UPDATE media_files SET
 			size_bytes = ?, fingerprint = ?, video_codec = 'hevc',
 			is_already_hevc = 1, predicted_savings_bytes = 0,
-			mtime = ?, last_probed_at = ?, probe_error = NULL
+			mtime = ?, last_probed_at = ?, probe_error = NULL, status = ?
 		WHERE id = ?`,
-		newSize, newFingerprint, now, now, id,
+		newSize, newFingerprint, now, now, MediaStatusActive, id,
 	); err != nil {
 		return err
 	}

@@ -3,7 +3,6 @@
 import { Suspense, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, tmdbImageURL, type Episode, type LibrarySeasonGroup, type MetadataSearchResult } from '@/lib/api';
 import { baseName, formatBytes, formatInt, resolutionLabel } from '@/lib/format';
@@ -19,11 +18,11 @@ import { EncodeHealthBar } from '@/components/media/encode-health-bar';
 import { StateBadge } from '@/components/media/candidate-state';
 import { BROWSE_ROUTES, EPISODES_PER_PAGE, LIBRARY_TYPE } from '../browse';
 
-function EpisodeRow({ ep, onClick }: { ep: Episode; onClick: () => void }) {
+function EpisodeRow({ ep, href }: { ep: Episode; href: string }) {
   const dimmed = ep.candidate_state === 'already_hevc' || ep.candidate_state === 'completed';
   return (
-    <div
-      onClick={onClick}
+    <Link
+      href={href}
       className={cn(
         'grid items-center gap-3 px-4 py-2.5 border-b border-line-soft last:border-b-0 text-sm',
         'grid-cols-[1fr_auto_auto_auto_auto]',
@@ -43,7 +42,7 @@ function EpisodeRow({ ep, onClick }: { ep: Episode; onClick: () => void }) {
           : <StateBadge state={ep.candidate_state} />
         }
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -51,7 +50,6 @@ function SeasonSection({ seriesTitle, seasonData }: {
   seriesTitle: string;
   seasonData: LibrarySeasonGroup;
 }) {
-  const router = useRouter();
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
     queryKey: ['browse', 'episodes', seriesTitle, seasonData.season],
     queryFn: ({ pageParam }: { pageParam: number }) =>
@@ -102,7 +100,7 @@ function SeasonSection({ seriesTitle, seasonData }: {
           </div>
         ) : (
           <>
-            {episodes.map((ep) => <EpisodeRow key={ep.id} ep={ep} onClick={() => router.push(BROWSE_ROUTES.FILE(ep.id))} />)}
+            {episodes.map((ep) => <EpisodeRow key={ep.id} ep={ep} href={BROWSE_ROUTES.FILE(ep.id)} />)}
             {hasNextPage && (
               <div className="px-4 py-3 border-t border-line-soft">
                 <Button variant="ghost" size="sm" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()} className="text-xs text-muted-fg">

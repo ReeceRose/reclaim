@@ -1,17 +1,18 @@
 import Image from 'next/image';
+import Link from 'next/link';
 import { tmdbImageURL, type LibrarySeriesGroup } from '@/lib/api';
 import { formatBytes, formatInt } from '@/lib/format';
 import { EncodeHealthBar } from './encode-health-bar';
 
-export function ShowCard({ show, onClick }: { show: LibrarySeriesGroup; onClick: () => void }) {
+export function ShowCard({ show, href }: { show: LibrarySeriesGroup; href: string }) {
   const letter = show.title.replace(/^(the |a |an )/i, '').charAt(0).toUpperCase();
   const fullyConverted = show.eligible_count === 0;
   const imageURL = tmdbImageURL(show.backdrop_path, 'w780') ?? tmdbImageURL(show.poster_path, 'w342');
 
   return (
-    <div
-      onClick={onClick}
-      className="relative bg-surface border border-line rounded-2xl overflow-hidden cursor-pointer hover:border-brand-line transition-colors group"
+    <Link
+      href={href}
+      className="relative bg-surface border border-line rounded-2xl overflow-hidden cursor-pointer hover:border-brand-line transition-colors group block"
     >
       <div className="relative h-48 overflow-hidden" style={{ background: 'var(--surface-2)' }}>
         {imageURL ? (
@@ -58,6 +59,6 @@ export function ShowCard({ show, onClick }: { show: LibrarySeriesGroup; onClick:
       </div>
 
       <EncodeHealthBar fileCount={show.file_count} eligibleCount={show.eligible_count} />
-    </div>
+    </Link>
   );
 }

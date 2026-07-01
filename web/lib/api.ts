@@ -419,6 +419,7 @@ export const api = {
     request<{ job_id: number; status: string }>("POST", `/api/jobs/${id}/cancel`),
   forceJob: (id: number) =>
     request<{ job_id: number; forced: boolean }>("POST", `/api/jobs/${id}/force`),
+  deleteJob: (id: number) => request<void>("DELETE", `/api/jobs/${id}`),
 
   // Events
   events: (params?: { after_id?: number; limit?: number; severity?: string; type?: string }) =>

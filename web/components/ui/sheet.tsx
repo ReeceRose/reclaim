@@ -1,27 +1,27 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { XIcon } from "lucide-react"
-import { Dialog as DialogPrimitive } from "radix-ui"
+import { XIcon } from "lucide-react";
+import { Dialog as DialogPrimitive } from "radix-ui";
+import type * as React from "react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 function Sheet({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-  return <DialogPrimitive.Root data-slot="sheet" {...props} />
+  return <DialogPrimitive.Root data-slot="sheet" {...props} />;
 }
 
 function SheetTrigger({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
-  return <DialogPrimitive.Trigger data-slot="sheet-trigger" {...props} />
+  return <DialogPrimitive.Trigger data-slot="sheet-trigger" {...props} />;
 }
 
 function SheetClose({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Close>) {
-  return <DialogPrimitive.Close data-slot="sheet-close" {...props} />
+  return <DialogPrimitive.Close data-slot="sheet-close" {...props} />;
 }
 
 function SheetOverlay({
@@ -33,11 +33,11 @@ function SheetOverlay({
       data-slot="sheet-overlay"
       className={cn(
         "fixed inset-0 z-50 bg-black/40 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
-        className
+        className,
       )}
       {...props}
     />
-  )
+  );
 }
 
 function SheetContent({
@@ -54,9 +54,9 @@ function SheetContent({
           "fixed inset-y-0 right-0 z-50 flex h-full w-[420px] max-w-full flex-col border-l border-line shadow-xl duration-300 outline-none",
           "data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right",
           "data-[state=open]:animate-in data-[state=open]:slide-in-from-right",
-          className
+          className,
         )}
-        style={{ background: 'var(--surface)' }}
+        style={{ background: "var(--surface)" }}
         {...props}
       >
         {children}
@@ -69,17 +69,20 @@ function SheetContent({
         </DialogPrimitive.Close>
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
-  )
+  );
 }
 
 function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="sheet-header"
-      className={cn("flex flex-col gap-1.5 border-b border-line px-6 py-5", className)}
+      className={cn(
+        "flex flex-col gap-1.5 border-b border-line px-6 py-5",
+        className,
+      )}
       {...props}
     />
-  )
+  );
 }
 
 function SheetTitle({
@@ -92,7 +95,7 @@ function SheetTitle({
       className={cn("text-[1rem] font-semibold leading-none", className)}
       {...props}
     />
-  )
+  );
 }
 
 export {
@@ -102,4 +105,4 @@ export {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-}
+};

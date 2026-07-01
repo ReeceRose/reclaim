@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { type Profile } from '@/lib/api';
-import { Button } from '@/components/ui/button';
+import { Button } from "@/components/ui/button";
+import type { Profile } from "@/lib/api";
 
 export function ProfilesPanel({
   profiles,
@@ -19,9 +19,14 @@ export function ProfilesPanel({
   isSettingDefault: boolean;
 }) {
   return (
-    <div className="border border-line rounded-(--radius) p-5" style={{ background: 'var(--surface)' }}>
+    <div
+      className="border border-line rounded-(--radius) p-5"
+      style={{ background: "var(--surface)" }}
+    >
       <div className="flex items-center mb-4">
-        <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold">Transcode profiles</div>
+        <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold">
+          Transcode profiles
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -36,15 +41,17 @@ export function ProfilesPanel({
           key={p.id}
           className="flex flex-wrap items-center gap-x-3.5 gap-y-2 border rounded-[12px] px-4 py-[14px] mb-2.5 last:mb-0"
           style={{
-            borderColor: p.is_default ? 'var(--brand-line)' : 'var(--line)',
-            background: p.is_default ? 'var(--brand-soft)' : undefined,
+            borderColor: p.is_default ? "var(--brand-line)" : "var(--line)",
+            background: p.is_default ? "var(--brand-soft)" : undefined,
           }}
         >
           <div className="flex-1 min-w-0">
             <div className="font-semibold text-[0.95rem]">
               {p.name}
               {p.is_default && (
-                <span className="ml-2 text-[0.66rem] font-bold uppercase tracking-wider text-brand">Default</span>
+                <span className="ml-2 text-[0.66rem] font-bold uppercase tracking-wider text-brand">
+                  Default
+                </span>
               )}
             </div>
             <div className="text-[0.78rem] text-muted-fg font-mono mt-0.5 wrap-break-word">

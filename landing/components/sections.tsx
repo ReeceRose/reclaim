@@ -3,8 +3,8 @@ import {
   BarChart3,
   Clock,
   Download,
-  Eye,
   ExternalLink,
+  Eye,
   FolderSearch,
   HardDrive,
   Image,
@@ -132,8 +132,8 @@ export function Features() {
             Built for large homelab libraries
           </h2>
           <p className="mt-3 text-base leading-relaxed text-muted-fg">
-            Mixed codecs, tens of terabytes, and a need to chip away safely — not
-            batch-convert everything at once.
+            Mixed codecs, tens of terabytes, and a need to chip away safely —
+            not batch-convert everything at once.
           </p>
         </div>
 
@@ -154,7 +154,9 @@ export function Features() {
                 <f.icon className="h-5 w-5" />
               </div>
               <h3 className="text-base font-bold">{f.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-fg">{f.body}</p>
+              <p className="mt-2 text-sm leading-relaxed text-muted-fg">
+                {f.body}
+              </p>
             </div>
           ))}
         </div>
@@ -165,7 +167,10 @@ export function Features() {
 
 export function HowItWorks() {
   return (
-    <section id="how" className="border-b border-line bg-surface/40 py-20 sm:py-24">
+    <section
+      id="how"
+      className="border-b border-line bg-surface/40 py-20 sm:py-24"
+    >
       <div className="mx-auto max-w-6xl px-5 sm:px-7">
         <div className="max-w-2xl">
           <p className="text-2xs font-bold uppercase tracking-[0.13em] text-brand">
@@ -189,7 +194,9 @@ export function HowItWorks() {
                 {s.n}
               </span>
               <h3 className="mt-3 text-lg font-bold">{s.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-fg">{s.body}</p>
+              <p className="mt-2 text-sm leading-relaxed text-muted-fg">
+                {s.body}
+              </p>
             </div>
           ))}
         </div>
@@ -227,7 +234,9 @@ export function Safety() {
                   <span className="text-text">original</span>
                   {" → "}
                   <span className="text-gold">original.reclaim-backup</span>
-                  <span className="ml-2 text-2xs text-muted-dim">(rename, atomic)</span>
+                  <span className="ml-2 text-2xs text-muted-dim">
+                    (rename, atomic)
+                  </span>
                 </span>
               </div>
               <div className="flex items-start gap-3">
@@ -236,13 +245,16 @@ export function Safety() {
                   <span className="text-sky">.reclaim-tmp</span>
                   {" → "}
                   <span className="text-text">original</span>
-                  <span className="ml-2 text-2xs text-muted-dim">(rename, atomic)</span>
+                  <span className="ml-2 text-2xs text-muted-dim">
+                    (rename, atomic)
+                  </span>
                 </span>
               </div>
               <div className="flex items-start gap-3">
                 <span className="mt-0.5 text-brand">3.</span>
                 <span>
-                  delete <span className="text-gold">original.reclaim-backup</span>
+                  delete{" "}
+                  <span className="text-gold">original.reclaim-backup</span>
                 </span>
               </div>
             </div>
@@ -279,7 +291,10 @@ export function Comparison() {
             </h3>
             <ul className="mt-4 space-y-3">
               {does.map((item) => (
-                <li key={item} className="flex items-start gap-2.5 text-sm text-muted-fg">
+                <li
+                  key={item}
+                  className="flex items-start gap-2.5 text-sm text-muted-fg"
+                >
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-green" />
                   {item}
                 </li>
@@ -293,7 +308,10 @@ export function Comparison() {
             </h3>
             <ul className="mt-4 space-y-3">
               {doesNot.map((item) => (
-                <li key={item} className="flex items-start gap-2.5 text-sm text-muted-fg">
+                <li
+                  key={item}
+                  className="flex items-start gap-2.5 text-sm text-muted-fg"
+                >
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-slate" />
                   {item}
                 </li>
@@ -341,16 +359,21 @@ volumes:
             Up and running in minutes
           </h2>
           <p className="mt-3 text-base leading-relaxed text-muted-fg">
-            Single container. Mount your library read-write, open port 8080, create
-            your login on first boot.
+            Single container. Mount your library read-write, open port 8080,
+            create your login on first boot.
           </p>
         </div>
 
         <div className="mt-10 grid gap-5 lg:grid-cols-[1.2fr_1fr]">
           <div className="overflow-hidden rounded-lg border border-line bg-surface">
             <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-              <span className="font-mono text-xs text-muted-fg">docker-compose.yml</span>
-              <CopyButton text={composeSnippet} label="Copy docker-compose.yml" />
+              <span className="font-mono text-xs text-muted-fg">
+                docker-compose.yml
+              </span>
+              <CopyButton
+                text={composeSnippet}
+                label="Copy docker-compose.yml"
+              />
             </div>
             <pre className="overflow-x-auto p-4 font-mono text-xs leading-relaxed text-muted-fg">
               <code>{composeSnippet}</code>
@@ -361,9 +384,15 @@ volumes:
             <div className="rounded-lg border border-line bg-surface p-5">
               <h3 className="text-sm font-bold">1. Pull and start</h3>
               <p className="mt-2 text-sm text-muted-fg">
-                Set <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-text">PUID</code> and{" "}
-                <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-text">PGID</code> to the user
-                that owns your media library.
+                Set{" "}
+                <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-text">
+                  PUID
+                </code>{" "}
+                and{" "}
+                <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-text">
+                  PGID
+                </code>{" "}
+                to the user that owns your media library.
               </p>
               <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-line bg-bg px-3 py-2.5">
                 <code className="font-mono text-xs text-text">{runCmd}</code>
@@ -385,7 +414,8 @@ volumes:
             <div className="rounded-lg border border-line bg-surface p-5">
               <h3 className="text-sm font-bold">3. Read the docs</h3>
               <p className="mt-2 text-sm text-muted-fg">
-                Full deployment guide for Unraid, Synology, and standalone binary.
+                Full deployment guide for Unraid, Synology, and standalone
+                binary.
               </p>
               <a
                 href={`${site.docsBase}/DOCKER.md`}
@@ -416,8 +446,9 @@ export function Throughput() {
             CPU x265 is slow by design
           </h2>
           <p className="mt-3 text-base leading-relaxed text-muted-fg">
-            Reclaim is meant to chip away safely over weeks and months of overnight
-            windows — not batch-convert a 20,000-file library in a weekend.
+            Reclaim is meant to chip away safely over weeks and months of
+            overnight windows — not batch-convert a 20,000-file library in a
+            weekend.
           </p>
         </div>
 
@@ -426,7 +457,9 @@ export function Throughput() {
             <thead>
               <tr className="border-b border-line bg-surface">
                 <th className="px-5 py-3 font-bold text-muted-fg">Preset</th>
-                <th className="px-5 py-3 font-bold text-muted-fg">Typical speed</th>
+                <th className="px-5 py-3 font-bold text-muted-fg">
+                  Typical speed
+                </th>
                 <th className="hidden px-5 py-3 font-bold text-muted-fg sm:table-cell">
                   1-hour HD file
                 </th>
@@ -434,7 +467,10 @@ export function Throughput() {
             </thead>
             <tbody>
               {presets.map((p) => (
-                <tr key={p.name} className="border-b border-line-soft last:border-0">
+                <tr
+                  key={p.name}
+                  className="border-b border-line-soft last:border-0"
+                >
                   <td className="px-5 py-3.5">
                     <code className="rounded-md border border-line bg-surface-2 px-2 py-0.5 font-mono text-xs">
                       {p.name}
@@ -471,8 +507,8 @@ export function CTA() {
               Ready to reclaim some space?
             </h2>
             <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-muted-fg sm:text-base">
-              Clone the repo, point it at your library, and see how much you could
-              save — before encoding a single file.
+              Clone the repo, point it at your library, and see how much you
+              could save — before encoding a single file.
             </p>
             <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
               <a
@@ -510,10 +546,17 @@ export function Footer() {
             <span className="text-text">Re</span>
             <span className="text-brand">claim</span>
           </span>
-          <span className="text-xs text-muted-dim">· self-hosted · open source</span>
+          <span className="text-xs text-muted-dim">
+            · self-hosted · open source
+          </span>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-5 text-sm text-muted-fg">
-          <a href={site.repo} target="_blank" rel="noreferrer" className="hover:text-text">
+          <a
+            href={site.repo}
+            target="_blank"
+            rel="noreferrer"
+            className="hover:text-text"
+          >
             GitHub
           </a>
           <a

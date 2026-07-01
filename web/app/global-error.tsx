@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useEffect } from 'react';
-import './globals.css';
-import { StatusScreen } from '@/components/status-screen';
+import { useEffect } from "react";
+import "./globals.css";
+import { StatusScreen } from "@/components/status-screen";
 
 /**
  * Catches errors thrown in the root layout itself. It replaces the entire
@@ -32,11 +32,13 @@ export default function GlobalError({
           description="The app hit an unexpected error while loading. Reloading usually clears it."
         >
           <button
+            type="button"
             onClick={() => reset()}
             className="inline-flex items-center justify-center h-10 px-5 rounded-[11px] text-sm font-semibold text-on-brand"
             style={{
-              background: 'linear-gradient(145deg, var(--brand), var(--brand-2))',
-              boxShadow: '0 4px 14px var(--brand-soft)',
+              background:
+                "linear-gradient(145deg, var(--brand), var(--brand-2))",
+              boxShadow: "0 4px 14px var(--brand-soft)",
             }}
           >
             Reload

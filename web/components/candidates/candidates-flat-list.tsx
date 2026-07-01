@@ -1,15 +1,15 @@
-'use client';
+"use client";
 
-import { useEffect, type RefObject } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { type MediaFile } from '@/lib/api';
-import { BROWSE_ROUTES } from '@/app/(app)/browse/browse';
-import { type IdToggleHandler } from '@/hooks/use-id-selection';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState } from '@/components/ui/empty-state';
-import { QueryErrorState } from '@/components/ui/query-error-state';
-import { MediaFlatRow } from '@/components/media/media-flat-row';
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { type RefObject, useEffect } from "react";
+import { BROWSE_ROUTES } from "@/app/(app)/browse/browse";
+import { MediaFlatRow } from "@/components/media/media-flat-row";
+import { Checkbox } from "@/components/ui/checkbox";
+import { EmptyState } from "@/components/ui/empty-state";
+import { QueryErrorState } from "@/components/ui/query-error-state";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { IdToggleHandler } from "@/hooks/use-id-selection";
+import type { MediaFile } from "@/lib/api";
 
 export function CandidatesFlatList({
   parentRef,
@@ -42,7 +42,7 @@ export function CandidatesFlatList({
   isFetchingNextPage: boolean;
   onLoadMore: () => void;
 }) {
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual returns non-memoizable functions; React Compiler intentionally skips this hook.
+  // TanStack Virtual returns non-memoizable functions; React Compiler intentionally skips this hook.
   const virtualizer = useVirtualizer({
     count: hasNextPage ? allItems.length + 1 : allItems.length,
     getScrollElement: () => parentRef.current,
@@ -54,10 +54,20 @@ export function CandidatesFlatList({
   useEffect(() => {
     const last = virtualItems[virtualItems.length - 1];
     if (!last) return;
-    if (last.index >= allItems.length - 1 && hasNextPage && !isFetchingNextPage) {
+    if (
+      last.index >= allItems.length - 1 &&
+      hasNextPage &&
+      !isFetchingNextPage
+    ) {
       onLoadMore();
     }
-  }, [virtualItems, allItems.length, hasNextPage, isFetchingNextPage, onLoadMore]);
+  }, [
+    virtualItems,
+    allItems.length,
+    hasNextPage,
+    isFetchingNextPage,
+    onLoadMore,
+  ]);
 
   return (
     <div className="bg-surface border border-line rounded-(--radius) overflow-hidden flex flex-col h-full">
@@ -72,16 +82,29 @@ export function CandidatesFlatList({
         <div className="flex-1 py-3 pr-3">File</div>
         <div className="w-[64px] sm:w-[80px] py-3">Codec</div>
         <div className="hidden sm:block w-[60px] py-3">Res</div>
-        <div className="hidden sm:block w-[90px] py-3 text-right pr-2">Size</div>
-        <div className="w-[84px] sm:w-[110px] py-3 text-right pr-3 sm:pr-4 text-brand">Est. savings ↓</div>
+        <div className="hidden sm:block w-[90px] py-3 text-right pr-2">
+          Size
+        </div>
+        <div className="w-[84px] sm:w-[110px] py-3 text-right pr-3 sm:pr-4 text-brand">
+          Est. savings ↓
+        </div>
       </div>
 
       {showError ? (
-        <QueryErrorState error={error} onRetry={onRetry} title="Failed to load candidates" />
+        <QueryErrorState
+          error={error}
+          onRetry={onRetry}
+          title="Failed to load candidates"
+        />
       ) : isInitialLoading ? (
         <div className="flex-1 overflow-auto">
           {Array.from({ length: 10 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-0 border-b border-line-soft px-0" style={{ height: 52 }}>
+            <div
+              // biome-ignore lint/suspicious/noArrayIndexKey: reason: static, fixed-length skeleton placeholder list with no stable identity
+              key={i}
+              className="flex items-center gap-0 border-b border-line-soft px-0"
+              style={{ height: 52 }}
+            >
               <div className="w-[52px] flex justify-center shrink-0">
                 <Skeleton className="w-[17px] h-[17px] rounded-[5px]" />
               </div>
@@ -100,8 +123,16 @@ export function CandidatesFlatList({
         <EmptyState
           className="flex-1"
           icon={
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-5 h-5">
-              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              className="w-5 h-5"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
           }
           title="No candidates match"
@@ -109,11 +140,18 @@ export function CandidatesFlatList({
         />
       ) : (
         <div ref={parentRef} className="flex-1 overflow-auto">
-          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+          <div
+            style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+          >
             {virtualItems.map((vRow) => (
               <div
                 key={vRow.key}
-                style={{ position: 'absolute', top: vRow.start, height: vRow.size, width: '100%' }}
+                style={{
+                  position: "absolute",
+                  top: vRow.start,
+                  height: vRow.size,
+                  width: "100%",
+                }}
               >
                 {vRow.index < allItems.length ? (
                   <MediaFlatRow
@@ -126,7 +164,11 @@ export function CandidatesFlatList({
                   />
                 ) : (
                   <div className="flex items-center justify-center h-full text-muted-dim text-sm">
-                    {isFetchingNextPage ? 'Loading more…' : hasNextPage ? 'Scroll to load more' : 'End of list'}
+                    {isFetchingNextPage
+                      ? "Loading more…"
+                      : hasNextPage
+                        ? "Scroll to load more"
+                        : "End of list"}
                   </div>
                 )}
               </div>

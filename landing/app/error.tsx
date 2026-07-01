@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { ArrowLeft, RotateCw } from "lucide-react";
 import Link from "next/link";
-import { RotateCw, ArrowLeft } from "lucide-react";
+import { useEffect } from "react";
 import { StatusScreen } from "@/components/status-screen";
 
-export default function Error({
+export default function ErrorPage({
   error,
   reset,
 }: {
@@ -33,6 +33,7 @@ export default function Error({
       }
     >
       <button
+        type="button"
         onClick={() => reset()}
         className="inline-flex h-10 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-on-brand transition-colors hover:bg-brand-2"
       >

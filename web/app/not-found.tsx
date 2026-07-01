@@ -1,9 +1,9 @@
-import Link from 'next/link';
-import type { Metadata } from 'next';
-import { StatusScreen } from '@/components/status-screen';
+import type { Metadata } from "next";
+import Link from "next/link";
+import { StatusScreen } from "@/components/status-screen";
 
 export const metadata: Metadata = {
-  title: 'Not found · Reclaim',
+  title: "Not found · Reclaim",
 };
 
 export default function NotFound() {
@@ -17,8 +17,8 @@ export default function NotFound() {
         href="/"
         className="inline-flex items-center justify-center h-10 px-5 rounded-[11px] text-sm font-semibold text-on-brand"
         style={{
-          background: 'linear-gradient(145deg, var(--brand), var(--brand-2))',
-          boxShadow: '0 4px 14px var(--brand-soft)',
+          background: "linear-gradient(145deg, var(--brand), var(--brand-2))",
+          boxShadow: "0 4px 14px var(--brand-soft)",
         }}
       >
         Back to overview

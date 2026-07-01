@@ -172,7 +172,9 @@
   body {
     background-color: var(--bg);
     color: var(--text);
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
   }
   /* Tabular numerals for sizes/savings everywhere it matters. */
   .tnum {

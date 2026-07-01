@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { NotificationPanel } from '@/components/notification-panel';
-import { MobileBottomNav, MobileHeader } from './mobile-nav';
-import { Sidebar } from './sidebar';
-import { useShellData } from './use-shell-data';
+import { useState } from "react";
+import { NotificationPanel } from "@/components/notification-panel";
+import { MobileBottomNav, MobileHeader } from "./mobile-nav";
+import { Sidebar } from "./sidebar";
+import { useShellData } from "./use-shell-data";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [notifOpen, setNotifOpen] = useState(false);

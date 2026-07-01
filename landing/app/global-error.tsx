@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
 import { RotateCw } from "lucide-react";
+import { useEffect } from "react";
 import "./globals.css";
 import { StatusScreen } from "@/components/status-screen";
 
@@ -33,6 +33,7 @@ export default function GlobalError({
           description="The page hit an unexpected error while loading. Reloading usually clears it."
         >
           <button
+            type="button"
             onClick={() => reset()}
             className="inline-flex h-10 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-on-brand transition-colors hover:bg-brand-2"
           >

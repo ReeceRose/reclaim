@@ -16,5 +16,9 @@ export const nav = [
   { label: "Features", href: "#features" },
   { label: "How it works", href: "#how" },
   { label: "Install", href: "#install" },
-  { label: "Docs", href: `${site.repo}/blob/main/docs/DOCKER.md`, external: true },
+  {
+    label: "Docs",
+    href: `${site.repo}/blob/main/docs/DOCKER.md`,
+    external: true,
+  },
 ];

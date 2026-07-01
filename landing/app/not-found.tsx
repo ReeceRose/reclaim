@@ -1,6 +1,6 @@
+import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { GitHubIcon } from "@/components/github-icon";
 import { StatusScreen } from "@/components/status-screen";
 import { site } from "@/lib/site";

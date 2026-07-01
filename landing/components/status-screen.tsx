@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { LogoMark, Wordmark } from "@/components/logo";
 
 /**
@@ -45,7 +45,9 @@ export function StatusScreen({
           <div className="mb-4 font-mono text-6xl font-semibold leading-none tracking-tight text-muted-dim tnum">
             {code}
           </div>
-          <h1 className="mb-2.5 text-title font-bold tracking-tight">{title}</h1>
+          <h1 className="mb-2.5 text-title font-bold tracking-tight">
+            {title}
+          </h1>
           <p className="mx-auto max-w-sm text-sm leading-relaxed text-muted-fg">
             {description}
           </p>

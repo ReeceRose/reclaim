@@ -77,8 +77,8 @@ export function windowInfo(
   start: string,
   end: string,
 ): { open: boolean; label: string; detail: string } {
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
   const now = new Date();
   const nowMins = now.getHours() * 60 + now.getMinutes();
   const startMins = sh * 60 + (sm ?? 0);

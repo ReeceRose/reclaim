@@ -4,10 +4,30 @@ import { site } from "@/lib/site";
 
 function DashboardMock() {
   const codecs = [
-    { label: "h264", pct: 100, color: "var(--gold)", meta: "8,214 (68%) · 41.2 TB (71%)" },
-    { label: "hevc", pct: 38, color: "var(--green)", meta: "3,110 (26%) · 9.8 TB (17%)" },
-    { label: "mpeg2", pct: 14, color: "var(--rose)", meta: "612 (5%) · 5.1 TB (9%)" },
-    { label: "vc1", pct: 7, color: "var(--violet)", meta: "204 (2%) · 2.3 TB (4%)" },
+    {
+      label: "h264",
+      pct: 100,
+      color: "var(--gold)",
+      meta: "8,214 (68%) · 41.2 TB (71%)",
+    },
+    {
+      label: "hevc",
+      pct: 38,
+      color: "var(--green)",
+      meta: "3,110 (26%) · 9.8 TB (17%)",
+    },
+    {
+      label: "mpeg2",
+      pct: 14,
+      color: "var(--rose)",
+      meta: "612 (5%) · 5.1 TB (9%)",
+    },
+    {
+      label: "vc1",
+      pct: 7,
+      color: "var(--violet)",
+      meta: "204 (2%) · 2.3 TB (4%)",
+    },
   ];
 
   return (
@@ -52,7 +72,8 @@ function DashboardMock() {
               className="h-full"
               style={{
                 width: "31%",
-                background: "linear-gradient(180deg, var(--brand), var(--brand-2))",
+                background:
+                  "linear-gradient(180deg, var(--brand), var(--brand-2))",
                 boxShadow: "0 0 22px var(--brand-soft)",
               }}
             />
@@ -77,7 +98,10 @@ function DashboardMock() {
             <span className="flex items-center gap-1.5">
               <span
                 className="inline-block h-2.5 w-2.5 rounded-[4px]"
-                style={{ background: "color-mix(in srgb, var(--green) 45%, transparent)" }}
+                style={{
+                  background:
+                    "color-mix(in srgb, var(--green) 45%, transparent)",
+                }}
               />
               Already HEVC · 9.8 TB · 17%
             </span>
@@ -150,11 +174,11 @@ export function Hero() {
 
           <p className="mt-5 max-w-xl text-base leading-relaxed text-muted-fg sm:text-lg">
             Point it at the same movie and TV folders Plex, Jellyfin, or Emby
-            already use. Reclaim audits every file by codec, bitrate, and size, then
-            ranks what&apos;s worth re-encoding. Queue the wins as overnight{" "}
-            <span className="font-mono text-text">ffmpeg</span> jobs — and see the
-            files better re-downloaded than re-encoded. Originals are replaced only
-            after verification.
+            already use. Reclaim audits every file by codec, bitrate, and size,
+            then ranks what&apos;s worth re-encoding. Queue the wins as
+            overnight <span className="font-mono text-text">ffmpeg</span> jobs —
+            and see the files better re-downloaded than re-encoded. Originals
+            are replaced only after verification.
           </p>
 
           <div className="mt-7 flex flex-wrap items-center gap-3">

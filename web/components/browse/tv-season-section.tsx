@@ -1,43 +1,54 @@
-'use client';
+"use client";
 
-import { useMemo } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
-import { api, type LibrarySeasonGroup } from '@/lib/api';
-import { formatBytes, formatInt } from '@/lib/format';
-import { BROWSE_ROUTES, EPISODES_PER_PAGE } from '@/app/(app)/browse/browse';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { TvEpisodeRow } from './tv-episode-row';
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { BROWSE_ROUTES, EPISODES_PER_PAGE } from "@/app/(app)/browse/browse";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { api, type LibrarySeasonGroup } from "@/lib/api";
+import { formatBytes, formatInt } from "@/lib/format";
+import { TvEpisodeRow } from "./tv-episode-row";
 
-export function TvSeasonSection({ seriesTitle, seasonData }: {
+export function TvSeasonSection({
+  seriesTitle,
+  seasonData,
+}: {
   seriesTitle: string;
   seasonData: LibrarySeasonGroup;
 }) {
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
-    queryKey: ['browse', 'episodes', seriesTitle, seasonData.season],
-    queryFn: ({ pageParam }: { pageParam: number }) =>
-      api.groupedFileEpisodes({
-        series: seriesTitle,
-        season: seasonData.season,
-        limit: EPISODES_PER_PAGE,
-        offset: pageParam,
-      }),
-    initialPageParam: 0,
-    getNextPageParam: (_lastPage, allPages) => {
-      const loaded = allPages.flatMap((p) => p.episodes).length;
-      return loaded < seasonData.file_count ? loaded : undefined;
-    },
-  });
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
+    useInfiniteQuery({
+      queryKey: ["browse", "episodes", seriesTitle, seasonData.season],
+      queryFn: ({ pageParam }: { pageParam: number }) =>
+        api.groupedFileEpisodes({
+          series: seriesTitle,
+          season: seasonData.season,
+          limit: EPISODES_PER_PAGE,
+          offset: pageParam,
+        }),
+      initialPageParam: 0,
+      getNextPageParam: (_lastPage, allPages) => {
+        const loaded = allPages.flatMap((p) => p.episodes).length;
+        return loaded < seasonData.file_count ? loaded : undefined;
+      },
+    });
 
-  const episodes = useMemo(() => data?.pages.flatMap((p) => p.episodes) ?? [], [data]);
+  const episodes = useMemo(
+    () => data?.pages.flatMap((p) => p.episodes) ?? [],
+    [data],
+  );
 
   return (
     <section className="mb-5">
       <div className="flex items-center gap-3 px-4 py-3 bg-surface-2 border border-line rounded-t-xl border-b-0">
         <h2 className="font-bold text-sm flex-1">Season {seasonData.season}</h2>
-        <span className="text-xs text-muted-dim">{formatInt(seasonData.file_count)} files</span>
+        <span className="text-xs text-muted-dim">
+          {formatInt(seasonData.file_count)} files
+        </span>
         <span className="text-muted-dim">·</span>
-        <span className="font-mono text-xs text-muted-fg">{formatBytes(seasonData.total_bytes)}</span>
+        <span className="font-mono text-xs text-muted-fg">
+          {formatBytes(seasonData.total_bytes)}
+        </span>
         {seasonData.predicted_savings_bytes > 0 && (
           <>
             <span className="text-muted-dim">·</span>
@@ -59,15 +70,30 @@ export function TvSeasonSection({ seriesTitle, seasonData }: {
 
         {isLoading ? (
           <div className="px-4 py-3 space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
+            {Array.from({ length: 4 }).map((_, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: reason: static, fixed-length skeleton placeholder list with no stable identity
+              <Skeleton key={i} className="h-4 w-full" />
+            ))}
           </div>
         ) : (
           <>
-            {episodes.map((ep) => <TvEpisodeRow key={ep.id} ep={ep} href={BROWSE_ROUTES.FILE(ep.id)} />)}
+            {episodes.map((ep) => (
+              <TvEpisodeRow
+                key={ep.id}
+                ep={ep}
+                href={BROWSE_ROUTES.FILE(ep.id)}
+              />
+            ))}
             {hasNextPage && (
               <div className="px-4 py-3 border-t border-line-soft">
-                <Button variant="ghost" size="sm" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()} className="text-xs text-muted-fg">
-                  {isFetchingNextPage ? 'Loading…' : 'Load more episodes'}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={isFetchingNextPage}
+                  onClick={() => void fetchNextPage()}
+                  className="text-xs text-muted-fg"
+                >
+                  {isFetchingNextPage ? "Loading…" : "Load more episodes"}
                 </Button>
               </div>
             )}

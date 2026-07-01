@@ -1,12 +1,12 @@
-import Link from 'next/link';
-import type { Settings } from '@/lib/api';
-import type { windowInfo } from '@/lib/format';
-import { BrandLink } from './brand-link';
-import { NotificationBell } from './notification-bell';
-import { ScanBanner } from './scan-banner';
-import { WsDisconnectedBanner } from './ws-disconnected-banner';
-import { WindowArc } from './window-arc';
-import { NAV_GROUPS, NAV_ITEMS, isNavActive } from './nav-config';
+import Link from "next/link";
+import type { Settings } from "@/lib/api";
+import type { windowInfo } from "@/lib/format";
+import { BrandLink } from "./brand-link";
+import { isNavActive, NAV_GROUPS, NAV_ITEMS } from "./nav-config";
+import { NotificationBell } from "./notification-bell";
+import { ScanBanner } from "./scan-banner";
+import { WindowArc } from "./window-arc";
+import { WsDisconnectedBanner } from "./ws-disconnected-banner";
 
 type EncodeWindow = ReturnType<typeof windowInfo>;
 
@@ -40,11 +40,14 @@ export function Sidebar({
   return (
     <aside
       className="flex flex-col sticky top-0 h-screen border-r border-line max-sm:hidden"
-      style={{ background: 'var(--surface)' }}
+      style={{ background: "var(--surface)" }}
     >
       <div className="flex items-center gap-[11px] px-5 py-5 border-b border-line-soft">
         <BrandLink />
-        <NotificationBell unreadCount={unreadCount} onClick={onOpenNotifications} />
+        <NotificationBell
+          unreadCount={unreadCount}
+          onClick={onOpenNotifications}
+        />
       </div>
 
       <ScanBanner visible={isScanning} detail={scanProgressDetail} />
@@ -64,17 +67,19 @@ export function Sidebar({
                   key={item.path}
                   href={item.path}
                   className={[
-                    'flex items-center gap-[11px] px-[11px] py-[10px] rounded-[11px] w-full',
-                    'text-[0.93rem] font-medium border transition-all duration-130',
+                    "flex items-center gap-[11px] px-[11px] py-[10px] rounded-[11px] w-full",
+                    "text-[0.93rem] font-medium border transition-all duration-130",
                     active
-                      ? 'bg-brand-soft text-brand border-brand-line font-semibold'
-                      : 'text-muted-fg border-transparent hover:bg-surface-2 hover:text-text',
-                  ].join(' ')}
+                      ? "bg-brand-soft text-brand border-brand-line font-semibold"
+                      : "text-muted-fg border-transparent hover:bg-surface-2 hover:text-text",
+                  ].join(" ")}
                 >
                   {item.icon}
                   <span className="flex-1">{item.label}</span>
                   {badge && (
-                    <span className={`text-[0.7rem] font-bold px-[9px] py-px rounded-[20px] ${active ? 'bg-brand-soft text-brand' : 'bg-surface-3 text-muted-fg'}`}>
+                    <span
+                      className={`text-[0.7rem] font-bold px-[9px] py-px rounded-[20px] ${active ? "bg-brand-soft text-brand" : "bg-surface-3 text-muted-fg"}`}
+                    >
                       {badge}
                     </span>
                   )}
@@ -94,8 +99,12 @@ export function Sidebar({
               isOpen={encodeWindow.open}
             />
             <div className="min-w-0">
-              <div className="text-[0.76rem] font-semibold text-text leading-tight">{encodeWindow.label}</div>
-              <div className={`text-[0.7rem] leading-tight mt-[2px] ${encodeWindow.open ? 'text-green' : 'text-muted-dim'}`}>
+              <div className="text-[0.76rem] font-semibold text-text leading-tight">
+                {encodeWindow.label}
+              </div>
+              <div
+                className={`text-[0.7rem] leading-tight mt-[2px] ${encodeWindow.open ? "text-green" : "text-muted-dim"}`}
+              >
                 {encodeWindow.detail}
               </div>
             </div>
@@ -104,12 +113,18 @@ export function Sidebar({
         <div className="flex items-center gap-[10px] text-[0.84rem]">
           <div
             className="w-[30px] h-[30px] rounded-full grid place-items-center font-bold text-[0.8rem] text-on-brand shrink-0"
-            style={{ background: 'linear-gradient(145deg, var(--brand), var(--green))' }}
+            style={{
+              background: "linear-gradient(145deg, var(--brand), var(--green))",
+            }}
           >
             {initials}
           </div>
           <span className="flex-1 min-w-0 truncate">{username}</span>
-          <button onClick={() => void onLogout()} className="text-[0.76rem] text-muted-dim hover:text-red transition-colors cursor-pointer">
+          <button
+            type="button"
+            onClick={() => void onLogout()}
+            className="text-[0.76rem] text-muted-dim hover:text-red transition-colors cursor-pointer"
+          >
             Log out
           </button>
         </div>

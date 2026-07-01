@@ -88,7 +88,9 @@
   body {
     background-color: var(--bg);
     color: var(--text);
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
     -webkit-font-smoothing: antialiased;
   }
   .tnum {
@@ -103,8 +105,16 @@
   /* Subtle grid / scanline backdrop used behind the hero. */
   .bg-grid {
     background-image:
-      linear-gradient(to right, color-mix(in srgb, var(--text) 4%, transparent) 1px, transparent 1px),
-      linear-gradient(to bottom, color-mix(in srgb, var(--text) 4%, transparent) 1px, transparent 1px);
+      linear-gradient(
+        to right,
+        color-mix(in srgb, var(--text) 4%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in srgb, var(--text) 4%, transparent) 1px,
+        transparent 1px
+      );
     background-size: 56px 56px;
   }
   .scanlines {
@@ -115,7 +125,9 @@
     );
   }
   .glow-brand {
-    box-shadow: 0 0 0 1px var(--brand-line), 0 8px 40px -8px var(--brand-soft);
+    box-shadow:
+      0 0 0 1px var(--brand-line),
+      0 8px 40px -8px var(--brand-soft);
   }
 
   @keyframes float-up {

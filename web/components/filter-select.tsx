@@ -1,7 +1,13 @@
-'use client';
+"use client";
 
-import { cn } from '@/lib/utils';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 export function FilterSelect({
   label,
@@ -16,20 +22,30 @@ export function FilterSelect({
   onChange: (v: string) => void;
   className?: string;
 }) {
-  const active = value !== '';
+  const active = value !== "";
   const selectedLabel = options.find((o) => o.value === value)?.label;
   return (
-    <Select value={value || '_all'} onValueChange={(v) => onChange(v === '_all' ? '' : v)}>
+    <Select
+      value={value || "_all"}
+      onValueChange={(v) => onChange(v === "_all" ? "" : v)}
+    >
       <SelectTrigger
         className={cn(
-          'rounded-[11px] text-[0.84rem] h-auto py-[9px] gap-1 transition-colors',
+          "rounded-[11px] text-[0.84rem] h-auto py-[9px] gap-1 transition-colors",
           active
-            ? 'border-[color-mix(in_srgb,var(--brand)_45%,transparent)] bg-[color-mix(in_srgb,var(--brand)_7%,transparent)]'
-            : 'bg-surface',
+            ? "border-[color-mix(in_srgb,var(--brand)_45%,transparent)] bg-[color-mix(in_srgb,var(--brand)_7%,transparent)]"
+            : "bg-surface",
           className,
         )}
       >
-        <span className={cn('text-[0.78rem] shrink-0', active ? 'text-brand/60' : 'text-muted-dim')}>{label}</span>
+        <span
+          className={cn(
+            "text-[0.78rem] shrink-0",
+            active ? "text-brand/60" : "text-muted-dim",
+          )}
+        >
+          {label}
+        </span>
         <SelectValue>
           {active ? (
             <>
@@ -44,7 +60,9 @@ export function FilterSelect({
       <SelectContent>
         <SelectItem value="_all">All</SelectItem>
         {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
+          </SelectItem>
         ))}
       </SelectContent>
     </Select>

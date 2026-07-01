@@ -1,5 +1,13 @@
 /** 24-hour clock face showing the encode window period. */
-export function WindowArc({ start, end, isOpen }: { start: string; end: string; isOpen: boolean }) {
+export function WindowArc({
+  start,
+  end,
+  isOpen,
+}: {
+  start: string;
+  end: string;
+  isOpen: boolean;
+}) {
   const SIZE = 44;
   const CX = SIZE / 2;
   const CY = SIZE / 2;
@@ -7,12 +15,14 @@ export function WindowArc({ start, end, isOpen }: { start: string; end: string; 
   const SW = 3;
 
   function toRad(hhmm: string): number {
-    const [h, m] = hhmm.split(':').map(Number);
+    const [h, m] = hhmm.split(":").map(Number);
     return ((h * 60 + (m ?? 0)) / 1440) * 2 * Math.PI - Math.PI / 2;
   }
 
   const now = new Date();
-  const nowRad = ((now.getHours() * 60 + now.getMinutes()) / 1440) * 2 * Math.PI - Math.PI / 2;
+  const nowRad =
+    ((now.getHours() * 60 + now.getMinutes()) / 1440) * 2 * Math.PI -
+    Math.PI / 2;
 
   const a1 = toRad(start);
   let a2 = toRad(end);
@@ -27,15 +37,30 @@ export function WindowArc({ start, end, isOpen }: { start: string; end: string; 
   const ny = (CY + R * Math.sin(nowRad)).toFixed(2);
 
   return (
-    <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} className="shrink-0">
-      <circle cx={CX} cy={CY} r={R} fill="none" stroke="var(--line)" strokeWidth={SW} />
+    <svg
+      aria-hidden="true"
+      width={SIZE}
+      height={SIZE}
+      viewBox={`0 0 ${SIZE} ${SIZE}`}
+      className="shrink-0"
+    >
+      <circle
+        cx={CX}
+        cy={CY}
+        r={R}
+        fill="none"
+        stroke="var(--line)"
+        strokeWidth={SW}
+      />
       <path
         d={`M ${x1} ${y1} A ${R} ${R} 0 ${largeArc} 1 ${x2} ${y2}`}
         fill="none"
-        stroke={isOpen ? 'var(--green)' : 'var(--surface-3)'}
+        stroke={isOpen ? "var(--green)" : "var(--surface-3)"}
         strokeWidth={SW}
         strokeLinecap="round"
-        style={isOpen ? { filter: 'drop-shadow(0 0 3px var(--green))' } : undefined}
+        style={
+          isOpen ? { filter: "drop-shadow(0 0 3px var(--green))" } : undefined
+        }
       />
       <circle cx={nx} cy={ny} r={2.2} fill="var(--brand)" />
     </svg>

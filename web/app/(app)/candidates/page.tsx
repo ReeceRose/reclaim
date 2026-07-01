@@ -1,59 +1,108 @@
-'use client';
+"use client";
 
-import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, type MediaFile, type CandidateFilters } from '@/lib/api';
-import { formatInt } from '@/lib/format';
-import { cn } from '@/lib/utils';
-import { Skeleton } from '@/components/ui/skeleton';
-import { toast } from 'sonner';
-import { useRef, useState, useEffect, useMemo, useCallback, useTransition, Suspense } from 'react';
-import { parseQueryEnum, useQueryParam, useQueryParams } from '@/hooks/use-query-params';
-import { useIdSelection } from '@/hooks/use-id-selection';
-import { Badge } from '@/components/ui/badge';
-import { codecFilterOptions, libraryFilterOptions, resolutionFilterOptions } from '@/lib/filter-options';
-import { QueueConfirmDialog } from '@/components/media/queue-confirm-dialog';
-import { QueueSelectionBar } from '@/components/media/selection-bar';
-import { PageHeader } from '@/components/ui/page-header';
-import { CandidatesFilterBar } from '@/components/candidates/candidates-filter-bar';
-import { CandidatesFlatList } from '@/components/candidates/candidates-flat-list';
-import { CandidatesPageSkeleton } from '@/components/candidates/candidates-page-skeleton';
-import { GroupedContent } from '@/components/candidates/grouped-content';
-import { CANDIDATES_PAGE_SIZE, CANDIDATE_SORT_OPTIONS } from '@/components/candidates/constants';
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import { toast } from "sonner";
+import { CandidatesFilterBar } from "@/components/candidates/candidates-filter-bar";
+import { CandidatesFlatList } from "@/components/candidates/candidates-flat-list";
+import { CandidatesPageSkeleton } from "@/components/candidates/candidates-page-skeleton";
+import {
+  CANDIDATE_SORT_OPTIONS,
+  CANDIDATES_PAGE_SIZE,
+} from "@/components/candidates/constants";
+import { GroupedContent } from "@/components/candidates/grouped-content";
+import { QueueConfirmDialog } from "@/components/media/queue-confirm-dialog";
+import { QueueSelectionBar } from "@/components/media/selection-bar";
+import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useIdSelection } from "@/hooks/use-id-selection";
+import {
+  parseQueryEnum,
+  useQueryParam,
+  useQueryParams,
+} from "@/hooks/use-query-params";
+import { api, type CandidateFilters, type MediaFile } from "@/lib/api";
+import {
+  codecFilterOptions,
+  libraryFilterOptions,
+  resolutionFilterOptions,
+} from "@/lib/filter-options";
+import { formatInt } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 function CandidatesPage() {
   const qc = useQueryClient();
   const [isPending, startTransition] = useTransition();
   const { get, set: setQuery } = useQueryParams();
-  const [search, setSearch] = useState(() => get('q') ?? '');
-  const [debouncedSearch, setDebouncedSearch] = useState(() => get('q') ?? '');
-  const [sortRaw, setSortRaw] = useQueryParam('sort', 'savings_desc');
-  const sort = parseQueryEnum(sortRaw, CANDIDATE_SORT_OPTIONS.map((o) => o.value), 'savings_desc');
-  const [codec, setCodec] = useQueryParam('codec');
-  const [resolution, setResolution] = useQueryParam('res');
-  const [library, setLibrary] = useQueryParam('library');
-  const [viewRaw, setViewRaw] = useQueryParam('view', 'flat');
-  const view = parseQueryEnum(viewRaw, ['flat', 'grouped'] as const, 'flat');
-  const { selectedIds, setSelectedIds, toggle: toggleId, clear: clearSel, toggleAll: selectAllToggle } = useIdSelection();
+  const [search, setSearch] = useState(() => get("q") ?? "");
+  const [debouncedSearch, setDebouncedSearch] = useState(() => get("q") ?? "");
+  const [sortRaw, setSortRaw] = useQueryParam("sort", "savings_desc");
+  const sort = parseQueryEnum(
+    sortRaw,
+    CANDIDATE_SORT_OPTIONS.map((o) => o.value),
+    "savings_desc",
+  );
+  const [codec, setCodec] = useQueryParam("codec");
+  const [resolution, setResolution] = useQueryParam("res");
+  const [library, setLibrary] = useQueryParam("library");
+  const [viewRaw, setViewRaw] = useQueryParam("view", "flat");
+  const view = parseQueryEnum(viewRaw, ["flat", "grouped"] as const, "flat");
+  const {
+    selectedIds,
+    setSelectedIds,
+    toggle: toggleId,
+    clear: clearSel,
+    toggleAll: selectAllToggle,
+  } = useIdSelection();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const fileMapRef = useRef<Map<number, MediaFile>>(new Map());
   const parentRef = useRef<HTMLDivElement>(null);
 
   const { data: stats } = useQuery({
-    queryKey: ['stats'],
+    queryKey: ["stats"],
     queryFn: api.stats,
     staleTime: 30_000,
   });
-  const codecOptions = useMemo(() => codecFilterOptions(stats, { excludeHEVC: true, excludeUnknown: true }), [stats]);
-  const resolutionOptions = useMemo(() => resolutionFilterOptions(stats, { excludeUnknown: true }), [stats]);
-  const libraryOptions = useMemo(() => libraryFilterOptions(stats, { excludeUnknown: true }), [stats]);
+  const codecOptions = useMemo(
+    () =>
+      codecFilterOptions(stats, { excludeHEVC: true, excludeUnknown: true }),
+    [stats],
+  );
+  const resolutionOptions = useMemo(
+    () => resolutionFilterOptions(stats, { excludeUnknown: true }),
+    [stats],
+  );
+  const libraryOptions = useMemo(
+    () => libraryFilterOptions(stats, { excludeUnknown: true }),
+    [stats],
+  );
 
-  const effectiveCodec = codec && codecOptions.some((o) => o.value === codec) ? codec : '';
-  const effectiveResolution = resolution && resolutionOptions.some((o) => o.value === resolution) ? resolution : '';
-  const effectiveLibrary = library && libraryOptions.some((o) => o.value === library) ? library : '';
+  const effectiveCodec =
+    codec && codecOptions.some((o) => o.value === codec) ? codec : "";
+  const effectiveResolution =
+    resolution && resolutionOptions.some((o) => o.value === resolution)
+      ? resolution
+      : "";
+  const effectiveLibrary =
+    library && libraryOptions.some((o) => o.value === library) ? library : "";
 
-  const qFromUrl = get('q') ?? '';
+  const qFromUrl = get("q") ?? "";
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync local search input when URL changes (back/forward)
+    // Sync local search input when the URL changes (back/forward navigation)
     setSearch(qFromUrl);
     setDebouncedSearch(qFromUrl);
   }, [qFromUrl]);
@@ -76,14 +125,29 @@ function CandidatesPage() {
     search: debouncedSearch || undefined,
   };
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isError, error, refetch } = useInfiniteQuery({
-    queryKey: ['candidates', filters],
-    queryFn: ({ pageParam }: { pageParam: Record<string, number | undefined> }) =>
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isError,
+    error,
+    refetch,
+  } = useInfiniteQuery({
+    queryKey: ["candidates", filters],
+    queryFn: ({
+      pageParam,
+    }: {
+      pageParam: Record<string, number | undefined>;
+    }) =>
       api.candidates({ ...filters, limit: CANDIDATES_PAGE_SIZE, ...pageParam }),
     initialPageParam: {} as Record<string, number | undefined>,
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.next_cursor) {
-        return { after_savings: lastPage.next_cursor.after_savings, after_id: lastPage.next_cursor.after_id };
+        return {
+          after_savings: lastPage.next_cursor.after_savings,
+          after_id: lastPage.next_cursor.after_id,
+        };
       }
       if (lastPage.items.length === CANDIDATES_PAGE_SIZE) {
         return { offset: allPages.flatMap((p) => p.items).length };
@@ -93,15 +157,20 @@ function CandidatesPage() {
     placeholderData: (prev) => prev,
   });
 
-  const allItems = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
+  const allItems = useMemo(
+    () => data?.pages.flatMap((p) => p.items) ?? [],
+    [data],
+  );
   const orderedIds = useMemo(() => allItems.map((i) => i.id), [allItems]);
 
   useEffect(() => {
-    allItems.forEach((item) => fileMapRef.current.set(item.id, item));
+    allItems.forEach((item) => {
+      fileMapRef.current.set(item.id, item);
+    });
   }, [allItems]);
 
   const { data: profilesData } = useQuery({
-    queryKey: ['profiles'],
+    queryKey: ["profiles"],
     queryFn: api.profiles,
     staleTime: 60_000,
   });
@@ -111,7 +180,13 @@ function CandidatesPage() {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       const allSelected = ids.every((id) => next.has(id));
-      ids.forEach((id) => { if (allSelected) { next.delete(id); } else { next.add(id); } });
+      ids.forEach((id) => {
+        if (allSelected) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+      });
       return next;
     });
   }
@@ -121,31 +196,45 @@ function CandidatesPage() {
   }
 
   const registerLoadedFiles = useCallback((files: MediaFile[]) => {
-    files.forEach((item) => fileMapRef.current.set(item.id, item));
+    files.forEach((item) => {
+      fileMapRef.current.set(item.id, item);
+    });
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: allItems must stay listed so this recomputes once fileMapRef is repopulated after new pages load
   const selectedFiles = useMemo(
-    // eslint-disable-next-line react-hooks/refs -- fileMapRef is a side cache for grouped-view selections
-    () => [...selectedIds].map((id) => fileMapRef.current.get(id)).filter(Boolean) as MediaFile[],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // fileMapRef is a side cache for grouped-view selections, read directly rather than via a reactive value
+    () =>
+      [...selectedIds]
+        .map((id) => fileMapRef.current.get(id))
+        .filter(Boolean) as MediaFile[],
     [selectedIds, allItems],
   );
 
-  const totalSavings = selectedFiles.reduce((s, f) => s + f.predicted_savings_bytes, 0);
+  const totalSavings = selectedFiles.reduce(
+    (s, f) => s + f.predicted_savings_bytes,
+    0,
+  );
 
   const queueMutation = useMutation({
-    mutationFn: ({ ids, profileId }: { ids: number[]; profileId: number | null }) =>
-      api.createJobs(ids, profileId ?? undefined),
+    mutationFn: ({
+      ids,
+      profileId,
+    }: {
+      ids: number[];
+      profileId: number | null;
+    }) => api.createJobs(ids, profileId ?? undefined),
     onSuccess: (result) => {
       toast.success(`${result.queued.length} jobs queued`);
       clearSel();
-      qc.invalidateQueries({ queryKey: ['jobs'] });
-      qc.invalidateQueries({ queryKey: ['candidates'] });
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["candidates"] });
     },
-    onError: () => toast.error('Failed to queue jobs'),
+    onError: () => toast.error("Failed to queue jobs"),
   });
 
-  const allSelected = allItems.length > 0 && allItems.every((i) => selectedIds.has(i.id));
+  const allSelected =
+    allItems.length > 0 && allItems.every((i) => selectedIds.has(i.id));
   const totalCount = data?.pages[0]?.total_count;
 
   const handleLoadMore = useCallback(() => {
@@ -157,17 +246,22 @@ function CandidatesPage() {
       <PageHeader
         title="Candidate browser"
         subtitle={
-          data === undefined
-            ? <Skeleton className="h-3 w-52 mt-1" />
-            : totalCount != null
-              ? `${formatInt(totalCount)} files · ranked by predicted savings`
-              : hasNextPage
-                ? `${formatInt(allItems.length)}+ files · ranked by predicted savings`
-                : `${formatInt(allItems.length)} files · ranked by predicted savings`
+          data === undefined ? (
+            <Skeleton className="h-3 w-52 mt-1" />
+          ) : totalCount != null ? (
+            `${formatInt(totalCount)} files · ranked by predicted savings`
+          ) : hasNextPage ? (
+            `${formatInt(allItems.length)}+ files · ranked by predicted savings`
+          ) : (
+            `${formatInt(allItems.length)} files · ranked by predicted savings`
+          )
         }
       >
         {profiles[0] && (
-          <Badge variant="outline" className="sm:ml-auto self-start text-[0.82rem] font-semibold px-[13px] py-[7px] rounded-[10px] border-line bg-surface gap-1.5">
+          <Badge
+            variant="outline"
+            className="sm:ml-auto self-start text-[0.82rem] font-semibold px-[13px] py-[7px] rounded-[10px] border-line bg-surface gap-1.5"
+          >
             <span className="font-mono text-[0.8rem]">Profile</span>
             {profiles.find((p) => p.is_default)?.name ?? profiles[0].name}
           </Badge>
@@ -193,8 +287,13 @@ function CandidatesPage() {
         isPending={isPending}
       />
 
-      <div className={cn('flex-1 overflow-hidden relative px-3 pt-3 pb-3 transition-opacity duration-150 sm:px-7', isPending && 'opacity-50')}>
-        {view === 'flat' ? (
+      <div
+        className={cn(
+          "flex-1 overflow-hidden relative px-3 pt-3 pb-3 transition-opacity duration-150 sm:px-7",
+          isPending && "opacity-50",
+        )}
+      >
+        {view === "flat" ? (
           <CandidatesFlatList
             parentRef={parentRef}
             allItems={allItems}

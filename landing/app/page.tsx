@@ -1,14 +1,14 @@
-import { Nav } from "@/components/nav";
 import { Hero } from "@/components/hero";
+import { Nav } from "@/components/nav";
 import {
-  Features,
-  HowItWorks,
-  Safety,
   Comparison,
-  Install,
-  Throughput,
   CTA,
+  Features,
   Footer,
+  HowItWorks,
+  Install,
+  Safety,
+  Throughput,
 } from "@/components/sections";
 
 export default function Page() {

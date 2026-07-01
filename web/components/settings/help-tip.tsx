@@ -1,8 +1,12 @@
-'use client';
+"use client";
 
-import { Label } from '@/components/ui/label';
-import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { CircleHelpIcon } from 'lucide-react';
+import { CircleHelpIcon } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export function HelpTip({ children }: { children: React.ReactNode }) {
   return (
@@ -22,7 +26,13 @@ export function HelpTip({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function LabelWithHelp({ label, help }: { label: string; help: React.ReactNode }) {
+export function LabelWithHelp({
+  label,
+  help,
+}: {
+  label: string;
+  help: React.ReactNode;
+}) {
   return (
     <Label className="text-[0.8rem] font-semibold mb-1.5 flex items-center gap-1.5">
       {label}

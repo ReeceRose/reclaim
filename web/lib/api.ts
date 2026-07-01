@@ -62,7 +62,7 @@ export interface CodecStat {
   file_count: number;
   total_bytes: number;
   predicted_savings_bytes: number;
-  ratio_source: 'seed' | 'learned';
+  ratio_source: "seed" | "learned";
   learned_sample_count?: number;
 }
 
@@ -122,13 +122,13 @@ export interface MediaFile {
 }
 
 export type CandidateState =
-  | 'candidate'
-  | 'already_hevc'
-  | 'probe_failed'
-  | 'unknown_codec'
-  | 'queued'
-  | 'completed'
-  | 'missing';
+  | "candidate"
+  | "already_hevc"
+  | "probe_failed"
+  | "unknown_codec"
+  | "queued"
+  | "completed"
+  | "missing";
 
 export interface KeysetCursor {
   after_savings: number;
@@ -276,9 +276,12 @@ export interface MediaMetadata {
   no_match: boolean;
 }
 
-export function tmdbImageURL(path: string | null | undefined, size: string): string | null {
+export function tmdbImageURL(
+  path: string | null | undefined,
+  size: string,
+): string | null {
   if (!path) return null;
-  if (path.startsWith('http')) return path;
+  if (path.startsWith("http")) return path;
   return `https://image.tmdb.org/t/p/${size}${path}`;
 }
 
@@ -311,8 +314,13 @@ export interface VerificationResult {
 
 export interface AppEvent {
   id: number;
-  type: 'job_completed' | 'job_failed' | 'job_cancelled' | 'scan_completed' | 'orphan_restored';
-  severity: 'info' | 'warn' | 'error';
+  type:
+    | "job_completed"
+    | "job_failed"
+    | "job_cancelled"
+    | "scan_completed"
+    | "orphan_restored";
+  severity: "info" | "warn" | "error";
   message: string;
   metadata: Record<string, unknown> | null;
   created_at: number;
@@ -320,7 +328,7 @@ export interface AppEvent {
 
 export interface ScanProgress {
   scan_run_id: number;
-  kind: 'incremental' | 'full';
+  kind: "incremental" | "full";
   trigger: string;
   started_at: number;
   files_seen: number;
@@ -347,10 +355,10 @@ export interface CandidateFilters {
 
 export interface FileFilters extends CandidateFilters {
   status?: string;
-  candidate_state?: CandidateState | '';
+  candidate_state?: CandidateState | "";
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: params come from heterogeneous filter objects across callers
 function buildQuery(params: Record<string, any>): string {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
@@ -384,16 +392,50 @@ export const api = {
     request<FilesPage>("GET", `/api/files${buildQuery(filters)}`),
   groupedFiles: (filters: FileFilters & { limit?: number; offset?: number }) =>
     request<GroupedFiles>("GET", `/api/files/grouped${buildQuery(filters)}`),
-  groupedFileEpisodes: (filters: FileFilters & { series: string; season: number; limit?: number; offset?: number }) =>
-    request<GroupedSeasonEpisodes>("GET", `/api/files/grouped/episodes${buildQuery(filters)}`),
+  groupedFileEpisodes: (
+    filters: FileFilters & {
+      series: string;
+      season: number;
+      limit?: number;
+      offset?: number;
+    },
+  ) =>
+    request<GroupedSeasonEpisodes>(
+      "GET",
+      `/api/files/grouped/episodes${buildQuery(filters)}`,
+    ),
   groupedFileSeasons: (series: string) =>
-    request<{ seasons: LibrarySeasonGroup[] }>("GET", `/api/files/grouped/seasons${buildQuery({ series })}`),
-  candidates: (filters: CandidateFilters & { limit?: number; offset?: number; after_savings?: number; after_id?: number }) =>
-    request<CandidatesPage>("GET", `/api/candidates${buildQuery(filters)}`),
-  groupedCandidates: (filters: CandidateFilters & { limit?: number; offset?: number }) =>
-    request<GroupedCandidates>("GET", `/api/candidates/grouped${buildQuery(filters)}`),
-  groupedSeasonEpisodes: (filters: CandidateFilters & { series: string; season: number; limit?: number; offset?: number }) =>
-    request<GroupedSeasonEpisodes>("GET", `/api/candidates/grouped/episodes${buildQuery(filters)}`),
+    request<{ seasons: LibrarySeasonGroup[] }>(
+      "GET",
+      `/api/files/grouped/seasons${buildQuery({ series })}`,
+    ),
+  candidates: (
+    filters: CandidateFilters & {
+      limit?: number;
+      offset?: number;
+      after_savings?: number;
+      after_id?: number;
+    },
+  ) => request<CandidatesPage>("GET", `/api/candidates${buildQuery(filters)}`),
+  groupedCandidates: (
+    filters: CandidateFilters & { limit?: number; offset?: number },
+  ) =>
+    request<GroupedCandidates>(
+      "GET",
+      `/api/candidates/grouped${buildQuery(filters)}`,
+    ),
+  groupedSeasonEpisodes: (
+    filters: CandidateFilters & {
+      series: string;
+      season: number;
+      limit?: number;
+      offset?: number;
+    },
+  ) =>
+    request<GroupedSeasonEpisodes>(
+      "GET",
+      `/api/candidates/grouped/episodes${buildQuery(filters)}`,
+    ),
   file: (id: number) => request<MediaFile>("GET", `/api/files/${id}`),
 
   // Scanning
@@ -414,33 +456,77 @@ export const api = {
       profile_id: profileId ?? null,
     }),
   jobs: (params?: { status?: string; limit?: number; offset?: number }) =>
-    request<{ items: Job[]; total_count?: number }>("GET", `/api/jobs${buildQuery(params ?? {})}`),
+    request<{ items: Job[]; total_count?: number }>(
+      "GET",
+      `/api/jobs${buildQuery(params ?? {})}`,
+    ),
   cancelJob: (id: number) =>
-    request<{ job_id: number; status: string }>("POST", `/api/jobs/${id}/cancel`),
+    request<{ job_id: number; status: string }>(
+      "POST",
+      `/api/jobs/${id}/cancel`,
+    ),
   forceJob: (id: number) =>
-    request<{ job_id: number; forced: boolean }>("POST", `/api/jobs/${id}/force`),
+    request<{ job_id: number; forced: boolean }>(
+      "POST",
+      `/api/jobs/${id}/force`,
+    ),
   deleteJob: (id: number) => request<void>("DELETE", `/api/jobs/${id}`),
 
   // Events
-  events: (params?: { after_id?: number; limit?: number; severity?: string; type?: string }) =>
-    request<{ items: AppEvent[]; next_cursor?: number }>("GET", `/api/events${buildQuery(params ?? {})}`),
+  events: (params?: {
+    after_id?: number;
+    limit?: number;
+    severity?: string;
+    type?: string;
+  }) =>
+    request<{ items: AppEvent[]; next_cursor?: number }>(
+      "GET",
+      `/api/events${buildQuery(params ?? {})}`,
+    ),
   deleteEvent: (id: number) => request<void>("DELETE", `/api/events/${id}`),
   clearEvents: () => request<void>("DELETE", "/api/events"),
 
   // Settings
   settings: () => request<Settings>("GET", "/api/settings"),
-  updateSettings: (s: Partial<Pick<Settings, "encode_window_start" | "encode_window_end" | "scan_interval" | "scan_anchor" | "probe_concurrency">>) =>
-    request<Settings>("PUT", "/api/settings", s),
+  updateSettings: (
+    s: Partial<
+      Pick<
+        Settings,
+        | "encode_window_start"
+        | "encode_window_end"
+        | "scan_interval"
+        | "scan_anchor"
+        | "probe_concurrency"
+      >
+    >,
+  ) => request<Settings>("PUT", "/api/settings", s),
 
   // Metadata
   getMetadata: (key: string) =>
     request<MediaMetadata | null>("GET", `/api/metadata${buildQuery({ key })}`),
-  searchMetadata: (query: string, type: 'tv' | 'movie') =>
-    request<{ results: MetadataSearchResult[] }>("GET", `/api/metadata/search${buildQuery({ query, type })}`),
-  overrideMetadata: (key: string, mediaType: string, posterUrl: string | null, backdropUrl: string | null) =>
-    request<{ status: string }>("PUT", "/api/metadata", { key, media_type: mediaType, poster_url: posterUrl, backdrop_url: backdropUrl }),
+  searchMetadata: (query: string, type: "tv" | "movie") =>
+    request<{ results: MetadataSearchResult[] }>(
+      "GET",
+      `/api/metadata/search${buildQuery({ query, type })}`,
+    ),
+  overrideMetadata: (
+    key: string,
+    mediaType: string,
+    posterUrl: string | null,
+    backdropUrl: string | null,
+  ) =>
+    request<{ status: string }>("PUT", "/api/metadata", {
+      key,
+      media_type: mediaType,
+      poster_url: posterUrl,
+      backdrop_url: backdropUrl,
+    }),
   refreshMetadata: (key?: string, mediaType?: string) =>
-    request<{ status: string }>("POST", "/api/metadata/refresh", key && mediaType ? { key, media_type: mediaType } : {}),
+    request<{ status: string }>(
+      "POST",
+      "/api/metadata/refresh",
+      key && mediaType ? { key, media_type: mediaType } : {},
+    ),
 };
 
 /** wsURL builds the WebSocket URL for live progress, honoring the API base. */

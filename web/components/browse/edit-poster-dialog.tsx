@@ -1,12 +1,18 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Image from 'next/image';
-import { api, tmdbImageURL, type MetadataSearchResult } from '@/lib/api';
-import { cn } from '@/lib/utils';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import Image from "next/image";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { api, type MetadataSearchResult, tmdbImageURL } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 export function EditPosterDialog({
   open,
@@ -28,14 +34,14 @@ export function EditPosterDialog({
   const [selected, setSelected] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [customURL, setCustomURL] = useState('');
+  const [customURL, setCustomURL] = useState("");
   const [useCustom, setUseCustom] = useState(false);
 
   async function handleSearch() {
     if (!query.trim()) return;
     setSearching(true);
     try {
-      const res = await api.searchMetadata(query, 'tv');
+      const res = await api.searchMetadata(query, "tv");
       setResults(res.results);
       setSelected(null);
     } finally {
@@ -45,14 +51,19 @@ export function EditPosterDialog({
 
   async function handleSave() {
     const posterURL = useCustom
-      ? (customURL.trim() || null)
+      ? customURL.trim() || null
       : selected
-        ? selected.replace('/w185/', '/w500/')
+        ? selected.replace("/w185/", "/w500/")
         : null;
     if (!posterURL) return;
     setSaving(true);
     try {
-      await api.overrideMetadata(showTitle, 'tv', posterURL, currentBackdropPath ?? null);
+      await api.overrideMetadata(
+        showTitle,
+        "tv",
+        posterURL,
+        currentBackdropPath ?? null,
+      );
       onSaved();
       onOpenChange(false);
     } finally {
@@ -60,7 +71,7 @@ export function EditPosterDialog({
     }
   }
 
-  const currentPosterURL = tmdbImageURL(currentPosterPath, 'w185');
+  const currentPosterURL = tmdbImageURL(currentPosterPath, "w185");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -72,7 +83,13 @@ export function EditPosterDialog({
         <div className="space-y-4">
           {currentPosterURL && !useCustom && selected === null && (
             <div className="flex items-center gap-3 pb-3 border-b border-line">
-              <Image src={currentPosterURL} alt="current poster" width={48} height={72} className="w-12 h-auto rounded-md shrink-0" />
+              <Image
+                src={currentPosterURL}
+                alt="current poster"
+                width={48}
+                height={72}
+                className="w-12 h-auto rounded-md shrink-0"
+              />
               <span className="text-sm text-muted-fg">Current poster</span>
             </div>
           )}
@@ -81,12 +98,18 @@ export function EditPosterDialog({
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') void handleSearch(); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleSearch();
+              }}
               placeholder="Search TMDB…"
               className="flex-1"
             />
-            <Button variant="outline" onClick={() => void handleSearch()} disabled={searching}>
-              {searching ? 'Searching…' : 'Search'}
+            <Button
+              variant="outline"
+              onClick={() => void handleSearch()}
+              disabled={searching}
+            >
+              {searching ? "Searching…" : "Search"}
             </Button>
           </div>
 
@@ -94,21 +117,34 @@ export function EditPosterDialog({
             <div className="grid grid-cols-4 gap-2 max-h-72 overflow-y-auto">
               {results.map((r) => (
                 <button
+                  type="button"
                   key={r.tmdb_id}
                   onClick={() => setSelected(r.poster_url)}
                   className={cn(
-                    'rounded-md overflow-hidden border-2 transition-colors cursor-pointer',
-                    selected === r.poster_url ? 'border-brand' : 'border-transparent hover:border-line',
+                    "rounded-md overflow-hidden border-2 transition-colors cursor-pointer",
+                    selected === r.poster_url
+                      ? "border-brand"
+                      : "border-transparent hover:border-line",
                   )}
                 >
                   {r.poster_url ? (
                     <div className="relative w-full aspect-[2/3]">
-                      <Image src={r.poster_url} alt={r.title} fill sizes="120px" className="object-cover" />
+                      <Image
+                        src={r.poster_url}
+                        alt={r.title}
+                        fill
+                        sizes="120px"
+                        className="object-cover"
+                      />
                     </div>
                   ) : (
-                    <div className="w-full aspect-[2/3] bg-surface-3 flex items-center justify-center text-xs text-muted-dim p-1 text-center">{r.title}</div>
+                    <div className="w-full aspect-[2/3] bg-surface-3 flex items-center justify-center text-xs text-muted-dim p-1 text-center">
+                      {r.title}
+                    </div>
                   )}
-                  <div className="text-xs text-muted-dim px-1 py-0.5 truncate">{r.title} {r.year ? `(${r.year})` : ''}</div>
+                  <div className="text-xs text-muted-dim px-1 py-0.5 truncate">
+                    {r.title} {r.year ? `(${r.year})` : ""}
+                  </div>
                 </button>
               ))}
             </div>
@@ -116,10 +152,14 @@ export function EditPosterDialog({
 
           <div>
             <button
+              type="button"
               className="text-xs text-muted-fg hover:text-text underline cursor-pointer"
-              onClick={() => { setUseCustom(!useCustom); setSelected(null); }}
+              onClick={() => {
+                setUseCustom(!useCustom);
+                setSelected(null);
+              }}
             >
-              {useCustom ? 'Search TMDB instead' : 'Use a custom URL instead'}
+              {useCustom ? "Search TMDB instead" : "Use a custom URL instead"}
             </button>
           </div>
 
@@ -133,12 +173,14 @@ export function EditPosterDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
           <Button
             onClick={() => void handleSave()}
             disabled={saving || (!selected && !(useCustom && customURL.trim()))}
           >
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? "Saving…" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

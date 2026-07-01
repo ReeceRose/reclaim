@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { Menu, X } from "lucide-react";
+import { useState } from "react";
 import { GitHubIcon } from "@/components/github-icon";
 import { LogoMark, Wordmark } from "@/components/logo";
 import { nav, site } from "@/lib/site";
@@ -12,7 +12,10 @@ export function Nav() {
   return (
     <header className="sticky top-0 z-50 border-b border-line/70 bg-bg/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-7">
-        <a href="#top" className="flex items-center gap-2.5 font-extrabold tracking-tight">
+        <a
+          href="#top"
+          className="flex items-center gap-2.5 font-extrabold tracking-tight"
+        >
           <LogoMark className="h-7 w-7" />
           <Wordmark className="text-lg" />
         </a>
@@ -84,6 +87,7 @@ export function Nav() {
               <GitHubIcon className="h-4 w-4" />
               GitHub
             </a>
+            {/* biome-ignore lint/a11y/useValidAnchor: in-page anchor to #install, onClick just closes the mobile drawer */}
             <a
               href="#install"
               onClick={() => setOpen(false)}

@@ -15,7 +15,14 @@ export function LogoMark({ className }: { className?: string }) {
           <stop offset="1" stopColor="#141414" />
         </linearGradient>
       </defs>
-      <rect x="0" y="0" width="256" height="256" rx="58" fill="url(#reclaim-bg)" />
+      <rect
+        x="0"
+        y="0"
+        width="256"
+        height="256"
+        rx="58"
+        fill="url(#reclaim-bg)"
+      />
       <rect
         x="0.75"
         y="0.75"

@@ -1,14 +1,15 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 export function parseQueryEnum<T extends string>(
   value: string | null,
   allowed: readonly T[],
   defaultValue: T,
 ): T {
-  if (value && (allowed as readonly string[]).includes(value)) return value as T;
+  if (value && (allowed as readonly string[]).includes(value))
+    return value as T;
   return defaultValue;
 }
 
@@ -24,7 +25,10 @@ export function useQueryParams() {
     pathnameRef.current = pathname;
   });
 
-  const get = useCallback((key: string) => searchParams.get(key), [searchParams]);
+  const get = useCallback(
+    (key: string) => searchParams.get(key),
+    [searchParams],
+  );
 
   // Next.js 16 docs recommend window.history.replaceState for search-param-only
   // updates ("shallow routing") — this integrates with useSearchParams() in both
@@ -35,13 +39,13 @@ export function useQueryParams() {
       const current = searchParamsRef.current.toString();
       const params = new URLSearchParams(current);
       for (const [key, value] of Object.entries(updates)) {
-        if (value == null || value === '') params.delete(key);
+        if (value == null || value === "") params.delete(key);
         else params.set(key, value);
       }
       const qs = params.toString();
       if (qs === current) return;
       const url = qs ? `${pathnameRef.current}?${qs}` : pathnameRef.current;
-      window.history.replaceState(null, '', url);
+      window.history.replaceState(null, "", url);
     },
     [],
   );
@@ -51,7 +55,7 @@ export function useQueryParams() {
 
 export function useQueryParam(
   key: string,
-  defaultValue = '',
+  defaultValue = "",
 ): [string, (value: string) => void] {
   const { get, set } = useQueryParams();
   const value = get(key) ?? defaultValue;
@@ -64,7 +68,9 @@ export function useQueryParam(
   return [value, setValue];
 }
 
-export function buildQueryString(entries: Record<string, string | null | undefined>): string {
+export function buildQueryString(
+  entries: Record<string, string | null | undefined>,
+): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(entries)) {
     if (value) params.set(key, value);

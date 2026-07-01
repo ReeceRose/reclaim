@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useEffect } from 'react';
-import Link from 'next/link';
-import { StatusScreen } from '@/components/status-screen';
+import Link from "next/link";
+import { useEffect } from "react";
+import { StatusScreen } from "@/components/status-screen";
 
-export default function Error({
+export default function ErrorPage({
   error,
   reset,
 }: {
@@ -32,11 +32,12 @@ export default function Error({
       }
     >
       <button
+        type="button"
         onClick={() => reset()}
         className="inline-flex items-center justify-center h-10 px-5 rounded-[11px] text-sm font-semibold text-on-brand"
         style={{
-          background: 'linear-gradient(145deg, var(--brand), var(--brand-2))',
-          boxShadow: '0 4px 14px var(--brand-soft)',
+          background: "linear-gradient(145deg, var(--brand), var(--brand-2))",
+          boxShadow: "0 4px 14px var(--brand-soft)",
         }}
       >
         Try again

@@ -221,11 +221,13 @@ func (w *Worker) withinWindow() bool {
 func (w *Worker) processJob(ctx context.Context, job *store.TranscodeJob) {
 	file, err := w.store.Media.GetByID(ctx, job.MediaFileID)
 	if err != nil {
+		slog.Error("worker: media file not found", "job", job.ID, "media_file_id", job.MediaFileID, "err", err)
 		w.failJob(ctx, job.ID, "media file not found: "+err.Error(), nil)
 		return
 	}
 	profile, err := w.store.Profiles.GetByID(ctx, job.ProfileID)
 	if err != nil {
+		slog.Error("worker: profile not found", "job", job.ID, "profile_id", job.ProfileID, "err", err)
 		w.failJob(ctx, job.ID, "profile not found: "+err.Error(), nil)
 		return
 	}
@@ -293,7 +295,13 @@ func (w *Worker) processJob(ctx context.Context, job *store.TranscodeJob) {
 			// reconcile sweep rather than marking it failed.
 			slog.Warn("worker: shutdown mid-encode; leaving for reconcile", "job", job.ID)
 		default:
+			slog.Error("worker: encode failed", "job", job.ID, "path", file.Path, "err", encErr)
 			removeIfExists(tmpPath)
+			// No temp file survives an encode failure, so clear the breadcrumb —
+			// otherwise the UI would point at a path that no longer exists.
+			if cerr := w.store.Jobs.ClearOutputPath(ctx, job.ID); cerr != nil {
+				slog.Error("worker: clear output path", "job", job.ID, "err", cerr)
+			}
 			w.failJob(ctx, job.ID, "encode failed: "+encErr.Error(), nil)
 		}
 		return

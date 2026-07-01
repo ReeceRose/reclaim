@@ -255,7 +255,7 @@ function QueueContent() {
                     <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">
                       <span className="text-xs text-muted-dim font-mono">
                         {failed
-                          ? 'verification failed — original untouched'
+                          ? (job.error_message ?? 'failed')
                           : `${formatBytes(job.original_size_bytes)} → ${formatBytes(job.output_size_bytes ?? 0)}`}
                       </span>
                       {!failed && saved > 0 && (

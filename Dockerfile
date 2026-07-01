@@ -37,14 +37,17 @@ RUN CGO_ENABLED=0 GOOS=linux \
 FROM alpine:3.21
 
 ARG FFMPEG_VERSION=6.1.2-r1
-RUN apk add --no-cache "ffmpeg=${FFMPEG_VERSION}" && \
+RUN apk add --no-cache "ffmpeg=${FFMPEG_VERSION}" su-exec && \
     adduser -D -H -u 1000 reclaim
 
 LABEL org.opencontainers.image.source="https://github.com/ReeceRose/reclaim" \
       org.reclaim.ffmpeg.version="${FFMPEG_VERSION}"
 
 COPY --from=go-build /reclaim /reclaim
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
-USER reclaim
+# Stays root at startup so the entrypoint can create a uid/gid matching
+# PUID/PGID and drop to it via su-exec before exec'ing the binary.
 EXPOSE 8080
-ENTRYPOINT ["/reclaim"]
+ENTRYPOINT ["/docker-entrypoint.sh"]

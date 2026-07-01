@@ -256,6 +256,15 @@ func (j *Jobs) SetOutputPath(ctx context.Context, id int64, path string) error {
 	return err
 }
 
+// ClearOutputPath removes the temp output breadcrumb once it's known no file
+// exists at that path (e.g. an encode failure that never produced output).
+func (j *Jobs) ClearOutputPath(ctx context.Context, id int64) error {
+	_, err := j.w.ExecContext(ctx,
+		"UPDATE transcode_jobs SET output_path = NULL WHERE id = ?", id,
+	)
+	return err
+}
+
 // SetVerificationResult stores the verification JSON blob.
 func (j *Jobs) SetVerificationResult(ctx context.Context, id int64, result string) error {
 	_, err := j.w.ExecContext(ctx,

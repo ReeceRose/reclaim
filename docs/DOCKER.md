@@ -41,12 +41,16 @@ On Unraid, map `/data` to `appdata`. The repo Compose file uses a named volume f
 | Variable | Default | Description |
 |---|---|---|
 | `TZ` | container default | **Set this.** Encode window times use local time |
+| `PUID` | `1000` | Set to the uid that owns your media library so the container can write re-encoded files |
+| `PGID` | `1000` | Set to the gid that owns your media library |
 | `ENCODE_WINDOW_START` | `00:00` | Start of overnight encode window (`HH:MM`, 24h) |
 | `ENCODE_WINDOW_END` | `06:00` | End of encode window |
 | `SCAN_INTERVAL` | `24h` | Diff-based rescan interval (Go duration) |
 | `PROBE_CONCURRENCY` | `4` | Parallel `ffprobe` calls during scans |
 | `SCAN_ANCHOR` | `00:00` | Daily scan anchor time (`HH:MM`) |
 | `TMDB_API_KEY` | unset | Optional TMDB API key for movie/TV posters, backdrops, and metadata |
+
+`PUID`/`PGID` matter because the container writes re-encoded files back into `/movies` and `/tv`. If they don't match the uid/gid that owns your library on the host, encodes fail with `Permission denied` (verification never even runs). On Unraid, find the right values with `id nobody` on the host (typically `99`/`100`); on most other Linux hosts, `id <your-user>`.
 
 To enable artwork and metadata fetching, create a TMDB API key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) and set `TMDB_API_KEY` on the container. Restart Reclaim after changing it, then run a scan or refresh metadata from the UI.
 

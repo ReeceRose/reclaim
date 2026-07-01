@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { parseQueryEnum, useQueryParam, useQueryParams } from '@/hooks/use-query-params';
+import { useIdSelection } from '@/hooks/use-id-selection';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { toast } from 'sonner';
@@ -51,9 +52,13 @@ function LibraryPage() {
   const [library, setLibrary] = useQueryParam('library');
   const [status, setStatus] = useQueryParam('status');
   const [candidateState, setCandidateState] = useQueryParam('state');
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const fileMapRef = useRef<Map<number, MediaFile>>(new Map());
+  const isSelectable = useCallback((id: number) => {
+    const file = fileMapRef.current.get(id);
+    return file ? isQueueable(file) : false;
+  }, []);
+  const { selectedIds, toggle: toggleId, clear: clearSel, toggleAll: selectAllToggle } = useIdSelection({ isSelectable });
   const parentRef = useRef<HTMLDivElement>(null);
 
   const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: api.stats, staleTime: 30_000 });
@@ -103,6 +108,7 @@ function LibraryPage() {
   });
 
   const allItems = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
+  const orderedIds = useMemo(() => allItems.map((i) => i.id), [allItems]);
   useEffect(() => {
     allItems.forEach((item) => fileMapRef.current.set(item.id, item));
   }, [allItems]);
@@ -126,26 +132,10 @@ function LibraryPage() {
   const { data: profilesData } = useQuery({ queryKey: ['profiles'], queryFn: api.profiles, staleTime: 60_000 });
   const profiles = profilesData?.items ?? [];
 
-  function toggleId(id: number) {
-    const file = fileMapRef.current.get(id);
-    if (file && !isQueueable(file)) return;
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) { next.delete(id); } else { next.add(id); }
-      return next;
-    });
-  }
-
   function toggleAll() {
-    const eligible = allItems.filter(isQueueable).map((i) => i.id);
-    if (eligible.length > 0 && eligible.every((id) => selectedIds.has(id))) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(eligible));
-    }
+    selectAllToggle(allItems.filter(isQueueable).map((i) => i.id));
   }
 
-  const clearSel = useCallback(() => setSelectedIds(new Set()), []);
   const selectedFiles = useMemo(
     () => [...selectedIds].map((id) => fileMapRef.current.get(id)).filter((f): f is MediaFile => Boolean(f && isQueueable(f))),
     [selectedIds],
@@ -235,7 +225,16 @@ function LibraryPage() {
                 {virtualItems.map((vRow) => (
                   <div key={vRow.key} style={{ position: 'absolute', top: vRow.start, height: vRow.size, width: '100%' }}>
                     {vRow.index < allItems.length ? (
-                      <MediaFlatRow item={allItems[vRow.index]} selected={selectedIds.has(allItems[vRow.index].id)} onToggle={toggleId} href={BROWSE_ROUTES.FILE(allItems[vRow.index].id)} showState gateSelection />
+                      <MediaFlatRow
+                        item={allItems[vRow.index]}
+                        index={vRow.index}
+                        orderedIds={orderedIds}
+                        selected={selectedIds.has(allItems[vRow.index].id)}
+                        onToggle={toggleId}
+                        href={BROWSE_ROUTES.FILE(allItems[vRow.index].id)}
+                        showState
+                        gateSelection
+                      />
                     ) : (
                       <div className="flex items-center justify-center h-full text-muted-dim text-sm">{isFetchingNextPage ? 'Loading more...' : hasNextPage ? 'Scroll to load more' : 'End of list'}</div>
                     )}

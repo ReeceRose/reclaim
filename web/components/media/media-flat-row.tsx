@@ -5,11 +5,14 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { baseName, dirName, formatBytes, resolutionLabel } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { MediaFile } from '@/lib/api';
+import type { IdToggleHandler } from '@/hooks/use-id-selection';
 import { CodecBadge } from './codec-badge';
 import { StateBadge, isQueueable, queueBlockReason } from './candidate-state';
 
 export function MediaFlatRow({
   item,
+  index,
+  orderedIds,
   selected,
   onToggle,
   href,
@@ -17,8 +20,10 @@ export function MediaFlatRow({
   gateSelection = false,
 }: {
   item: MediaFile;
+  index: number;
+  orderedIds: readonly number[];
   selected: boolean;
-  onToggle: (id: number) => void;
+  onToggle: IdToggleHandler;
   href: string;
   showState?: boolean;
   gateSelection?: boolean;
@@ -42,8 +47,10 @@ export function MediaFlatRow({
         <Checkbox
           checked={selected}
           disabled={!queueable}
-          onCheckedChange={() => queueable && onToggle(item.id)}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (queueable) onToggle(item.id, index, e.shiftKey, orderedIds);
+          }}
           className="size-[17px] rounded-[5px]"
         />
       </div>

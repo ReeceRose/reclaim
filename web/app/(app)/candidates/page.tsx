@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { useRef, useState, useEffect, useMemo, useCallback, useTransition, Suspense } from 'react';
 import { parseQueryEnum, useQueryParam, useQueryParams } from '@/hooks/use-query-params';
+import { useIdSelection, type IdToggleHandler } from '@/hooks/use-id-selection';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -36,10 +37,23 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'codec', label: 'Source codec' },
 ];
 
-function EpisodeRow(props: { ep: Episode; selected: boolean; onToggle: (id: number) => void }) {
+function EpisodeRow(props: {
+  ep: Episode;
+  index: number;
+  orderedIds: readonly number[];
+  selected: boolean;
+  onToggle: IdToggleHandler;
+}) {
   return (
     <div className="pl-[42px]">
-      <MediaFlatRow item={props.ep} selected={props.selected} onToggle={props.onToggle} href={BROWSE_ROUTES.FILE(props.ep.id)} />
+      <MediaFlatRow
+        item={props.ep}
+        index={props.index}
+        orderedIds={props.orderedIds}
+        selected={props.selected}
+        onToggle={props.onToggle}
+        href={BROWSE_ROUTES.FILE(props.ep.id)}
+      />
     </div>
   );
 }
@@ -56,7 +70,7 @@ function SeasonEpisodes({
   season: number;
   filters: CandidateFilters;
   selectedIds: Set<number>;
-  onToggle: (id: number) => void;
+  onToggle: IdToggleHandler;
   onEpisodesLoaded: (files: MediaFile[]) => void;
 }) {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
@@ -72,6 +86,7 @@ function SeasonEpisodes({
   });
 
   const episodes = useMemo(() => data?.pages.flatMap((p) => p.episodes) ?? [], [data]);
+  const orderedIds = useMemo(() => episodes.map((ep) => ep.id), [episodes]);
 
   useEffect(() => {
     if (episodes.length > 0) onEpisodesLoaded(episodes);
@@ -87,8 +102,15 @@ function SeasonEpisodes({
 
   return (
     <>
-      {episodes.map((ep) => (
-        <EpisodeRow key={ep.id} ep={ep} selected={selectedIds.has(ep.id)} onToggle={onToggle} />
+      {episodes.map((ep, index) => (
+        <EpisodeRow
+          key={ep.id}
+          ep={ep}
+          index={index}
+          orderedIds={orderedIds}
+          selected={selectedIds.has(ep.id)}
+          onToggle={onToggle}
+        />
       ))}
       {(hasNextPage || isFetchingNextPage) && (
         <div className="px-4 py-2 pl-[42px] border-b border-line-soft">
@@ -109,7 +131,7 @@ function GroupedContent({
   onEpisodesLoaded,
 }: {
   selectedIds: Set<number>;
-  onToggle: (id: number) => void;
+  onToggle: IdToggleHandler;
   onToggleSeries: (ids: number[]) => void;
   filters: CandidateFilters;
   onEpisodesLoaded: (files: MediaFile[]) => void;
@@ -154,6 +176,7 @@ function GroupedContent({
     () => movieData?.pages.flatMap((p) => p.items) ?? [],
     [movieData],
   );
+  const movieOrderedIds = useMemo(() => movies.map((f) => f.id), [movies]);
 
   useEffect(() => {
     if (movies.length > 0) onEpisodesLoaded(movies);
@@ -276,8 +299,16 @@ function GroupedContent({
           <div className="text-[0.7rem] uppercase tracking-widest text-muted-dim font-bold px-4 pt-[15px] pb-[9px] border-b border-line-soft">
             Movies
           </div>
-          {movies.map((f) => (
-            <MediaFlatRow key={f.id} item={f} selected={selectedIds.has(f.id)} onToggle={onToggle} href={BROWSE_ROUTES.FILE(f.id)} />
+          {movies.map((f, index) => (
+            <MediaFlatRow
+              key={f.id}
+              item={f}
+              index={index}
+              orderedIds={movieOrderedIds}
+              selected={selectedIds.has(f.id)}
+              onToggle={onToggle}
+              href={BROWSE_ROUTES.FILE(f.id)}
+            />
           ))}
           {(hasMoreMovies || isFetchingMovies) && (
             <div className="px-4 py-3 text-center border-t border-line-soft">
@@ -300,7 +331,7 @@ function GroupedContent({
 
 function GroupedView(props: {
   selectedIds: Set<number>;
-  onToggle: (id: number) => void;
+  onToggle: IdToggleHandler;
   onToggleSeries: (ids: number[]) => void;
   filters: CandidateFilters;
   onEpisodesLoaded: (files: MediaFile[]) => void;
@@ -321,7 +352,7 @@ function CandidatesPage() {
   const [library, setLibrary] = useQueryParam('library');
   const [viewRaw, setViewRaw] = useQueryParam('view', 'flat');
   const view = parseQueryEnum(viewRaw, ['flat', 'grouped'] as const, 'flat');
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const { selectedIds, setSelectedIds, toggle: toggleId, clear: clearSel, toggleAll: selectAllToggle } = useIdSelection();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const fileMapRef = useRef<Map<number, MediaFile>>(new Map());
   const parentRef = useRef<HTMLDivElement>(null);
@@ -386,6 +417,7 @@ function CandidatesPage() {
     () => data?.pages.flatMap((p) => p.items) ?? [],
     [data],
   );
+  const orderedIds = useMemo(() => allItems.map((i) => i.id), [allItems]);
 
   useEffect(() => {
     allItems.forEach((item) => fileMapRef.current.set(item.id, item));
@@ -415,14 +447,6 @@ function CandidatesPage() {
   });
   const profiles = profilesData?.items ?? [];
 
-  function toggleId(id: number) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) { next.delete(id); } else { next.add(id); }
-      return next;
-    });
-  }
-
   function toggleSeries(ids: number[]) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -433,14 +457,8 @@ function CandidatesPage() {
   }
 
   function toggleAll() {
-    if (selectedIds.size === allItems.length && allItems.length > 0) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(allItems.map((i) => i.id)));
-    }
+    selectAllToggle(allItems.map((i) => i.id));
   }
-
-  const clearSel = useCallback(() => setSelectedIds(new Set()), []);
 
   const registerLoadedFiles = useCallback((files: MediaFile[]) => {
     files.forEach((item) => fileMapRef.current.set(item.id, item));
@@ -601,6 +619,8 @@ function CandidatesPage() {
                     {vRow.index < allItems.length ? (
                       <MediaFlatRow
                         item={allItems[vRow.index]}
+                        index={vRow.index}
+                        orderedIds={orderedIds}
                         selected={selectedIds.has(allItems[vRow.index].id)}
                         onToggle={toggleId}
                         href={BROWSE_ROUTES.FILE(allItems[vRow.index].id)}

@@ -107,7 +107,7 @@ function QueueContent() {
   const forceMutation = useMutation({
     mutationFn: (id: number) => api.forceJob(id),
     onSuccess: () => {
-      toast.success('Job will run immediately');
+      toast.success('Queued to run outside the encode window');
       qc.invalidateQueries({ queryKey: ['jobs'] });
     },
     onError: () => toast.error('Force failed'),

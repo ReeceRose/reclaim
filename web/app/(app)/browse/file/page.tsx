@@ -237,7 +237,7 @@ function FilePageContent() {
   const forceMutation = useMutation({
     mutationFn: (jobId: number) => api.forceJob(jobId),
     onSuccess: () => {
-      toast.success('Job will run immediately');
+      toast.success('Queued to run outside the encode window');
       void queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
     onError: () => toast.error('Force failed'),

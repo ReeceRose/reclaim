@@ -1,7 +1,6 @@
 "use client";
 
 import { FilterSelect } from "@/components/filter-select";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -16,8 +15,6 @@ import { CANDIDATE_SORT_OPTIONS, type CandidateSortKey } from "./constants";
 export function CandidatesFilterBar({
   search,
   onSearchChange,
-  view,
-  onViewChange,
   sort,
   onSortChange,
   codec,
@@ -33,8 +30,6 @@ export function CandidatesFilterBar({
 }: {
   search: string;
   onSearchChange: (v: string) => void;
-  view: "flat" | "grouped";
-  onViewChange: (v: "flat" | "grouped") => void;
   sort: CandidateSortKey;
   onSortChange: (v: CandidateSortKey) => void;
   codec: string;
@@ -76,36 +71,6 @@ export function CandidatesFilterBar({
             aria-label="Search candidates"
             className="rounded-[11px] pl-[34px] text-sm"
           />
-        </div>
-        <div className="inline-flex bg-surface border border-line rounded-[11px] p-[3px] gap-[2px] shrink-0">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onViewChange("flat")}
-            aria-pressed={view === "flat"}
-            className={cn(
-              "rounded-[8px] text-xs font-semibold h-auto py-[7px] px-[13px]",
-              view === "flat"
-                ? "bg-brand-soft text-brand hover:bg-brand-soft hover:text-brand"
-                : "text-muted-fg",
-            )}
-          >
-            Flat
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onViewChange("grouped")}
-            aria-pressed={view === "grouped"}
-            className={cn(
-              "rounded-[8px] text-xs font-semibold h-auto py-[7px] px-[13px]",
-              view === "grouped"
-                ? "bg-brand-soft text-brand hover:bg-brand-soft hover:text-brand"
-                : "text-muted-fg",
-            )}
-          >
-            By series
-          </Button>
         </div>
       </div>
       <div className="flex items-center gap-2 px-4 pb-3 flex-wrap sm:px-7">

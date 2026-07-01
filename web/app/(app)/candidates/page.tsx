@@ -23,7 +23,6 @@ import {
   CANDIDATE_SORT_OPTIONS,
   CANDIDATES_PAGE_SIZE,
 } from "@/components/candidates/constants";
-import { GroupedContent } from "@/components/candidates/grouped-content";
 import { QueueConfirmDialog } from "@/components/media/queue-confirm-dialog";
 import { QueueSelectionBar } from "@/components/media/selection-bar";
 import { Badge } from "@/components/ui/badge";
@@ -59,11 +58,8 @@ function CandidatesPage() {
   const [codec, setCodec] = useQueryParam("codec");
   const [resolution, setResolution] = useQueryParam("res");
   const [library, setLibrary] = useQueryParam("library");
-  const [viewRaw, setViewRaw] = useQueryParam("view", "flat");
-  const view = parseQueryEnum(viewRaw, ["flat", "grouped"] as const, "flat");
   const {
     selectedIds,
-    setSelectedIds,
     toggle: toggleId,
     clear: clearSel,
     toggleAll: selectAllToggle,
@@ -176,34 +172,12 @@ function CandidatesPage() {
   });
   const profiles = profilesData?.items ?? [];
 
-  function toggleSeries(ids: number[]) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      const allSelected = ids.every((id) => next.has(id));
-      ids.forEach((id) => {
-        if (allSelected) {
-          next.delete(id);
-        } else {
-          next.add(id);
-        }
-      });
-      return next;
-    });
-  }
-
   function toggleAll() {
     selectAllToggle(allItems.map((i) => i.id));
   }
 
-  const registerLoadedFiles = useCallback((files: MediaFile[]) => {
-    files.forEach((item) => {
-      fileMapRef.current.set(item.id, item);
-    });
-  }, []);
-
   // biome-ignore lint/correctness/useExhaustiveDependencies: allItems must stay listed so this recomputes once fileMapRef is repopulated after new pages load
   const selectedFiles = useMemo(
-    // fileMapRef is a side cache for grouped-view selections, read directly rather than via a reactive value
     () =>
       [...selectedIds]
         .map((id) => fileMapRef.current.get(id))
@@ -271,8 +245,6 @@ function CandidatesPage() {
       <CandidatesFilterBar
         search={search}
         onSearchChange={setSearch}
-        view={view}
-        onViewChange={setViewRaw}
         sort={sort}
         onSortChange={(v) => startTransition(() => setSortRaw(v))}
         codec={effectiveCodec}
@@ -293,34 +265,22 @@ function CandidatesPage() {
           isPending && "opacity-50",
         )}
       >
-        {view === "flat" ? (
-          <CandidatesFlatList
-            parentRef={parentRef}
-            allItems={allItems}
-            orderedIds={orderedIds}
-            selectedIds={selectedIds}
-            onToggle={toggleId}
-            allSelected={allSelected}
-            onToggleAll={toggleAll}
-            showError={isError && !data}
-            error={error}
-            onRetry={() => void refetch()}
-            isInitialLoading={data === undefined}
-            hasNextPage={hasNextPage}
-            isFetchingNextPage={isFetchingNextPage}
-            onLoadMore={handleLoadMore}
-          />
-        ) : (
-          <div className="h-full overflow-auto">
-            <GroupedContent
-              selectedIds={selectedIds}
-              onToggle={toggleId}
-              onToggleSeries={toggleSeries}
-              filters={filters}
-              onEpisodesLoaded={registerLoadedFiles}
-            />
-          </div>
-        )}
+        <CandidatesFlatList
+          parentRef={parentRef}
+          allItems={allItems}
+          orderedIds={orderedIds}
+          selectedIds={selectedIds}
+          onToggle={toggleId}
+          allSelected={allSelected}
+          onToggleAll={toggleAll}
+          showError={isError && !data}
+          error={error}
+          onRetry={() => void refetch()}
+          isInitialLoading={data === undefined}
+          hasNextPage={hasNextPage}
+          isFetchingNextPage={isFetchingNextPage}
+          onLoadMore={handleLoadMore}
+        />
       </div>
 
       {selectedIds.size > 0 && (

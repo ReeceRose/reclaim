@@ -121,6 +121,27 @@ func (s *Settings) ResetAuth(ctx context.Context) error {
 	return err
 }
 
+// DefaultClientProfile returns the user's sticky default client profile for
+// the compatibility view (internal/compatibility), e.g. "apple_tv_4k". Persisted in
+// the DB (unlike config.Live) so the choice survives a restart.
+func (s *Settings) DefaultClientProfile(ctx context.Context) (string, error) {
+	var profile string
+	err := s.r.QueryRowContext(ctx,
+		"SELECT default_client_profile FROM settings WHERE id = 1",
+	).Scan(&profile)
+	return profile, err
+}
+
+// SetDefaultClientProfile updates the sticky default client profile. Callers
+// are responsible for validating profile against the known built-in IDs
+// (internal/compatibility.BuiltinProfiles) before calling this.
+func (s *Settings) SetDefaultClientProfile(ctx context.Context, profile string) error {
+	_, err := s.w.ExecContext(ctx,
+		"UPDATE settings SET default_client_profile = ? WHERE id = 1", profile,
+	)
+	return err
+}
+
 // ensureSecret generates and persists a 32-byte random session secret if one
 // does not already exist. Called once from Open after repos are initialized.
 func (s *Settings) ensureSecret(ctx context.Context) error {
@@ -144,4 +165,3 @@ func (s *Settings) ensureSecret(ctx context.Context) error {
 	)
 	return err
 }
-

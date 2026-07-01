@@ -40,8 +40,8 @@ func TestMigrate_idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("version: %v", err)
 	}
-	if version != 8 {
-		t.Fatalf("want version 8, got %d", version)
+	if version != 12 {
+		t.Fatalf("want version 12, got %d", version)
 	}
 }
 
@@ -227,6 +227,112 @@ func TestSettings_changeCredentials(t *testing.T) {
 	}
 	if err := s.Settings.ChangeCredentials(ctx, "x", "y"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSettings_defaultClientProfile(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	got, err := s.Settings.DefaultClientProfile(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "apple_tv_4k" {
+		t.Fatalf("default_client_profile = %q, want %q (migration default)", got, "apple_tv_4k")
+	}
+
+	if err := s.Settings.SetDefaultClientProfile(ctx, "nvidia_shield"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.Settings.DefaultClientProfile(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "nvidia_shield" {
+		t.Fatalf("default_client_profile after set = %q, want %q", got, "nvidia_shield")
+	}
+}
+
+func TestStreams_replaceForFileIsFullSwap(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	fileID, err := s.Media.insertTestRow(ctx, "/movies/test.mkv")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	codecHEVC, codecTrueHD := "hevc", "truehd"
+	channels := 8
+	extra := `{"pix_fmt":"yuv420p10le"}`
+	first := []MediaStream{
+		{StreamIndex: 0, CodecType: "video", CodecName: &codecHEVC, DispositionDefault: true, ExtraJSON: &extra},
+		{StreamIndex: 1, CodecType: "audio", CodecName: &codecTrueHD, Channels: &channels},
+	}
+	if err := s.Streams.ReplaceForFile(ctx, fileID, first); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.Streams.ListForFile(ctx, fileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("streams len = %d, want 2", len(got))
+	}
+	if got[0].CodecName == nil || *got[0].CodecName != "hevc" || !got[0].DispositionDefault {
+		t.Errorf("stream[0] = %+v", got[0])
+	}
+	if got[0].ExtraJSON == nil || *got[0].ExtraJSON != extra {
+		t.Errorf("stream[0].ExtraJSON = %v, want %q", got[0].ExtraJSON, extra)
+	}
+
+	// A second call with a different (smaller) set must fully replace, not append.
+	codecH264 := "h264"
+	second := []MediaStream{
+		{StreamIndex: 0, CodecType: "video", CodecName: &codecH264},
+	}
+	if err := s.Streams.ReplaceForFile(ctx, fileID, second); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.Streams.ListForFile(ctx, fileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("streams len after replace = %d, want 1", len(got))
+	}
+	if got[0].CodecName == nil || *got[0].CodecName != "h264" {
+		t.Errorf("stream[0] after replace = %+v", got[0])
+	}
+}
+
+func TestStreams_cascadeDeleteOnMediaFileDelete(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	fileID, err := s.Media.insertTestRow(ctx, "/movies/test.mkv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	codec := "hevc"
+	if err := s.Streams.ReplaceForFile(ctx, fileID, []MediaStream{
+		{StreamIndex: 0, CodecType: "video", CodecName: &codec},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.w.ExecContext(ctx, "DELETE FROM media_files WHERE id = ?", fileID); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.Streams.ListForFile(ctx, fileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("streams after media_files delete = %d, want 0 (ON DELETE CASCADE)", len(got))
 	}
 }
 

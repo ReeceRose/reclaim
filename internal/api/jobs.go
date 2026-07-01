@@ -103,7 +103,6 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 	}
 
 	if len(queued) > 0 {
-		s.InvalidateCandidates()
 		s.hub.Broadcast("jobs_queued", map[string]any{
 			"count":      len(queued),
 			"profile_id": profile.ID,
@@ -208,7 +207,6 @@ func (s *Server) handleCancelJob(c *echo.Context) error {
 		}
 		s.hub.Broadcast("job_cancelled", map[string]any{"job_id": id})
 		s.hub.Broadcast("event_created", apiEventPayload(eventID, store.EventJobCancelled, store.SeverityInfo, "Job cancelled", id))
-		s.InvalidateCandidates()
 		return c.JSON(http.StatusOK, map[string]any{"job_id": id, "status": "cancelled"})
 	case string(ijobs.StatusQueued):
 		// A queued job is just dropped. The guarded transition also wins the race
@@ -219,7 +217,6 @@ func (s *Server) handleCancelJob(c *echo.Context) error {
 		}
 		s.hub.Broadcast("job_cancelled", map[string]any{"job_id": id})
 		s.hub.Broadcast("event_created", apiEventPayload(eventID, store.EventJobCancelled, store.SeverityInfo, "Job cancelled", id))
-		s.InvalidateCandidates()
 		return c.JSON(http.StatusOK, map[string]any{"job_id": id, "status": "cancelled"})
 	default:
 		return c.JSON(http.StatusConflict, errorBody("job is not cancellable in its current state"))

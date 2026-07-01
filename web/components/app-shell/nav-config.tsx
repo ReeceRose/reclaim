@@ -92,6 +92,26 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    path: "/compatibility",
+    label: "Direct play",
+    group: "Library",
+    icon: (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        className="w-[18px] h-[18px] shrink-0"
+      >
+        <rect x="2" y="4" width="20" height="14" rx="2" />
+        <path d="M10 9l5 3-5 3z" fill="currentColor" stroke="none" />
+        <line x1="8" y1="22" x2="16" y2="22" />
+        <line x1="12" y1="18" x2="12" y2="22" />
+      </svg>
+    ),
+  },
+  {
     path: "/queue",
     label: "Queue",
     group: "Encoding",

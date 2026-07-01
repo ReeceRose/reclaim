@@ -44,4 +44,3 @@ func (s *Scans) Complete(ctx context.Context, run *ScanRun) error {
 	)
 	return err
 }
-

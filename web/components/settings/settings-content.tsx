@@ -9,6 +9,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { api, type Profile } from "@/lib/api";
 import { AccountPanel } from "./account-panel";
+import { CompatibilityPanel } from "./compatibility-panel";
 import { EncodingPanel } from "./encoding-panel";
 import { MetadataPanel } from "./metadata-panel";
 import { DeleteProfileDialog, ProfileDialog } from "./profile-dialog";
@@ -31,6 +32,12 @@ export function SettingsContent() {
     staleTime: 30_000,
   });
   const profiles = profilesData.items ?? [];
+  const { data: compatibilityProfilesData } = useSuspenseQuery({
+    queryKey: ["compatibility-profiles"],
+    queryFn: api.compatibilityProfiles,
+    staleTime: 5 * 60_000,
+  });
+  const compatibilityProfiles = compatibilityProfilesData.profiles ?? [];
 
   const [windowStart, setWindowStart] = useState(settings.encode_window_start);
   const [windowEnd, setWindowEnd] = useState(settings.encode_window_end);
@@ -41,6 +48,9 @@ export function SettingsContent() {
   const [scanAnchor, setScanAnchor] = useState(settings.scan_anchor ?? "00:00");
   const [probeConcurrency, setProbeConcurrency] = useState(
     settings.probe_concurrency,
+  );
+  const [defaultClientProfile, setDefaultClientProfile] = useState(
+    settings.default_client_profile,
   );
 
   const [credPassword, setCredPassword] = useState("");
@@ -54,10 +64,13 @@ export function SettingsContent() {
         scan_interval: `${scanIntervalHours}h0m0s`,
         scan_anchor: scanAnchor,
         probe_concurrency: probeConcurrency,
+        default_client_profile: defaultClientProfile,
       }),
     onSuccess: () => {
       toast.success("Settings saved");
       qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["compatibility"] });
+      qc.invalidateQueries({ queryKey: ["compatibility-stats"] });
     },
     onError: () => toast.error("Failed to save settings"),
   });
@@ -160,6 +173,14 @@ export function SettingsContent() {
             tvPath={settings.tv_path}
           />
         </div>
+
+        <CompatibilityPanel
+          profiles={compatibilityProfiles}
+          value={defaultClientProfile}
+          onChange={setDefaultClientProfile}
+          onSave={() => settingsMutation.mutate()}
+          isSaving={settingsMutation.isPending}
+        />
 
         <ProfilesPanel
           profiles={profiles}

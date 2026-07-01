@@ -13,6 +13,13 @@ import (
 	"reclaim/internal/store"
 )
 
+// episodeDTO is a media file plus the parsed season/episode it belongs to.
+type episodeDTO struct {
+	mediaFileDTO
+	Season  int  `json:"season"`
+	Episode *int `json:"episode"`
+}
+
 type librarySeasonSummary struct {
 	Season                int     `json:"season"`
 	FileCount             int     `json:"file_count"`
@@ -40,7 +47,7 @@ func parseFileFilter(c *echo.Context) store.FileFilter {
 	return store.FileFilter{
 		LibraryType:    c.QueryParam("library_type"),
 		VideoCodec:     c.QueryParam("video_codec"),
-		Height:      c.QueryParam("height"),
+		Height:         c.QueryParam("height"),
 		Search:         c.QueryParam("search"),
 		Status:         c.QueryParam("status"),
 		CandidateState: c.QueryParam("candidate_state"),
@@ -156,7 +163,6 @@ func (s *Server) handleGroupedFiles(c *echo.Context) error {
 		}
 	}
 
-
 	return c.JSON(http.StatusOK, map[string]any{
 		"series":      series,
 		"total_count": total,
@@ -237,7 +243,6 @@ func (s *Server) handleGroupedFileEpisodes(c *echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, resp)
 }
-
 
 func (s *Server) buildLibrarySeasonEpisodes(files []store.MediaFile, states map[int64]store.CandidateState, seriesTitle string, season int) []episodeDTO {
 	eps := make([]episodeDTO, 0)

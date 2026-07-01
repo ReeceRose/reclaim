@@ -249,30 +249,6 @@ Episode rows for one TV series season in the Library view.
 **Query params:** `series`, `season` (required), same filters as `/api/files`,
 plus `limit` (default 50, max 200) and `offset`.
 
-### `GET /api/candidates/grouped`
-TV series/season summaries for the **By series** candidate view. Movies use the
-paginated `/api/candidates` endpoint.
-
-**Query params:** same filters as `/api/candidates` (`library_type`, `video_codec`,
-`height`, `search`), plus `limit` (default 50, max 200) and `offset`.
-
-```json
-{
-  "series": [
-    { "title": "Breaking Bad", "library_type": "tv", "candidate_count": 12,
-      "season_count": 2, "total_bytes": 50000000000, "predicted_savings_bytes": 15000000000,
-      "seasons": [ { "season": 1, "candidate_count": 6, "episode_ids": [5, 6] } ] }
-  ],
-  "total_count": 42
-}
-```
-
-### `GET /api/candidates/grouped/episodes`
-Episode rows for one TV series season in the candidate view.
-
-**Query params:** `series`, `season` (required), same filters as `/api/candidates`,
-plus `limit` (default 50, max 200) and `offset`.
-
 ### `GET /api/files/:id`
 Single media file by id. Returns the shared file object plus TMDB detail fields
 (`overview`, `tagline`, `genres`, etc.) when metadata exists for the movie path

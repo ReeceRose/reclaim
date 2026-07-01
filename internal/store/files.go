@@ -69,10 +69,10 @@ const maxFileLimit = 200
 
 func appendFileFilter(where []string, args []any, f FileFilter) ([]string, []any, error) {
 	where, args, err := appendFilter(where, args, CandidateFilter{
-		LibraryType:    f.LibraryType,
-		VideoCodec:     f.VideoCodec,
-		Height:         f.Height,
-		Search:         f.Search,
+		LibraryType: f.LibraryType,
+		VideoCodec:  f.VideoCodec,
+		Height:      f.Height,
+		Search:      f.Search,
 	})
 	if err != nil {
 		return nil, nil, err

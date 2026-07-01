@@ -52,6 +52,12 @@ type mediaFileDTO struct {
 	VoteCount   *int64   `json:"vote_count,omitempty"`
 	ReleaseYear *int     `json:"release_year,omitempty"`
 	RuntimeMins *int     `json:"runtime_mins,omitempty"`
+	// Compatibility-engine fields — only populated by handleFileDetail.
+	// Streams is every probed stream (internal/compatibility's media_streams
+	// source); Compatibility is one verdict per built-in client profile, so
+	// the UI's per-profile toggle (§10) doesn't need a request per profile.
+	Streams       []streamDTO        `json:"streams,omitempty"`
+	Compatibility []compatibilityDTO `json:"compatibility,omitempty"`
 }
 
 func toMediaFileDTO(f *store.MediaFile) mediaFileDTO {

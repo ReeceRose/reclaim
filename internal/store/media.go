@@ -31,6 +31,26 @@ type MediaFile struct {
 	Status                string
 	SeriesTitle           *string
 	SeasonNumber          *int
+
+	// Compatibility-engine fields (internal/compatibility) — denormalized primary
+	// stream metadata, populated alongside the rest of the probe result.
+	PixelFormat     *string
+	VideoBitDepth   *int
+	ColorTransfer   *string
+	ColorPrimaries  *string
+	AudioSampleRate *int
+	SubtitleCodec   *string
+
+	// ProbeExtraJSON is a catch-all for rarely-needed format-level ffprobe
+	// fields — see ffprobe.Result.FormatExtraJSON's doc comment. Not read by
+	// anything today; captured for future use without another rescan.
+	ProbeExtraJSON *string
+
+	// DolbyVisionProfile/Level — see ffprobe.Result's doc comment. Not
+	// consumed by internal/compatibility yet; captured for the anticipated Apple
+	// TV 4K "Profile 5 only" rule.
+	DolbyVisionProfile *int
+	DolbyVisionLevel   *int
 }
 
 type Media struct {
@@ -58,13 +78,19 @@ func (m *Media) Insert(ctx context.Context, f *MediaFile) (int64, error) {
 			video_codec, video_codec_profile, width, height, duration_seconds,
 			bitrate_kbps, audio_codec, audio_channels, container_format,
 			is_already_hevc, predicted_savings_bytes, last_probed_at, probe_error, status,
-			series_title, season_number
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			series_title, season_number,
+			pixel_format, video_bit_depth, color_transfer, color_primaries,
+			audio_sample_rate, subtitle_codec, probe_extra_json,
+			dolby_vision_profile, dolby_vision_level
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		f.Path, f.LibraryType, f.SizeBytes, f.Mtime, f.Fingerprint,
 		f.VideoCodec, f.VideoCodecProfile, f.Width, f.Height, f.DurationSeconds,
 		f.BitrateKbps, f.AudioCodec, f.AudioChannels, f.ContainerFormat,
 		btoi(f.IsAlreadyHEVC), f.PredictedSavingsBytes, f.LastProbedAt, f.ProbeError, f.Status,
 		f.SeriesTitle, f.SeasonNumber,
+		f.PixelFormat, f.VideoBitDepth, f.ColorTransfer, f.ColorPrimaries,
+		f.AudioSampleRate, f.SubtitleCodec, f.ProbeExtraJSON,
+		f.DolbyVisionProfile, f.DolbyVisionLevel,
 	)
 	if err != nil {
 		return 0, err
@@ -110,14 +136,20 @@ func (m *Media) UpdateProbe(ctx context.Context, f *MediaFile) error {
 			duration_seconds = ?, bitrate_kbps = ?, audio_codec = ?, audio_channels = ?,
 			container_format = ?, is_already_hevc = ?, predicted_savings_bytes = ?,
 			last_probed_at = ?, probe_error = ?, status = ?,
-			series_title = ?, season_number = ?
+			series_title = ?, season_number = ?,
+			pixel_format = ?, video_bit_depth = ?, color_transfer = ?, color_primaries = ?,
+			audio_sample_rate = ?, subtitle_codec = ?, probe_extra_json = ?,
+			dolby_vision_profile = ?, dolby_vision_level = ?
 		WHERE id = ?`,
 		f.SizeBytes, f.Mtime, f.Fingerprint,
 		f.VideoCodec, f.VideoCodecProfile, f.Width, f.Height,
 		f.DurationSeconds, f.BitrateKbps, f.AudioCodec, f.AudioChannels,
 		f.ContainerFormat, btoi(f.IsAlreadyHEVC), f.PredictedSavingsBytes,
 		f.LastProbedAt, f.ProbeError, f.Status,
-		f.SeriesTitle, f.SeasonNumber, f.ID,
+		f.SeriesTitle, f.SeasonNumber,
+		f.PixelFormat, f.VideoBitDepth, f.ColorTransfer, f.ColorPrimaries,
+		f.AudioSampleRate, f.SubtitleCodec, f.ProbeExtraJSON,
+		f.DolbyVisionProfile, f.DolbyVisionLevel, f.ID,
 	); err != nil {
 		return err
 	}
@@ -357,7 +389,10 @@ const mediaQ = `
 		video_codec, video_codec_profile, width, height, duration_seconds,
 		bitrate_kbps, audio_codec, audio_channels, container_format,
 		is_already_hevc, predicted_savings_bytes, last_probed_at, probe_error, status,
-		series_title, season_number
+		series_title, season_number,
+		pixel_format, video_bit_depth, color_transfer, color_primaries,
+		audio_sample_rate, subtitle_codec, probe_extra_json,
+		dolby_vision_profile, dolby_vision_level
 	FROM media_files`
 
 func scanMedia(s rowScanner) (*MediaFile, error) {
@@ -369,6 +404,9 @@ func scanMedia(s rowScanner) (*MediaFile, error) {
 		&f.BitrateKbps, &f.AudioCodec, &f.AudioChannels, &f.ContainerFormat,
 		&isHEVC, &f.PredictedSavingsBytes, &f.LastProbedAt, &f.ProbeError, &f.Status,
 		&f.SeriesTitle, &f.SeasonNumber,
+		&f.PixelFormat, &f.VideoBitDepth, &f.ColorTransfer, &f.ColorPrimaries,
+		&f.AudioSampleRate, &f.SubtitleCodec, &f.ProbeExtraJSON,
+		&f.DolbyVisionProfile, &f.DolbyVisionLevel,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound

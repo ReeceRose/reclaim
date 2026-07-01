@@ -17,6 +17,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
+	"reclaim/internal/compatibility"
 	"reclaim/internal/config"
 	"reclaim/internal/ffprobe"
 	"reclaim/internal/media"
@@ -33,17 +34,12 @@ type Broadcaster interface {
 	ScanFailed(errMsg string)
 }
 
-// CandidatesInvalidator is notified when media or job state changes affect the
-// candidate list. Satisfied by api.Server.
-type CandidatesInvalidator interface {
-	InvalidateCandidates()
-}
-
 // Scan trigger values passed to Scan and recorded in scan_runs.
 const (
 	TriggerStartup   = "startup"
 	TriggerScheduled = "scheduled"
 	TriggerManual    = "manual"
+	TriggerBackfill  = "backfill"
 )
 
 // Scan kinds sent in scan_started WS payloads and POST /api/scan responses.
@@ -83,10 +79,9 @@ type ProbeFunc func(ctx context.Context, path string) (*ffprobe.Result, error)
 
 // Scanner indexes media files, maintains the DB, and drives the fsnotify watcher.
 type Scanner struct {
-	store      *store.Store
-	roots      map[string]string     // mountPath -> libraryType
-	hub        Broadcaster           // nil-safe; set via SetBroadcaster
-	invalidate CandidatesInvalidator // nil-safe; set via SetCandidateInvalidator
+	store *store.Store
+	roots map[string]string // mountPath -> libraryType
+	hub   Broadcaster       // nil-safe; set via SetBroadcaster
 
 	probeFunc    ProbeFunc
 	scanInterval time.Duration
@@ -130,15 +125,6 @@ func WithProbeFunc(fn ProbeFunc) Option {
 // SetBroadcaster wires the hub after construction. Used in main.go where the
 // API server (and its hub) is created after the scanner.
 func (s *Scanner) SetBroadcaster(b Broadcaster) { s.hub = b }
-
-// SetCandidateInvalidator wires cache invalidation after construction.
-func (s *Scanner) SetCandidateInvalidator(inv CandidatesInvalidator) { s.invalidate = inv }
-
-func (s *Scanner) invalidateCandidates() {
-	if s.invalidate != nil {
-		s.invalidate.InvalidateCandidates()
-	}
-}
 
 func (s *Scanner) tvRoot() string {
 	for path, lt := range s.roots {
@@ -208,15 +194,15 @@ func New(st *store.Store, cfg *config.Config, opts ...Option) (*Scanner, error) 
 			cfg.MoviesPath: store.LibraryTypeMovies,
 			cfg.TVPath:     store.LibraryTypeTV,
 		},
-		probeFunc:    ffprobe.Probe,
-		probe:        newProbeGate(func() int { return bootProbeConcurrency }),
-		scanInterval: cfg.ScanInterval,
-		scanAnchor:   cfg.ScanAnchor,
-		watcher:      w,
-		debounceDur:  30 * time.Second,
+		probeFunc:      ffprobe.Probe,
+		probe:          newProbeGate(func() int { return bootProbeConcurrency }),
+		scanInterval:   cfg.ScanInterval,
+		scanAnchor:     cfg.ScanAnchor,
+		watcher:        w,
+		debounceDur:    30 * time.Second,
 		debounceRemDur: 35 * time.Second,
-		probeTimers:  make(map[string]*time.Timer),
-		removeTimers: make(map[string]*time.Timer),
+		probeTimers:    make(map[string]*time.Timer),
+		removeTimers:   make(map[string]*time.Timer),
 	}
 	for _, o := range opts {
 		o(s)
@@ -572,7 +558,6 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 		"removed", run.FilesRemoved,
 		"errors", run.Errors,
 	)
-	s.invalidateCandidates()
 	return run, nil
 }
 
@@ -641,6 +626,15 @@ func (s *Scanner) probeAndStore(
 		f.ContainerFormat = result.ContainerFormat
 		f.IsAlreadyHEVC = result.IsAlreadyHEVC
 		f.LastProbedAt = &now
+		f.PixelFormat = result.PixelFormat
+		f.VideoBitDepth = result.VideoBitDepth
+		f.ColorTransfer = result.ColorTransfer
+		f.ColorPrimaries = result.ColorPrimaries
+		f.AudioSampleRate = result.AudioSampleRate
+		f.SubtitleCodec = result.SubtitleCodec
+		f.ProbeExtraJSON = result.FormatExtraJSON
+		f.DolbyVisionProfile = result.DolbyVisionProfile
+		f.DolbyVisionLevel = result.DolbyVisionLevel
 		// Compute the savings estimate at probe time and store it so the
 		// candidate ranking and dashboard never have to recompute it per query.
 		f.PredictedSavingsBytes = media.PredictedSavingsBytes(
@@ -662,11 +656,15 @@ func (s *Scanner) probeAndStore(
 					slog.Error("scanner: update probe (resurrected)", "path", path, "err", uerr)
 					return fp, -1, false
 				}
+				s.persistStreams(ctx, path, prior.ID, result)
+				s.persistCompatibility(ctx, path, prior.ID, result)
 				return fp, prior.ID, false
 			}
 			slog.Error("scanner: insert", "path", path, "err", err)
 			return fp, -1, true
 		}
+		s.persistStreams(ctx, path, id, result)
+		s.persistCompatibility(ctx, path, id, result)
 		return fp, id, true
 	}
 
@@ -675,7 +673,112 @@ func (s *Scanner) probeAndStore(
 		slog.Error("scanner: update probe", "path", path, "err", err)
 		return fp, -1, false
 	}
+	s.persistStreams(ctx, path, existing.ID, result)
+	s.persistCompatibility(ctx, path, existing.ID, result)
 	return fp, existing.ID, false
+}
+
+// persistStreams replaces the media_streams rows for fileID from a fresh
+// probe result. Skipped when the probe failed (result == nil) so a
+// transient ffprobe error doesn't wipe out previously-known stream data.
+// Failures are logged, not returned — stream data is compatibility-engine-only and
+// must never block indexing (probe_error / candidate ranking still work
+// without it).
+func (s *Scanner) persistStreams(ctx context.Context, path string, fileID int64, result *ffprobe.Result) {
+	if result == nil {
+		return
+	}
+	streams := make([]store.MediaStream, 0, len(result.Streams))
+	for _, si := range result.Streams {
+		ms := store.MediaStream{
+			StreamIndex:        si.Index,
+			CodecType:          si.CodecType,
+			DispositionDefault: si.DispositionDefault,
+		}
+		if si.CodecName != "" {
+			codec := si.CodecName
+			ms.CodecName = &codec
+		}
+		if si.Profile != "" {
+			profile := si.Profile
+			ms.Profile = &profile
+		}
+		if si.Channels > 0 {
+			ch := si.Channels
+			ms.Channels = &ch
+		}
+		if si.Language != "" {
+			lang := si.Language
+			ms.Language = &lang
+		}
+		if len(si.Extra) > 0 {
+			if b, err := json.Marshal(si.Extra); err == nil {
+				extra := string(b)
+				ms.ExtraJSON = &extra
+			}
+		}
+		streams = append(streams, ms)
+	}
+	if err := s.store.Streams.ReplaceForFile(ctx, fileID, streams); err != nil {
+		slog.Warn("scanner: replace streams", "path", path, "err", err)
+	}
+}
+
+// persistCompatibility evaluates result against every built-in client
+// profile and stores the verdicts in media_compatibility — see
+// docs/COMPATIBILITY PLAN.md §9 "Scanner hook". Skipped when the probe
+// failed (result == nil), same as persistStreams: a transient ffprobe error
+// must not overwrite a file's last-known-good compatibility verdicts.
+// Failures are logged, not returned — compatibility data must never block
+// indexing.
+func (s *Scanner) persistCompatibility(ctx context.Context, path string, fileID int64, result *ffprobe.Result) {
+	if result == nil {
+		return
+	}
+	input := compatibilityEvalInputFromProbe(result)
+	profiles := compatibility.BuiltinProfiles()
+	verdicts := make(map[string]compatibility.Verdict, len(profiles))
+	for _, p := range profiles {
+		verdicts[p.ID] = compatibility.Evaluate(input, p)
+	}
+	if err := s.store.Media.UpsertCompatibility(ctx, fileID, verdicts); err != nil {
+		slog.Warn("scanner: upsert compatibility", "path", path, "err", err)
+	}
+}
+
+// compatibilityEvalInputFromProbe maps a ffprobe.Result onto
+// compatibility.EvalInput. internal/compatibility deliberately depends on
+// neither internal/ffprobe nor internal/store (store depends on
+// compatibility, for UpsertCompatibility), so this mapping lives here, on
+// the one caller that already imports both. The primary video stream's bit
+// depth comes from Result.VideoBitDepth (already derived from pix_fmt)
+// since ffprobe.StreamInfo doesn't carry per-stream bit depth —
+// compatibility.Evaluate only consults the first video stream anyway.
+func compatibilityEvalInputFromProbe(result *ffprobe.Result) compatibility.EvalInput {
+	input := compatibility.EvalInput{}
+	if result.ContainerFormat != nil {
+		input.ContainerFormat = *result.ContainerFormat
+	}
+
+	seenVideo := false
+	input.Streams = make([]compatibility.StreamInfo, 0, len(result.Streams))
+	for _, si := range result.Streams {
+		cs := compatibility.StreamInfo{
+			Index:     si.Index,
+			CodecType: si.CodecType,
+			CodecName: si.CodecName,
+			Profile:   si.Profile,
+			Channels:  si.Channels,
+		}
+		if si.CodecType == "video" && !seenVideo {
+			seenVideo = true
+			if result.VideoBitDepth != nil {
+				cs.BitDepth = *result.VideoBitDepth
+			}
+		}
+		input.Streams = append(input.Streams, cs)
+	}
+	return input
 }
 
 // Start launches the fsnotify watcher and scheduled rescan loops. Blocks until
@@ -814,9 +917,7 @@ func (s *Scanner) probeSingleFile(ctx context.Context, path string) {
 	}
 
 	lt := s.libraryTypeFor(path)
-	if _, id, _ := s.probeAndStore(ctx, path, lt, info.Size(), info.ModTime().Unix(), rec); id >= 0 {
-		s.invalidateCandidates()
-	}
+	s.probeAndStore(ctx, path, lt, info.Size(), info.ModTime().Unix(), rec)
 }
 
 // checkVanishedFile handles a file that no longer exists on disk: if another
@@ -830,9 +931,7 @@ func (s *Scanner) checkVanishedFile(ctx context.Context, path string) {
 		return
 	}
 	if f.Fingerprint == "" {
-		if err := s.store.Media.MarkMissing(ctx, f.ID); err == nil {
-			s.invalidateCandidates()
-		}
+		_ = s.store.Media.MarkMissing(ctx, f.ID)
 		return
 	}
 
@@ -840,16 +939,12 @@ func (s *Scanner) checkVanishedFile(ctx context.Context, path string) {
 	if err == nil {
 		if merr := s.store.Media.RecordMove(ctx, f.ID, newFile.ID, newFile.Path); merr != nil {
 			slog.Error("scanner: watcher record move", "from", path, "to", newFile.Path, "err", merr)
-		} else {
-			s.invalidateCandidates()
 		}
 		return
 	}
 
 	if merr := s.store.Media.MarkMissing(ctx, f.ID); merr != nil {
 		slog.Error("scanner: watcher mark missing", "path", path, "err", merr)
-	} else {
-		s.invalidateCandidates()
 	}
 }
 
@@ -919,6 +1014,8 @@ func scanTriggerLabel(trigger string) string {
 		return "Scheduled"
 	case TriggerStartup:
 		return "Startup"
+	case TriggerBackfill:
+		return "Backfill"
 	default:
 		return trigger
 	}

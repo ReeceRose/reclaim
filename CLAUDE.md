@@ -159,4 +159,3 @@ The hub broadcasts: `job_started`, `job_progress` (with `percent`), `job_complet
 
 Pagination: the default `savings_desc` sort uses keyset cursors (`after_savings` + `after_id`) for gap-free infinite scroll over large libraries. All other sorts fall back to `offset` pagination.
 
-`GET /api/candidates/grouped` returns series+season hierarchy for TV and a flat list for movies (loads all matching rows in one pass via `AllCandidates`).

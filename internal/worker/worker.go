@@ -43,12 +43,6 @@ type Broadcaster interface {
 	Broadcast(event string, data any)
 }
 
-// CandidatesInvalidator is notified when media or job state changes affect the
-// candidate list. Satisfied by api.Server.
-type CandidatesInvalidator interface {
-	InvalidateCandidates()
-}
-
 // liveWindow is the runtime-mutable encode window the worker reads on each pull
 // so a PUT /api/settings change takes effect without a restart. Satisfied by
 // config.Live.
@@ -72,7 +66,6 @@ type Worker struct {
 	store  *store.Store
 	window liveWindow
 	hub    Broadcaster
-	invalidate CandidatesInvalidator
 	roots  []string
 
 	encode  EncodeFunc
@@ -106,15 +99,6 @@ func WithClock(fn func() time.Time) Option    { return func(w *Worker) { w.clock
 func WithPollInterval(d time.Duration) Option { return func(w *Worker) { w.pollInterval = d } }
 func WithProgressDBPeriod(d time.Duration) Option {
 	return func(w *Worker) { w.progressDBPeriod = d }
-}
-func WithCandidateInvalidator(inv CandidatesInvalidator) Option {
-	return func(w *Worker) { w.invalidate = inv }
-}
-
-func (w *Worker) invalidateCandidates() {
-	if w.invalidate != nil {
-		w.invalidate.InvalidateCandidates()
-	}
 }
 
 // New builds a Worker. roots are the media mount roots swept for orphans.
@@ -262,7 +246,6 @@ func (w *Worker) processJob(ctx context.Context, job *store.TranscodeJob) {
 	}()
 
 	w.hub.Broadcast("job_started", map[string]any{"job_id": job.ID, "media_file_id": file.ID})
-	w.invalidateCandidates()
 
 	var duration float64
 	if file.DurationSeconds != nil {
@@ -457,7 +440,6 @@ func (w *Worker) replace(ctx context.Context, job *store.TranscodeJob, file *sto
 		"media_file_id":     file.ID,
 		"output_size_bytes": newSize,
 	})
-	w.invalidateCandidates()
 	return nil
 }
 
@@ -482,7 +464,6 @@ func (w *Worker) refineRatioIfReady(ctx context.Context, codec string) error {
 		slog.Info("worker: refined savings model",
 			"codec", codec, "ratio", lr.Ratio,
 			"samples", lr.SampleCount, "files_updated", n)
-		w.invalidateCandidates()
 		return w.store.Stats.Recompute(ctx)
 	}
 	return nil
@@ -502,7 +483,6 @@ func (w *Worker) cancelJob(jobID int64, tmpPath string) {
 		w.hub.Broadcast("event_created", eventBroadcast(eventID, store.EventJobCancelled, store.SeverityInfo, "Job cancelled", meta, now))
 	}
 	w.hub.Broadcast("job_cancelled", map[string]any{"job_id": jobID})
-	w.invalidateCandidates()
 }
 
 // failJob marks a job failed, broadcasts it, and optionally carries the
@@ -526,7 +506,6 @@ func (w *Worker) failJob(ctx context.Context, jobID int64, msg string, verificat
 		data["verification_result"] = *verification
 	}
 	w.hub.Broadcast("job_failed", data)
-	w.invalidateCandidates()
 }
 
 // reconcileInterrupted marks any job left running/verifying by a crash as failed
@@ -602,7 +581,6 @@ func (w *Worker) tryCompletePostSwap(ctx context.Context, job *store.TranscodeJo
 		"media_file_id":     file.ID,
 		"output_size_bytes": newSize,
 	})
-	w.invalidateCandidates()
 	slog.Info("worker: reconciled post-swap db commit", "job", job.ID, "path", file.Path)
 	return true
 }

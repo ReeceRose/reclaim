@@ -20,11 +20,11 @@ import (
 
 // fakeScanner satisfies ScanTrigger without touching the filesystem.
 type fakeScanner struct {
-	calls        int32
-	scanMu       sync.Mutex
-	scanning     bool
-	hub          *Hub
-	blockUntil   chan struct{} // optional: holds scan open until closed (tests)
+	calls      int32
+	scanMu     sync.Mutex
+	scanning   bool
+	hub        *Hub
+	blockUntil chan struct{} // optional: holds scan open until closed (tests)
 }
 
 func (f *fakeScanner) StartScan(ctx context.Context, trigger string, force bool) error {

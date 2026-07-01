@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Suspense, useState } from "react";
 import { toast } from "sonner";
 import { BROWSE_ROUTES } from "@/app/(app)/browse/browse";
+import { PredictedPlaybackSection } from "@/components/compatibility/predicted-playback-section";
 import { StateBadge } from "@/components/media/candidate-state";
 import { QueueConfirmDialog } from "@/components/media/queue-confirm-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -614,6 +615,11 @@ function FilePageContent() {
           <DetailSection title="Container">
             <DetailRow label="Format" value={file.container_format} mono />
           </DetailSection>
+
+          <PredictedPlaybackSection
+            compatibility={file.compatibility ?? []}
+            streams={file.streams ?? []}
+          />
 
           <DetailSection title="File">
             <DetailRow label="Modified" value={relativeTime(file.mtime)} />

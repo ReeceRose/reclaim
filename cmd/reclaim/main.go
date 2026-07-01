@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 	_ "time/tzdata"
@@ -104,9 +105,20 @@ func main() {
 		worker.WithCandidateInvalidator(apiSrv))
 	apiSrv.SetCanceller(wk)
 
-	go sc.Start(ctx)
-	go wk.Run(ctx)
-	go metaFetcher.Start(ctx)
+	var bg sync.WaitGroup
+	bg.Add(3)
+	go func() {
+		defer bg.Done()
+		sc.Start(ctx)
+	}()
+	go func() {
+		defer bg.Done()
+		wk.Run(ctx)
+	}()
+	go func() {
+		defer bg.Done()
+		metaFetcher.Start(ctx)
+	}()
 
 	handler := apiSrv.Handler()
 
@@ -129,9 +141,28 @@ func main() {
 
 	cancel()
 
-	shutCtx, shutCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownTimeout := 10 * time.Second
+	if v := os.Getenv("SHUTDOWN_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			shutdownTimeout = d
+		}
+	}
+
+	shutCtx, shutCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutCancel()
 	if err := srv.Shutdown(shutCtx); err != nil {
-		slog.Error("shutdown error", "err", err)
+		slog.Error("http shutdown error", "err", err)
+	}
+
+	bgDone := make(chan struct{})
+	go func() {
+		bg.Wait()
+		close(bgDone)
+	}()
+	select {
+	case <-bgDone:
+		slog.Info("background workers stopped")
+	case <-time.After(shutdownTimeout):
+		slog.Warn("shutdown timeout waiting for background workers", "timeout", shutdownTimeout)
 	}
 }

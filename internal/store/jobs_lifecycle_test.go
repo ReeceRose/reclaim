@@ -318,3 +318,44 @@ func TestReplaceWithEncodedReactivatesMissingRow(t *testing.T) {
 		t.Errorf("incremental stats drifted from recompute: %+v vs %+v", got, reco)
 	}
 }
+
+func TestCommitEncodeSwapAtomic(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	mid, jid := seedJobFixture(t, st)
+
+	if _, err := st.Jobs.ClaimNextQueued(ctx, 100); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if err := st.Jobs.Transition(ctx, jid, "running", "verifying"); err != nil {
+		t.Fatalf("transition to verifying: %v", err)
+	}
+
+	eventID, err := st.CommitEncodeSwap(ctx, mid, jid, 2000, "newfp", 12345, "Encoded x.mkv", `{"job_id":1}`)
+	if err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	if eventID == 0 {
+		t.Fatal("want event id")
+	}
+
+	f, _ := st.Media.GetByID(ctx, mid)
+	if !f.IsAlreadyHEVC || f.SizeBytes != 2000 {
+		t.Fatalf("media not updated: %+v", f)
+	}
+	job, _ := st.Jobs.GetByID(ctx, jid)
+	if job.Status != "completed" {
+		t.Fatalf("job status = %q, want completed", job.Status)
+	}
+
+	// Job not in verifying — commit must fail without mutating media.
+	mid2, jid2 := seedJobFixture(t, st)
+	_, err = st.CommitEncodeSwap(ctx, mid2, jid2, 2000, "fp2", 12345, "msg", "{}")
+	if err == nil {
+		t.Fatal("want error when job is not verifying")
+	}
+	f2, _ := st.Media.GetByID(ctx, mid2)
+	if f2.IsAlreadyHEVC {
+		t.Fatal("media updated despite failed commit")
+	}
+}

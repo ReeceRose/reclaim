@@ -15,6 +15,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar
         pathname={shell.pathname}
         isScanning={shell.isScanning}
+        wsConnected={shell.wsConnected}
         scanProgressDetail={shell.scanProgressDetail}
         unreadCount={shell.unreadCount}
         navBadges={shell.navBadges}
@@ -27,6 +28,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       />
 
       <MobileHeader
+        wsConnected={shell.wsConnected}
         unreadCount={shell.unreadCount}
         onOpenNotifications={() => setNotifOpen(true)}
       />

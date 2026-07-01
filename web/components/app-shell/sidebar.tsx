@@ -4,6 +4,7 @@ import type { windowInfo } from '@/lib/format';
 import { BrandLink } from './brand-link';
 import { NotificationBell } from './notification-bell';
 import { ScanBanner } from './scan-banner';
+import { WsDisconnectedBanner } from './ws-disconnected-banner';
 import { WindowArc } from './window-arc';
 import { NAV_GROUPS, NAV_ITEMS, isNavActive } from './nav-config';
 
@@ -12,6 +13,7 @@ type EncodeWindow = ReturnType<typeof windowInfo>;
 export function Sidebar({
   pathname,
   isScanning,
+  wsConnected,
   scanProgressDetail,
   unreadCount,
   navBadges,
@@ -24,6 +26,7 @@ export function Sidebar({
 }: {
   pathname: string;
   isScanning: boolean;
+  wsConnected: boolean;
   scanProgressDetail: string | null;
   unreadCount: number;
   navBadges: Record<string, string | null>;
@@ -45,6 +48,7 @@ export function Sidebar({
       </div>
 
       <ScanBanner visible={isScanning} detail={scanProgressDetail} />
+      <WsDisconnectedBanner visible={!wsConnected} />
 
       <nav className="flex flex-col gap-[3px] px-3 py-[14px] flex-1">
         {NAV_GROUPS.map((group) => (

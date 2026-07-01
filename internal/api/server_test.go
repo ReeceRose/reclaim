@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,27 +20,50 @@ import (
 
 // fakeScanner satisfies ScanTrigger without touching the filesystem.
 type fakeScanner struct {
-	calls int32
-	hub   *Hub
+	calls        int32
+	scanMu       sync.Mutex
+	scanning     bool
+	hub          *Hub
+	blockUntil   chan struct{} // optional: holds scan open until closed (tests)
 }
 
-func (f *fakeScanner) Scan(_ context.Context, _ string, force bool) (*store.ScanRun, error) {
-	atomic.AddInt32(&f.calls, 1)
-	kind := scanner.ScanKind(force)
-	run := &store.ScanRun{ID: 1, FilesScanned: 3, FilesAdded: 1}
-	if f.hub != nil {
-		f.hub.ScanStarted(kind)
-		f.hub.ScanCompleted(map[string]any{
-			"scan_run_id":   run.ID,
-			"files_scanned": run.FilesScanned,
-			"files_added":   run.FilesAdded,
-			"files_updated": run.FilesUpdated,
-			"files_moved":   run.FilesMoved,
-			"files_removed": run.FilesRemoved,
-			"errors":        run.Errors,
-		})
+func (f *fakeScanner) StartScan(ctx context.Context, trigger string, force bool) error {
+	f.scanMu.Lock()
+	if f.scanning {
+		f.scanMu.Unlock()
+		return scanner.ErrScanInProgress
 	}
-	return run, nil
+	f.scanning = true
+	f.scanMu.Unlock()
+
+	go func() {
+		defer func() {
+			f.scanMu.Lock()
+			f.scanning = false
+			f.scanMu.Unlock()
+		}()
+		if f.blockUntil != nil {
+			<-f.blockUntil
+		}
+		atomic.AddInt32(&f.calls, 1)
+		kind := scanner.ScanKind(force)
+		run := &store.ScanRun{ID: 1, FilesScanned: 3, FilesAdded: 1}
+		if f.hub != nil {
+			f.hub.ScanStarted(kind)
+			f.hub.ScanCompleted(map[string]any{
+				"scan_run_id":   run.ID,
+				"files_scanned": run.FilesScanned,
+				"files_added":   run.FilesAdded,
+				"files_updated": run.FilesUpdated,
+				"files_moved":   run.FilesMoved,
+				"files_removed": run.FilesRemoved,
+				"errors":        run.Errors,
+			})
+		}
+		_ = trigger
+		_ = ctx
+	}()
+	return nil
 }
 
 func testConfig() *config.Config {
@@ -399,4 +423,35 @@ func TestSettingsRejectsBadValue(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("bad window: want 400, got %d", w.Code)
 	}
+}
+
+func TestScanConflictWhenInProgress(t *testing.T) {
+	_, h, st, fs := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+
+	fs.blockUntil = make(chan struct{})
+	w := doReq(h, http.MethodPost, "/api/scan", nil, cookie)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("first scan: want 202, got %d (%s)", w.Code, w.Body.String())
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		fs.scanMu.Lock()
+		running := fs.scanning
+		fs.scanMu.Unlock()
+		if running {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("first scan never started")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	w = doReq(h, http.MethodPost, "/api/scan", nil, cookie)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("second scan: want 409, got %d (%s)", w.Code, w.Body.String())
+	}
+	close(fs.blockUntil)
 }

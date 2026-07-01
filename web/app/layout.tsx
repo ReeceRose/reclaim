@@ -17,7 +17,8 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "Reclaim",
-  description: "Media codec audit & re-encode tool",
+  description:
+    "Self-hosted codec audit and re-encode tool. Rank files by predicted HEVC savings, browse your full library, and queue overnight ffmpeg jobs safely.",
 };
 
 export default function RootLayout({

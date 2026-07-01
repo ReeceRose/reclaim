@@ -28,9 +28,10 @@ dev: $(DEV_DIR)
 	cd web && NEXT_PUBLIC_WS_BASE=ws://localhost:8080 pnpm run dev & \
 	wait
 
-## build: compile binary to bin/reclaim
+## build: compile binary to bin/reclaim (builds embedded frontend first)
 build:
 	mkdir -p bin
+	cd web && pnpm run build
 	go build -o bin/reclaim ./cmd/reclaim
 
 ## test: run all tests
@@ -39,7 +40,7 @@ test:
 
 ## test-race: race detector on concurrency-sensitive packages (P9 CI gate)
 test-race:
-	go test -race ./internal/scanner/... ./internal/worker/... ./internal/jobs/...
+	go test -race ./internal/scanner/... ./internal/worker/... ./internal/jobs/... ./internal/api/... ./internal/store/...
 
 ## clean: remove build output and dev dirs
 clean:

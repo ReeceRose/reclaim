@@ -50,7 +50,7 @@ const features = [
   {
     icon: Moon,
     title: "Encode overnight",
-    body: "Jobs run inside a configurable time window — default midnight to 6 AM. A running job finishes even if the window closes.",
+    body: "Jobs run inside a configurable time window — default midnight to 6 AM. Force individual queued jobs to run immediately when needed. A running job finishes even if the window closes.",
     accent: "var(--gold)",
   },
   {
@@ -99,10 +99,12 @@ const steps = [
 const does = [
   "Scans mounted library folders directly",
   "Ranks candidates by savings estimates that improve over time",
+  "Library view for every file with clear eligibility reasons",
   "Fetches TMDB poster art for movies and TV shows (optional)",
   "Helps spot files better re-downloaded than re-encoded",
   "Replaces files in-place after verification",
-  "Runs encodes in a configurable overnight window",
+  "Runs encodes in a configurable overnight window (or force individual jobs)",
+  "Persistent audit trail for scans, jobs, and recovery events",
 ];
 
 const doesNot = [
@@ -305,7 +307,7 @@ export function Comparison() {
 }
 
 export function Install() {
-  const composeSnippet = `# docker-compose.yml — edit media paths and TZ first
+  const composeSnippet = `# docker-compose.yml — edit media paths, PUID/PGID, and TZ first
 services:
   reclaim:
     image: ${site.docker}
@@ -319,12 +321,14 @@ services:
       MOVIES_PATH: /movies
       TV_PATH: /tv
       DB_PATH: /data/reclaim.db
+      PUID: "1000"
+      PGID: "1000"
       TZ: America/New_York
 
 volumes:
   reclaim-data:`;
 
-  const runCmd = "docker compose up --build -d";
+  const runCmd = "docker compose up -d";
 
   return (
     <section id="install" className="border-b border-line py-20 sm:py-24">
@@ -356,6 +360,11 @@ volumes:
           <div className="flex flex-col gap-4">
             <div className="rounded-lg border border-line bg-surface p-5">
               <h3 className="text-sm font-bold">1. Pull and start</h3>
+              <p className="mt-2 text-sm text-muted-fg">
+                Set <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-text">PUID</code> and{" "}
+                <code className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-text">PGID</code> to the user
+                that owns your media library.
+              </p>
               <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-line bg-bg px-3 py-2.5">
                 <code className="font-mono text-xs text-text">{runCmd}</code>
                 <CopyButton text={runCmd} label="Copy docker compose command" />

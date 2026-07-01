@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -51,6 +52,9 @@ const (
 	ScanKindFull        = "full"
 )
 
+// ErrScanInProgress is returned when a scan is requested while another is active.
+var ErrScanInProgress = errors.New("scan already in progress")
+
 const scanProgressMinInterval = time.Second
 
 // ScanKind returns the wire kind for a scan given whether it is forced (full).
@@ -94,11 +98,17 @@ type Scanner struct {
 	scanIntervalFn func() time.Duration
 	scanAnchorFn   func() string
 
-	// sem bounds concurrent ffprobe subprocesses across every probe entry point
-	// (walk, fsnotify watcher, scheduled/manual/overlapping scans). Its capacity
-	// is PROBE_CONCURRENCY. The limit exists to spare the NAS/storage, not Go —
-	// goroutines fan out freely and queue here before touching disk.
-	sem chan struct{}
+	// probe bounds concurrent ffprobe subprocesses across every probe entry point
+	// (walk, fsnotify watcher, scheduled/manual scans). Capacity comes from the
+	// live config when wired via WithLiveConfig. The limit exists to spare the
+	// NAS/storage, not Go — goroutines fan out freely and queue here before
+	// touching disk.
+	probe *probeGate
+
+	// scanMu / scanRunning serialize Scan and StartScan so startup, scheduled,
+	// and manual triggers cannot overlap.
+	scanMu      sync.Mutex
+	scanRunning bool
 
 	// fsnotify watcher and per-path debounce timers
 	watcher        *fsnotify.Watcher
@@ -148,19 +158,22 @@ func WithDebounceDur(dur time.Duration) Option {
 	}
 }
 
-// liveScanInterval is the subset of config.Live the scanner reads. Declared here
+// liveScanConfig is the subset of config.Live the scanner reads. Declared here
 // rather than importing config.Live directly so the option stays test-friendly.
-type liveScanInterval interface {
+type liveScanConfig interface {
 	ScanInterval() time.Duration
 	ScanAnchor() string
+	ProbeConcurrency() int
 }
 
-// WithLiveConfig backs the scheduled-rescan interval and anchor with the live
-// config so a PUT /api/settings reschedules the next rescan without a restart.
-func WithLiveConfig(live liveScanInterval) Option {
+// WithLiveConfig backs the scheduled-rescan interval, anchor, and probe
+// concurrency with the live config so PUT /api/settings takes effect without
+// a restart.
+func WithLiveConfig(live liveScanConfig) Option {
 	return func(s *Scanner) {
 		s.scanIntervalFn = live.ScanInterval
 		s.scanAnchorFn = live.ScanAnchor
+		s.probe.capFn = live.ProbeConcurrency
 	}
 }
 
@@ -188,21 +201,22 @@ func New(st *store.Store, cfg *config.Config, opts ...Option) (*Scanner, error) 
 	if err != nil {
 		return nil, err
 	}
+	bootProbeConcurrency := cfg.ProbeConcurrency
 	s := &Scanner{
 		store: st,
 		roots: map[string]string{
 			cfg.MoviesPath: store.LibraryTypeMovies,
 			cfg.TVPath:     store.LibraryTypeTV,
 		},
-		probeFunc:      ffprobe.Probe,
-		sem:            make(chan struct{}, cfg.ProbeConcurrency),
-		scanInterval:   cfg.ScanInterval,
-		scanAnchor:     cfg.ScanAnchor,
-		watcher:        w,
-		debounceDur:    30 * time.Second,
+		probeFunc:    ffprobe.Probe,
+		probe:        newProbeGate(func() int { return bootProbeConcurrency }),
+		scanInterval: cfg.ScanInterval,
+		scanAnchor:   cfg.ScanAnchor,
+		watcher:      w,
+		debounceDur:  30 * time.Second,
 		debounceRemDur: 35 * time.Second,
-		probeTimers:    make(map[string]*time.Timer),
-		removeTimers:   make(map[string]*time.Timer),
+		probeTimers:  make(map[string]*time.Timer),
+		removeTimers: make(map[string]*time.Timer),
 	}
 	for _, o := range opts {
 		o(s)
@@ -216,10 +230,51 @@ func New(st *store.Store, cfg *config.Config, opts ...Option) (*Scanner, error) 
 	return s, nil
 }
 
+func (s *Scanner) tryBeginScan() bool {
+	s.scanMu.Lock()
+	defer s.scanMu.Unlock()
+	if s.scanRunning {
+		return false
+	}
+	s.scanRunning = true
+	return true
+}
+
+func (s *Scanner) endScan() {
+	s.scanMu.Lock()
+	s.scanRunning = false
+	s.scanMu.Unlock()
+}
+
 // Scan runs one complete diff scan. trigger describes the initiating action
 // ("startup", "scheduled", "manual"). force skips the (size, mtime) equality
-// check and re-probes every file.
+// check and re-probes every file. Returns ErrScanInProgress if another scan
+// is already running.
 func (s *Scanner) Scan(ctx context.Context, trigger string, force bool) (*store.ScanRun, error) {
+	if !s.tryBeginScan() {
+		return nil, ErrScanInProgress
+	}
+	defer s.endScan()
+	return s.scanWithLifecycle(ctx, trigger, force)
+}
+
+// StartScan begins a scan in the background. Returns ErrScanInProgress without
+// starting when a scan is already active. Used by the API so 409 can be
+// returned before the handler exits.
+func (s *Scanner) StartScan(ctx context.Context, trigger string, force bool) error {
+	if !s.tryBeginScan() {
+		return ErrScanInProgress
+	}
+	go func() {
+		defer s.endScan()
+		if _, err := s.scanWithLifecycle(ctx, trigger, force); err != nil {
+			slog.Error("scanner: scan failed", "trigger", trigger, "err", err)
+		}
+	}()
+	return nil
+}
+
+func (s *Scanner) scanWithLifecycle(ctx context.Context, trigger string, force bool) (*store.ScanRun, error) {
 	kind := ScanKind(force)
 	if s.hub != nil {
 		s.hub.ScanStarted(kind)
@@ -260,8 +315,6 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 	var (
 		seen, scanned, added, updated, moved, removed, errs int64
 	)
-
-	var wg sync.WaitGroup
 
 	var progressMu sync.Mutex
 	var lastProgress time.Time
@@ -312,6 +365,43 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 	newlyInserted := make(map[string]newInsert)
 	var newMu sync.Mutex
 
+	type probeWork struct {
+		path  string
+		lt    string
+		size  int64
+		mtime int64
+		rec   *store.FileSummary
+	}
+
+	workerN := s.probe.capacity()
+	tasks := make(chan probeWork, workerN*2)
+	var poolWg sync.WaitGroup
+	for range workerN {
+		poolWg.Add(1)
+		go func() {
+			defer poolWg.Done()
+			for task := range tasks {
+				fp, newID, isNew := s.probeAndStore(ctx, task.path, task.lt, task.size, task.mtime, task.rec)
+				if newID < 0 {
+					atomic.AddInt64(&errs, 1)
+					emitProgress(false)
+					continue
+				}
+				if isNew {
+					atomic.AddInt64(&added, 1)
+					if fp != "" {
+						newMu.Lock()
+						newlyInserted[fp] = newInsert{id: newID, path: task.path}
+						newMu.Unlock()
+					}
+				} else {
+					atomic.AddInt64(&updated, 1)
+				}
+				emitProgress(false)
+			}
+		}()
+	}
+
 	for root, libraryType := range s.roots {
 		lt := libraryType // capture
 		werr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -346,28 +436,11 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 				return nil
 			}
 
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-
-				fp, newID, isNew := s.probeAndStore(ctx, path, lt, size, mtime, rec)
-				if newID < 0 {
-					atomic.AddInt64(&errs, 1)
-					emitProgress(false)
-					return
-				}
-				if isNew {
-					atomic.AddInt64(&added, 1)
-					if fp != "" {
-						newMu.Lock()
-						newlyInserted[fp] = newInsert{id: newID, path: path}
-						newMu.Unlock()
-					}
-				} else {
-					atomic.AddInt64(&updated, 1)
-				}
-				emitProgress(false)
-			}()
+			select {
+			case tasks <- probeWork{path: path, lt: lt, size: size, mtime: mtime, rec: rec}:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 
 			return nil
 		})
@@ -378,7 +451,12 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 		}
 	}
 
-	wg.Wait()
+	close(tasks)
+	poolWg.Wait()
+
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 
 	// Rename detection: vanished paths.
 	// All inserts are done; GetByFingerprintOtherThan will find the new row if
@@ -511,12 +589,10 @@ func (s *Scanner) probeAndStore(
 	// NAS. The DB write is already serialized by the single-writer pool, so
 	// keeping it inside the slot is harmless and keeps this the one chokepoint
 	// every entry point passes through.
-	select {
-	case s.sem <- struct{}{}:
-	case <-ctx.Done():
+	if err := s.probe.acquire(ctx); err != nil {
 		return "", -1, false
 	}
-	defer func() { <-s.sem }()
+	defer s.probe.release()
 
 	result, err := s.probeFunc(ctx, path)
 
@@ -625,7 +701,11 @@ func (s *Scanner) Start(ctx context.Context) {
 			slog.Warn("scanner: series meta backfill failed", "err", err)
 		}
 		if _, err := s.Scan(ctx, TriggerStartup, false); err != nil {
-			slog.Error("scanner: startup scan failed", "err", err)
+			if errors.Is(err, ErrScanInProgress) {
+				slog.Debug("scanner: startup scan skipped, another scan in progress")
+			} else {
+				slog.Error("scanner: startup scan failed", "err", err)
+			}
 		}
 	}()
 
@@ -647,7 +727,11 @@ func (s *Scanner) Start(ctx context.Context) {
 		case <-timer.C:
 			go func() {
 				if _, err := s.Scan(ctx, TriggerScheduled, false); err != nil {
-					slog.Error("scanner: scheduled scan failed", "err", err)
+					if errors.Is(err, ErrScanInProgress) {
+						slog.Debug("scanner: scheduled scan skipped, another scan in progress")
+					} else {
+						slog.Error("scanner: scheduled scan failed", "err", err)
+					}
 				}
 			}()
 			timer.Reset(durationUntilNext(time.Now(), s.scanIntervalFn(), s.scanAnchorFn()))

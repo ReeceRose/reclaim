@@ -265,12 +265,42 @@ func (j *Jobs) ClearOutputPath(ctx context.Context, id int64) error {
 	return err
 }
 
-// SetVerificationResult stores the verification JSON blob.
+// SetCommitError records a post-swap DB failure on a verifying job without
+// changing its status, so reconcile can retry the commit on next boot.
+func (j *Jobs) SetCommitError(ctx context.Context, id int64, msg string) error {
+	_, err := j.w.ExecContext(ctx,
+		`UPDATE transcode_jobs SET error_message = ? WHERE id = ? AND status = 'verifying'`,
+		msg, id)
+	return err
+}
+
 func (j *Jobs) SetVerificationResult(ctx context.Context, id int64, result string) error {
 	_, err := j.w.ExecContext(ctx,
 		"UPDATE transcode_jobs SET verification_result = ? WHERE id = ?", result, id,
 	)
 	return err
+}
+
+// OutputPaths returns temp output paths recorded on non-terminal jobs for
+// orphan sweep — avoids walking the full media tree.
+func (j *Jobs) OutputPaths(ctx context.Context) ([]string, error) {
+	rows, err := j.r.QueryContext(ctx, `
+		SELECT output_path FROM transcode_jobs
+		WHERE output_path IS NOT NULL AND status IN ('queued', 'running', 'verifying')`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var paths []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		paths = append(paths, p)
+	}
+	return paths, rows.Err()
 }
 
 // MarkCompleted moves a verifying job to completed, recording the output size

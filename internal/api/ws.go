@@ -36,8 +36,8 @@ const (
 // Hub is the broadcast fan-out for live job + scan progress. A dropped-slow
 // client is disconnected rather than allowed to block the broadcaster.
 //
-// activeScans tracks overlapping scans (startup + manual can run concurrently).
-// Clients that connect mid-scan receive a retained scan_started on registration.
+// activeScans tracks in-flight scans for late-joiner UI; the scanner enforces
+// single-flight so at most one scan runs at a time.
 type Hub struct {
 	mu      sync.RWMutex
 	clients map[*wsClient]struct{}
@@ -59,16 +59,28 @@ func (h *Hub) Broadcast(event string, data any) {
 		return
 	}
 	h.mu.RLock()
-	defer h.mu.RUnlock()
+	var stale []*wsClient
 	for cl := range h.clients {
 		select {
 		case cl.send <- payload:
 		default:
-			// Client is too slow; drop the connection rather than block.
-			close(cl.send)
-			delete(h.clients, cl)
+			stale = append(stale, cl)
 		}
 	}
+	h.mu.RUnlock()
+
+	if len(stale) == 0 {
+		return
+	}
+	h.mu.Lock()
+	for _, cl := range stale {
+		if _, ok := h.clients[cl]; !ok {
+			continue
+		}
+		delete(h.clients, cl)
+		close(cl.send)
+	}
+	h.mu.Unlock()
 }
 
 // ClientCount reports the number of connected clients (used in tests).

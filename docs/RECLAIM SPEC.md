@@ -1,13 +1,19 @@
 # Reclaim — Media Codec Audit & Re-encode Tool
 
 **Design Spec (merged v3)**
-**Working name:** Reclaim (placeholder — rename freely)
-**Status:** Draft v3.1 — ready to scaffold
+**Status:** Historical design document (v3.1). The product has shipped — see
+[`README.md`](../README.md) and [`docs/API.md`](API.md) for current behavior.
 **Owner:** Reece
 
 > This version merges the two prior drafts: the detailed safety/indexing design from v1 with the structural improvements from v2 (single-container deployment, transcode profiles, package layout, dependency checks, subtitle/resolution handling, rename fingerprinting).
 >
 > **v3.1 change:** authentication moved from a pre-hashed env var to a first-run setup flow with DB-stored credentials and a login-page/session-cookie mechanism, matching the *arr "Forms auth" pattern (see §4.2). No more hand-generating a bcrypt hash for the compose file.
+>
+> **Implementation notes (as built):** HTTP routing uses Echo v5 (not chi). The
+> Docker image is Alpine 3.21 with pinned apk ffmpeg (not distroless/mwader static).
+> Resolution filters use `height` buckets (`uhd8k`, `uhd`, `qhd`, `fhd`, `hd`,
+> `sd`, `unknown`). TMDB metadata, Library grouped views, events audit trail,
+> and force-encode were added post-v1.
 
 ---
 
@@ -58,7 +64,7 @@ Both Go and Rust were considered. Go wins here, and it's worth being precise abo
 - **Fast startup** — single static binary, no JIT/bootstrap delay. Directly targets the "loads slowly" complaint.
 - **Simple subprocess handling** via `os/exec`, wrapped once in a typed `ffprobe`/`ffmpeg` package so verbosity stays contained.
 
-**Suggested libraries:** `chi` for routing; `modernc.org/sqlite` (pure-Go, no cgo — keeps the image small and the build simple) for SQLite; `fsnotify` for the filesystem watcher (§6.2); `gorilla/websocket` for live job progress; stdlib `encoding/json`.
+**Suggested libraries:** `echo` (v5) for routing; `modernc.org/sqlite` (pure-Go, no cgo — keeps the image small and the build simple) for SQLite; `fsnotify` for the filesystem watcher (§6.2); `gorilla/websocket` for live job progress; stdlib `encoding/json`.
 
 ### 3.3 Frontend — Next.js, static export
 

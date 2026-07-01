@@ -44,11 +44,16 @@ export function useWS() {
       scanPollTimer = undefined;
     }
 
+    function setConnected(connected: boolean) {
+      qc.setQueryData(['ws_connected'], connected);
+    }
+
     function connect() {
       ws = new WebSocket(url);
 
       ws.onopen = () => {
         delay = MIN_DELAY_MS;
+        setConnected(true);
         if (hasConnected) {
           qc.invalidateQueries({ queryKey: ['jobs'] });
           qc.invalidateQueries({ queryKey: ['stats'] });
@@ -127,8 +132,13 @@ export function useWS() {
         }
       };
 
+      ws.onerror = () => {
+        setConnected(false);
+      };
+
       ws.onclose = () => {
         if (!alive) return;
+        setConnected(false);
         reconnectTimer = setTimeout(() => {
           delay = Math.min(delay * 2, MAX_DELAY_MS);
           connect();

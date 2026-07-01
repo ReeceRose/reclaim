@@ -96,6 +96,31 @@ returns the hash). Takes effect on the next login, no restart. **Requires a sess
 
 ## Library data
 
+### Media file object (shared shape)
+
+Most file endpoints return objects with these fields. Nullable columns serialize
+as `null`.
+
+`id, path, library_type, size_bytes, mtime, video_codec, video_codec_profile,
+width, height, duration_seconds, bitrate_kbps, audio_codec, audio_channels,
+container_format, is_already_hevc, predicted_savings_bytes, last_probed_at,
+probe_error, status, candidate_state, poster_path, backdrop_path`
+
+| Field | Notes |
+|---|---|
+| `status` | `active` or `missing` (soft-deleted when the path disappears) |
+| `candidate_state` | Why a file can or can't be queued: `candidate`, `already_hevc`, `probe_failed`, `unknown_codec`, `queued`, `completed`, `missing` |
+| `poster_path`, `backdrop_path` | TMDB image paths (e.g. `/abc123.jpg`); prefix with `https://image.tmdb.org/t/p/<size>`. Populated on grouped TV/movie views and `GET /api/files/:id` when TMDB is configured. Movie list pages also attach posters when configured. |
+
+`GET /api/files/:id` additionally includes TMDB detail fields when metadata
+exists: `overview`, `tagline`, `genres`, `vote_average`, `vote_count`,
+`release_year`, `runtime_mins`.
+
+Resolution filter values (`height` query param) are stable buckets, classified
+by width OR height (whichever is larger wins): `uhd8k` (8K), `uhd` (4K/UHD),
+`qhd` (1440p), `fhd` (1080p), `hd` (720p), `sd`, and `unknown`. Exact numeric
+heights like `1080` are still accepted for compatibility.
+
 ### `GET /api/stats`
 Precomputed library overview (O(buckets), not O(files)).
 
@@ -111,12 +136,13 @@ Precomputed library overview (O(buckets), not O(files)).
   ],
   "by_resolution": [
     { "band": "fhd", "file_count": 800, "total_bytes": 7000000000, "predicted_savings_bytes": 2500000000 }
+  ],
+  "by_library": [
+    { "library_type": "movies", "file_count": 400, "total_bytes": 5000000000, "predicted_savings_bytes": 1500000000 },
+    { "library_type": "tv", "file_count": 834, "total_bytes": 4876543210, "predicted_savings_bytes": 1710000000 }
   ]
 }
 ```
-Resolution bands are stable buckets, classified by width OR height (whichever
-is larger wins): `uhd8k` (8K), `uhd` (4K/UHD), `qhd` (1440p), `fhd` (1080p),
-`hd` (720p), `sd`, and `unknown`.
 
 ### `GET /api/candidates`
 One page of ranked re-encode candidates. Excludes files that are already HEVC,
@@ -139,27 +165,54 @@ One page of ranked re-encode candidates. Excludes files that are already HEVC,
 ```json
 {
   "items": [ { "id": 5, "path": "/media/movies/a.mkv", "video_codec": "h264",
-               "size_bytes": 5000, "predicted_savings_bytes": 2000, "...": "..." } ],
+               "size_bytes": 5000, "predicted_savings_bytes": 2000,
+               "candidate_state": "candidate", "...": "..." } ],
+  "total_count": 842,
   "next_cursor": { "after_savings": 2000, "after_id": 5 }
 }
 ```
-`next_cursor` is present only for the default sort when the page is non-empty.
-Walk pages until `items` is shorter than `limit`.
+`total_count` is included on the first page of the default `savings_desc` sort
+(no cursor, no offset). `next_cursor` is present only for the default sort when
+the page is full (`len(items) == limit`). Walk pages until `items` is shorter
+than `limit`.
 
-A candidate/file object has these fields:
-`id, path, library_type, size_bytes, mtime, video_codec, video_codec_profile,
-width, height, duration_seconds, bitrate_kbps, audio_codec, audio_channels,
-container_format, is_already_hevc, predicted_savings_bytes, last_probed_at,
-probe_error, status, poster_path, backdrop_path`. Nullable columns serialize as
-`null`. `poster_path` and `backdrop_path` are TMDB image paths (e.g.
-`/abc123.jpg`); prefix with `https://image.tmdb.org/t/p/<size>` to build a URL.
-Present only for movies when a TMDB API key is configured.
+### `GET /api/files`
+One page of all scanned files (the Library view). Includes already-HEVC, missing,
+probe-failed, queued, and completed files — each with a `candidate_state` explaining
+eligibility.
+
+**Query params**
+
+| Param | Notes |
+|---|---|
+| `sort` | `path_asc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type` |
+| `library_type` | filter: `movies` or `tv` |
+| `video_codec` | filter, exact source codec, e.g. `h264` |
+| `height` | resolution bucket filter (same values as `/api/candidates`) |
+| `search` | path substring filter |
+| `status` | `active` or `missing` |
+| `candidate_state` | `candidate`, `already_hevc`, `probe_failed`, `unknown_codec`, `queued`, `completed`, `missing` |
+| `limit` | page size (default 50, max 200) |
+| `offset` | page offset |
+
+**Response**
+```json
+{
+  "items": [ { "id": 5, "path": "/media/movies/a.mkv", "candidate_state": "already_hevc", "...": "..." } ],
+  "total_count": 1234
+}
+```
+`total_count` is included on the first page (`offset=0`). Movie rows may include
+`poster_path` and `backdrop_path` when a TMDB API key is configured.
 
 ### `GET /api/files/grouped`
 TV series/season summaries for the Library **By series** view. Movies use the
 paginated `/api/files` endpoint.
 
-**Query params:** `search`, `limit` (default 50, max 200), `offset`.
+**Query params:** same filters as `/api/files` (`library_type`, `video_codec`,
+`height`, `search`, `status`, `candidate_state`), plus `limit` (default 50,
+max 200) and `offset`. Returns an empty `series` list when `library_type=movies`
+(movies use the flat `/api/files` endpoint).
 
 ```json
 {
@@ -184,7 +237,8 @@ Season breakdown for one TV series.
 {
   "seasons": [
     { "season": 1, "file_count": 6, "eligible_count": 4,
-      "total_bytes": 25000000000, "predicted_savings_bytes": 7000000000 }
+      "total_bytes": 25000000000, "predicted_savings_bytes": 7000000000,
+      "episode_ids": [1, 2, 3, 4, 5, 6], "eligible_ids": [1, 3, 5, 6] }
   ]
 }
 ```
@@ -220,7 +274,9 @@ Episode rows for one TV series season in the candidate view.
 plus `limit` (default 50, max 200) and `offset`.
 
 ### `GET /api/files/:id`
-Single media file by id.
+Single media file by id. Returns the shared file object plus TMDB detail fields
+(`overview`, `tagline`, `genres`, etc.) when metadata exists for the movie path
+key or TV series title.
 - `200` → file object
 - `404` → not found
 
@@ -394,9 +450,38 @@ Any subset of the mutable fields. Validated as a set before applying.
 ## Metadata (TMDB)
 
 Requires `TMDB_API_KEY` to be set. The background fetcher runs after each scan
-and populates the `media_metadata` table. All endpoints return `400` if the key
-is not configured (except `PUT /api/metadata`, which stores manual overrides and
-works without a key).
+and populates the `media_metadata` table. Search and refresh return `400` if the
+key is not configured. `PUT /api/metadata` stores manual overrides and works
+without a key.
+
+### `GET /api/metadata`
+Look up stored metadata for a movie path key or TV series title.
+
+**Query params:** `key` (required).
+
+```json
+{
+  "key": "Breaking Bad",
+  "media_type": "tv",
+  "tmdb_id": 1396,
+  "title": "Breaking Bad",
+  "tagline": "...",
+  "overview": "...",
+  "poster_path": "/abc123.jpg",
+  "backdrop_path": "/def456.jpg",
+  "release_year": 2008,
+  "runtime_mins": 47,
+  "vote_average": 8.9,
+  "vote_count": 12000,
+  "genres": ["Drama", "Crime"],
+  "status": "Ended",
+  "network": "AMC",
+  "in_production": false,
+  "is_manual": false,
+  "no_match": false
+}
+```
+Returns `null` when no row exists or TMDB is not configured.
 
 ### `GET /api/metadata/search`
 Search TMDB for a movie or TV title.

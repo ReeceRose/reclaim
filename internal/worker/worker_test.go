@@ -301,36 +301,58 @@ func TestCancelRunningJob(t *testing.T) {
 
 func TestSweepOrphans(t *testing.T) {
 	st := newStore(t)
+	ctx := context.Background()
 	dir := t.TempDir()
 
+	pathA := filepath.Join(dir, "a.mkv")
+	pathB := filepath.Join(dir, "b.mkv")
+	pathC := filepath.Join(dir, "c.mkv")
+
 	// A stale temp → deleted.
-	staleTmp := filepath.Join(dir, "a.mkv"+tmpSuffix+".mkv")
+	staleTmp := tempPathFor(pathA)
 	mustWrite(t, staleTmp, "junk")
 
 	// A backup whose original exists → backup deleted.
-	origPresent := filepath.Join(dir, "b.mkv")
-	mustWrite(t, origPresent, "orig")
-	mustWrite(t, origPresent+backupSuffix, "old")
+	mustWrite(t, pathB, "orig")
+	mustWrite(t, pathB+backupSuffix, "old")
 
 	// A backup whose original is missing → restored.
-	origMissing := filepath.Join(dir, "c.mkv")
-	mustWrite(t, origMissing+backupSuffix, "recovered")
+	mustWrite(t, pathC+backupSuffix, "recovered")
+
+	for _, path := range []string{pathA, pathB, pathC} {
+		if _, err := st.Media.Insert(ctx, &store.MediaFile{
+			Path: path, LibraryType: "movie", SizeBytes: 1, Mtime: 1,
+			Fingerprint: path, Status: "active",
+		}); err != nil {
+			t.Fatalf("insert %s: %v", path, err)
+		}
+	}
 
 	w := New(st, fakeWindow{0, 0}, &fakeHub{}, []string{dir})
-	w.sweepOrphans(context.Background())
+	w.sweepOrphans(ctx)
 
 	if _, err := os.Stat(staleTmp); !os.IsNotExist(err) {
 		t.Error("stale temp not removed")
 	}
-	if _, err := os.Stat(origPresent + backupSuffix); !os.IsNotExist(err) {
+	if _, err := os.Stat(pathB + backupSuffix); !os.IsNotExist(err) {
 		t.Error("leftover backup not removed when original present")
 	}
-	b, err := os.ReadFile(origMissing)
+	b, err := os.ReadFile(pathC)
 	if err != nil || string(b) != "recovered" {
 		t.Errorf("backup not restored over missing original: %q %v", b, err)
 	}
-	if _, err := os.Stat(origMissing + backupSuffix); !os.IsNotExist(err) {
+	if _, err := os.Stat(pathC + backupSuffix); !os.IsNotExist(err) {
 		t.Error("backup should be gone after restore")
+	}
+}
+
+func TestSweepOrphansEmptyLibraryFast(t *testing.T) {
+	st := newStore(t)
+	w := New(st, fakeWindow{0, 0}, &fakeHub{}, []string{t.TempDir()})
+	start := time.Now()
+	w.sweepOrphans(context.Background())
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("sweep took %v, want <1s on empty library", elapsed)
 	}
 }
 
@@ -371,6 +393,50 @@ func TestReconcileInterrupted(t *testing.T) {
 	}
 	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
 		t.Error("interrupted job's temp should be removed")
+	}
+}
+
+func TestReconcilePostSwapCommit(t *testing.T) {
+	st := newStore(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	src := filepath.Join(dir, "movie.mkv")
+	mustWrite(t, src, "encoded-hevc-bytes")
+
+	codec := "h264"
+	id, err := st.Media.Insert(ctx, &store.MediaFile{
+		Path: src, LibraryType: "movie", SizeBytes: int64(len("encoded-hevc-bytes")),
+		Mtime: 1, Fingerprint: "fp", VideoCodec: &codec, Status: "active",
+	})
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	started := int64(100)
+	jid, err := st.Jobs.Create(ctx, &store.TranscodeJob{
+		MediaFileID: id, ProfileID: 1, Status: "verifying",
+		QueuedAt: 1, StartedAt: &started, OriginalSizeBytes: 100,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	hub := &fakeHub{}
+	hevc := "hevc"
+	w := New(st, fakeWindow{0, 0}, hub, []string{dir}, WithProbeFunc(func(_ context.Context, _ string) (*ffprobe.Result, error) {
+		return &ffprobe.Result{VideoCodec: &hevc, IsAlreadyHEVC: true}, nil
+	}))
+	w.reconcileInterrupted(ctx)
+
+	got, _ := st.Jobs.GetByID(ctx, jid)
+	if got.Status != "completed" {
+		t.Fatalf("status = %q, want completed", got.Status)
+	}
+	if !hub.has("job_completed") {
+		t.Fatal("expected job_completed broadcast after reconcile")
+	}
+	f, _ := st.Media.GetByID(ctx, id)
+	if !f.IsAlreadyHEVC {
+		t.Fatal("media row not updated after reconcile")
 	}
 }
 

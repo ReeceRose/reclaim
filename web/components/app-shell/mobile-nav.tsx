@@ -4,9 +4,11 @@ import { NotificationBell } from './notification-bell';
 import { NAV_ITEMS, isNavActive } from './nav-config';
 
 export function MobileHeader({
+  wsConnected,
   unreadCount,
   onOpenNotifications,
 }: {
+  wsConnected: boolean;
   unreadCount: number;
   onOpenNotifications: () => void;
 }) {
@@ -20,7 +22,12 @@ export function MobileHeader({
       }}
     >
       <BrandLink size={28} />
-      <NotificationBell unreadCount={unreadCount} onClick={onOpenNotifications} />
+      <div className="flex items-center gap-2 ml-auto">
+        {!wsConnected && (
+          <span className="text-[0.65rem] font-semibold text-muted-fg">Reconnecting…</span>
+        )}
+        <NotificationBell unreadCount={unreadCount} onClick={onOpenNotifications} />
+      </div>
     </header>
   );
 }

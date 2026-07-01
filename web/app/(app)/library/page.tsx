@@ -16,6 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { QueryErrorState } from '@/components/ui/query-error-state';
 import { MediaFlatRow } from '@/components/media/media-flat-row';
 import { QueueConfirmDialog } from '@/components/media/queue-confirm-dialog';
 import { QueueSelectionBar } from '@/components/media/selection-bar';
@@ -96,7 +97,7 @@ function LibraryPage() {
     search: debouncedSearch || undefined,
   };
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isError, error, refetch } = useInfiniteQuery({
     queryKey: ['library', filters],
     queryFn: ({ pageParam }: { pageParam: Record<string, number | undefined> }) =>
       api.files({ ...filters, limit: PAGE_SIZE, ...pageParam }),
@@ -210,7 +211,9 @@ function LibraryPage() {
             <div className="hidden sm:block w-[90px] py-3 text-right pr-2">Size</div>
             <div className="w-[84px] sm:w-[110px] py-3 text-right pr-3 sm:pr-4 text-brand">Est. savings</div>
           </div>
-          {data === undefined ? (
+          {isError && !data ? (
+            <QueryErrorState error={error} onRetry={() => void refetch()} title="Failed to load library" />
+          ) : data === undefined ? (
             <div className="flex-1 overflow-auto">
               {Array.from({ length: 10 }).map((_, i) => <div key={i} className="flex items-center border-b border-line-soft" style={{ height: 52 }}><Skeleton className="h-4 w-64 ml-14" /></div>)}
             </div>

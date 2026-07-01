@@ -204,9 +204,12 @@ func (s *Server) triggerScan(c *echo.Context, force bool) error {
 		return c.JSON(http.StatusServiceUnavailable, errorBody("scanner unavailable"))
 	}
 	kind := scanner.ScanKind(force)
-	go func() {
-		_, _ = s.scanner.Scan(context.Background(), scanner.TriggerManual, force)
-	}()
+	if err := s.scanner.StartScan(context.Background(), scanner.TriggerManual, force); err != nil {
+		if errors.Is(err, scanner.ErrScanInProgress) {
+			return c.JSON(http.StatusConflict, errorBody("scan already in progress"))
+		}
+		return c.JSON(http.StatusInternalServerError, errorBody(err.Error()))
+	}
 	return c.JSON(http.StatusAccepted, map[string]any{"started": true, "kind": kind})
 }
 

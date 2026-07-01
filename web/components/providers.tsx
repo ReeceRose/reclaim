@@ -3,23 +3,31 @@
 import { QueryCache, QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/sonner';
 import { ApiError } from '@/lib/api';
+import { apiErrorMessage } from '@/lib/query-errors';
+import { toast } from 'sonner';
 import { useState } from 'react';
+
+function handleQueryAuthError(qc: QueryClient, error: unknown) {
+  if (error instanceof ApiError && error.status === 401) {
+    qc.invalidateQueries({ queryKey: ['session'] });
+    return true;
+  }
+  return false;
+}
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(() => {
     const qc = new QueryClient({
       queryCache: new QueryCache({
-        onError: (error) => {
-          if (error instanceof ApiError && error.status === 401) {
-            qc.invalidateQueries({ queryKey: ['session'] });
-          }
+        onError: (error, query) => {
+          if (handleQueryAuthError(qc, error)) return;
+          if (query.queryKey[0] === 'session') return;
+          toast.error('Failed to load data', { description: apiErrorMessage(error) });
         },
       }),
       mutationCache: new MutationCache({
         onError: (error) => {
-          if (error instanceof ApiError && error.status === 401) {
-            qc.invalidateQueries({ queryKey: ['session'] });
-          }
+          if (handleQueryAuthError(qc, error)) return;
         },
       }),
       defaultOptions: {

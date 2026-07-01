@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -456,5 +457,209 @@ func TestWatcherProbeNewFile(t *testing.T) {
 	}
 	if f.Status != "active" {
 		t.Errorf("status = %q, want active", f.Status)
+	}
+}
+
+func TestScanSingleFlight(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "a.mkv"))
+
+	entered := make(chan struct{}, 1)
+	gate := make(chan struct{})
+	probe := func(_ context.Context, _ string) (*ffprobe.Result, error) {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-gate
+		return mockProbe(context.Background(), "")
+	}
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	cfg := &config.Config{
+		MoviesPath:       root,
+		TVPath:           root,
+		ProbeConcurrency: 2,
+		ScanInterval:     time.Hour,
+	}
+	sc, err := New(st, cfg, WithProbeFunc(probe), WithDebounceDur(10*time.Millisecond))
+	if err != nil {
+		t.Fatalf("new scanner: %v", err)
+	}
+
+	ctx := context.Background()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if _, err := sc.Scan(ctx, "first", false); err != nil {
+			t.Errorf("first scan: %v", err)
+		}
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first scan never blocked in probe")
+	}
+
+	if _, err := sc.Scan(ctx, "second", false); !errors.Is(err, ErrScanInProgress) {
+		t.Fatalf("second scan: want ErrScanInProgress, got %v", err)
+	}
+
+	close(gate)
+	<-done
+}
+
+func TestLiveProbeConcurrency(t *testing.T) {
+	const capLow, capHigh = 1, 3
+	root := t.TempDir()
+	for i := 0; i < 6; i++ {
+		writeFile(t, filepath.Join(root, fmt.Sprintf("f%d.mkv", i)))
+	}
+
+	var cur, peak int32
+	release := make(chan struct{})
+	started := make(chan struct{}, 8)
+	probe := func(_ context.Context, _ string) (*ffprobe.Result, error) {
+		n := atomic.AddInt32(&cur, 1)
+		for {
+			old := atomic.LoadInt32(&peak)
+			if n <= old || atomic.CompareAndSwapInt32(&peak, old, n) {
+				break
+			}
+		}
+		started <- struct{}{}
+		<-release
+		atomic.AddInt32(&cur, -1)
+		codec := "h264"
+		return &ffprobe.Result{VideoCodec: &codec}, nil
+	}
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	cfg := &config.Config{
+		MoviesPath:       root,
+		TVPath:           root,
+		ProbeConcurrency: capLow,
+		ScanInterval:     time.Hour,
+	}
+	live := config.NewLive(cfg)
+	sc, err := New(st, cfg, WithProbeFunc(probe), WithLiveConfig(live), WithDebounceDur(10*time.Millisecond))
+	if err != nil {
+		t.Fatalf("new scanner: %v", err)
+	}
+
+	ctx := context.Background()
+	scanDone := make(chan struct{})
+	go func() {
+		defer close(scanDone)
+		if _, err := sc.Scan(ctx, "manual", false); err != nil {
+			t.Errorf("scan: %v", err)
+		}
+	}()
+
+	for i := 0; i < capLow; i++ {
+		<-started
+	}
+	select {
+	case <-started:
+		t.Fatalf("more than %d probes started before live cap raised", capLow)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	high := capHigh
+	if err := live.Update(nil, nil, nil, nil, &high); err != nil {
+		t.Fatalf("live update: %v", err)
+	}
+	close(release)
+	<-scanDone
+
+	if got := atomic.LoadInt32(&peak); got > int32(capHigh) {
+		t.Fatalf("peak concurrent probes = %d, want <= %d", got, capHigh)
+	}
+}
+
+func TestScanWorkerPoolBounded(t *testing.T) {
+	const capN = 4
+	const nFiles = 48
+
+	root := t.TempDir()
+	for i := 0; i < nFiles; i++ {
+		writeFile(t, filepath.Join(root, fmt.Sprintf("f%02d.mkv", i)))
+	}
+
+	var cur, peak int32
+	release := make(chan struct{})
+	started := make(chan struct{}, nFiles)
+
+	probe := func(_ context.Context, _ string) (*ffprobe.Result, error) {
+		n := atomic.AddInt32(&cur, 1)
+		for {
+			old := atomic.LoadInt32(&peak)
+			if n <= old || atomic.CompareAndSwapInt32(&peak, old, n) {
+				break
+			}
+		}
+		started <- struct{}{}
+		<-release
+		atomic.AddInt32(&cur, -1)
+		codec := "h264"
+		return &ffprobe.Result{VideoCodec: &codec}, nil
+	}
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "pool.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	cfg := &config.Config{
+		MoviesPath:       root,
+		TVPath:           root,
+		ProbeConcurrency: capN,
+		ScanInterval:     time.Hour,
+	}
+	sc, err := New(st, cfg, WithProbeFunc(probe), WithDebounceDur(10*time.Millisecond))
+	if err != nil {
+		t.Fatalf("new scanner: %v", err)
+	}
+
+	ctx := context.Background()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if _, err := sc.Scan(ctx, "manual", true); err != nil {
+			t.Errorf("scan: %v", err)
+		}
+	}()
+
+	for i := 0; i < capN; i++ {
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("probe %d never started", i+1)
+		}
+	}
+
+	select {
+	case <-started:
+		t.Fatalf("more than %d probes running concurrently (worker pool not bounded)", capN)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	close(release)
+	<-done
+
+	if got := atomic.LoadInt32(&peak); got > int32(capN) {
+		t.Fatalf("peak concurrent probes = %d, want <= %d", got, capN)
 	}
 }

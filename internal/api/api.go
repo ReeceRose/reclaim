@@ -19,7 +19,7 @@ import (
 // ScanTrigger is the slice of the scanner the API drives. Kept as an interface
 // so handlers are testable without a real fsnotify-backed scanner.
 type ScanTrigger interface {
-	Scan(ctx context.Context, trigger string, force bool) (*store.ScanRun, error)
+	StartScan(ctx context.Context, trigger string, force bool) error
 }
 
 // JobCanceller is the slice of the worker the API drives to cancel a running

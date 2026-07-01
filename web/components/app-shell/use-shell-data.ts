@@ -23,6 +23,13 @@ export function useShellData() {
     staleTime: Infinity,
     gcTime: Infinity,
   });
+  const { data: wsConnected } = useQuery<boolean>({
+    queryKey: ['ws_connected'],
+    queryFn: () => true,
+    initialData: true,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
 
   const pathname = usePathname();
   const router = useRouter();
@@ -98,6 +105,7 @@ export function useShellData() {
   return {
     pathname,
     isScanning: isScanning ?? false,
+    wsConnected: wsConnected ?? true,
     scanProgressDetail,
     unreadCount,
     navBadges,

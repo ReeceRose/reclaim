@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,30 @@ import (
 
 	"reclaim/internal/scanner"
 )
+
+func TestHubBroadcastDropsSlowClientsRace(t *testing.T) {
+	h := NewHub()
+	const clients = 32
+	for i := 0; i < clients; i++ {
+		cl := &wsClient{send: make(chan []byte, wsSendBuffer)}
+		h.mu.Lock()
+		h.clients[cl] = struct{}{}
+		h.mu.Unlock()
+		for j := 0; j < wsSendBuffer; j++ {
+			cl.send <- []byte("fill")
+		}
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 64; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h.Broadcast("job_progress", map[string]any{"percent": 50})
+		}()
+	}
+	wg.Wait()
+}
 
 func TestWebSocketReceivesScanEvents(t *testing.T) {
 	srv, h, st, _ := newTestServer(t, false)

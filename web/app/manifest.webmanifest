@@ -1,7 +1,7 @@
 {
   "name": "Reclaim",
   "short_name": "Reclaim",
-  "description": "Media codec audit & re-encode tool",
+  "description": "Self-hosted codec audit and re-encode tool for homelabs",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#161616",

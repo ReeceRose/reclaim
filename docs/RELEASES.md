@@ -9,10 +9,10 @@
 ## How to release
 
 ```bash
-./scripts/release.sh          # bump patch:  v1.2.3 → v1.2.4
-./scripts/release.sh minor    # bump minor:  v1.2.3 → v1.3.0
-./scripts/release.sh major    # bump major:  v1.2.3 → v2.0.0
-./scripts/release.sh v1.5.0   # explicit version
+./scripts/release.sh          # bump patch:  v0.0.20 → v0.0.21
+./scripts/release.sh minor    # bump minor:  v0.0.20 → v0.1.0
+./scripts/release.sh major    # bump major:  v0.0.20 → v1.0.0
+./scripts/release.sh v0.0.21  # explicit version
 ```
 
 The script will show the current and new tag, ask for confirmation, then create an annotated tag and push it.
@@ -26,14 +26,22 @@ The script runs entirely locally:
 3. Shows a preview and asks for confirmation
 4. Creates an annotated tag, pushes it, and creates the GitHub Release via `gh`
 
-Pushing the tag also triggers the **Docker** GitHub Actions workflow, which builds the container and pushes to `ghcr.io/<owner>/reclaim` with semver tags (`1.2.4`, `1.2`, `sha-abc1234`). The Docker image will be ready ~3–5 min after the tag is pushed.
+Pushing the tag triggers the **CI** workflow:
+
+1. **Go** — vet, unit tests, and race detector (`scanner`, `worker`, `jobs`, `api`, `store`)
+2. **Frontend** — lint, type-check, and static export build
+3. **Landing** — lint, type-check, and build (marketing site on Vercel)
+4. **Docker** — runs only after Go and frontend pass; on tags, builds and pushes the container
+
+The image is pushed to `ghcr.io/<owner>/reclaim` with a single semver tag matching the release version (e.g. tag `v0.0.21` → image `ghcr.io/reecerose/reclaim:0.0.21`). The image will be ready ~3–5 min after the tag is pushed.
 
 ## Pulling a released image
 
 ```bash
-docker pull ghcr.io/reecerose/reclaim:1.2.4   # exact version (recommended)
-docker pull ghcr.io/reecerose/reclaim:1.2      # latest patch of 1.2.x
+docker pull ghcr.io/reecerose/reclaim:0.0.21   # exact version (recommended)
 ```
+
+Pin to the full `x.y.z` tag — CI does not publish floating `x.y` or `latest` tags.
 
 Deployment steps (ports, volumes, env vars, Unraid): [`docs/DOCKER.md`](DOCKER.md).
 

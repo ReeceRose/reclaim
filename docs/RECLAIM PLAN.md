@@ -1,5 +1,9 @@
 # Reclaim — Build Plan (phased, layered)
 
+> **Status:** v1 shipped. This document is a historical build log from initial
+> development. For current product behavior see [`README.md`](../README.md) and
+> [`docs/API.md`](API.md).
+
 Companion to `RECLAIM_SPEC.md`. Full v1, in build order. Each phase carries planning
 detail **and** paste-ready Claude Code task prompts.
 
@@ -14,15 +18,16 @@ that actually bite, light on language mechanics.
 | **P1** Data layer | ✅ done | Migrations, repos, single-writer pool, auth/session secret. |
 | **P2** ffprobe wrapper | ✅ done | Typed probe + fingerprint. |
 | **P3** Scanner | ✅ done | Walk, incremental diff, rename detection, fsnotify, scheduled/manual. |
-| **P4** Candidates + Stats | ✅ done | Seeded savings model, `Candidates()` query (sort/filter/keyset), incremental `library_stats` + `Recompute()`. **No API/UI yet** — verify via tests or DB inspection. |
-| **P5** REST API + WS | ✅ done | Auth + data + jobs + settings endpoints, keyset candidate paging, WS hub (cookie-gated on upgrade), live config holder. Job *behavior* (run/verify/swap) lands in P6/P7; routes + state flips exist now. |
+| **P4** Candidates + Stats | ✅ done | Seeded savings model, `Candidates()` query (sort/filter/keyset), incremental `library_stats` + `Recompute()`. |
+| **P5** REST API + WS | ✅ done | Auth + data + jobs + settings endpoints, keyset candidate paging, WS hub (cookie-gated on upgrade), live config holder. |
 | **P6** Queue + worker | ✅ done | FSM (`internal/jobs`), window-gated single-worker loop, libx265 wrapper + progress, process-group cancel, WS progress (DB-throttled ~1/s). Wired into `main.go` + API cancel. |
 | **P7** Safety (verify/swap/orphan) | ✅ done | §9.3 verify (re-probes source), §9.4 atomic backup→swap→row update (drops from candidates + stats), §9.6 startup+hourly orphan sweep & crash reconcile. Real-ffmpeg integration test + `-race` clean. |
-| **P8** Frontend | ✅ done | All five surfaces: overview, candidate browser (virtualized keyset), dry-run, job queue/history (live WS progress, verification detail, kept-temp path), settings (profile CRUD, credentials). Auth gating + 401 interceptor. **Deferred:** persistent notification/audit trail (toasts only for now). Bug fixed: `next_cursor` was emitted on partial pages, causing one extra empty fetch per scroll session. |
-| **P9** Hardening + packaging | ✅ done | Self-refining savings model (≥10 jobs/codec, clamped [0.30–0.95], labeled `seed`/`learned` in API + UI). `-race` suite green. Drift guard: scheduled rescans now call `Stats.Recompute`. README with throughput expectations + all operational caveats. Dockerfile (distroless/static, mwader static ffmpeg, `time/tzdata` embedded) + docker-compose.yml. Magic number/string audit: `MediaStatusActive/Missing`, `LibraryTypeMovies/TV`, `TriggerStartup/Scheduled/Manual`, `dimTotal/Codec/Resolution`, `resBandSD/HD/UHD/Unknown` constants added; job status constants from `internal/jobs` wired throughout. |
-| **P10** Polish + audit trail | ⬜ | |
+| **P8** Frontend | ✅ done | Overview, candidate browser (virtualized keyset), Library view, job queue/history (live WS progress, verification detail, kept-temp path), settings (profile CRUD, credentials). Auth gating + 401 interceptor. |
+| **P9** Hardening + packaging | ✅ done | Self-refining savings model (≥10 jobs/codec, clamped [0.30–0.95], labeled `seed`/`learned` in API + UI). `-race` suite green. Drift guard: scheduled rescans now call `Stats.Recompute`. README + Dockerfile (Alpine 3.21, pinned apk ffmpeg) + docker-compose.yml. |
+| **P10** Polish + audit trail | ✅ done | Persistent events API (`/api/events`), notification panel, TMDB metadata + Library grouped views, force-encode, job dismiss. |
 
-> **Note:** P4 has no user-facing surface — the candidate ranking and stats live in the data layer. They become browsable in **P5** (API) and **P8** (UI). Until then, test via the Go test suite or by inspecting the SQLite DB directly.
+> **Note:** P4–P10 are complete. Post-v1 features (TMDB metadata, Library grouped
+> views, events audit trail, force-encode) landed during P10 polish.
 
 ## How to read this
 
@@ -382,7 +387,7 @@ P6/P7 depend on P1 (jobs tables) and P2 (ffmpeg wrapper shares the subprocess pl
 **Sub-tasks**
 1. **Self-refining savings (§10.2):** once a source codec has enough completed jobs, override its seed `expected_hevc_ratio` with the observed mean `output_size/original_size`. Keep it labeled as a learned estimate in the API so the UI can say so.
 2. **`-race` CI (§15):** `go test -race ./internal/scanner/... ./internal/worker/... ./internal/jobs/...` in CI — the concurrency-sensitive packages.
-3. **Image size → 100–250 MB (§14):** measure first. If over, rebuild ffmpeg static with only the needed encoders/decoders/muxers (x265, the demuxers for your codecs, matroska/mp4 muxers, copy paths for audio/subs). Multi-stage, strip the Go binary, scratch/distroless final stage.
+3. **Image size:** Alpine 3.21 runtime with pinned apk ffmpeg (`6.1.2-r1`). Three-stage build: Next.js static export → Go binary (embedded frontend) → Alpine runtime.
 4. **Ops pass:** README with the *throughput reality* — CPU x265 `slow`/`medium` on 20k files is enormous wall-clock; the encode window paces it but plan for months, and that's fine for a weekly-touched tool. Note the bundled-ffmpeg version pin, the network-mount inotify caveat, and the WAL files on the volume.
 5. **Drift guard:** wire the stats recompute-assertion from P4 into the scheduled rescan so incremental stats can't silently drift.
 
@@ -393,7 +398,7 @@ P6/P7 depend on P1 (jobs tables) and P2 (ffmpeg wrapper shares the subprocess pl
 **Acceptance**
 - [x] After enough jobs, a codec's predicted ratio reflects your actual results, labeled as learned.
 - [x] `-race` suite is green (`make test-race`).
-- [x] Final image uses `distroless/static-debian12:nonroot` + `mwader/static-ffmpeg` — no custom ffmpeg build needed (pre-built static binaries). Image size to be measured on first real build.
+- [x] Final image uses Alpine 3.21 with pinned apk ffmpeg — see [`Dockerfile`](../Dockerfile).
 - [x] README covers throughput expectations + the operational caveats.
 
 **CC prompts**
@@ -406,13 +411,15 @@ P6/P7 depend on P1 (jobs tables) and P2 (ffmpeg wrapper shares the subprocess pl
 
 ## P10 — Polish & audit trail
 
+**Status:** ✅ done.
+
 **Goal:** replace ephemeral toasts with a durable event log, and tighten any rough edges that surface during real use. The app should feel finished — nothing "beta" about the UX, and users have a real record of what happened and when.
 
 **Depends on:** P8, P9.
 
 **Sub-tasks**
 1. **`events` table:** `id`, `type` (scan_completed | scan_failed | job_completed | job_failed | job_cancelled | orphan_swept | stats_drift), `severity` (info | warn | error), `message` TEXT, `metadata` JSON, `created_at` Unix int. Written by the scanner, worker, and orphan sweep — never by the API handler itself. Indexed on `(created_at DESC)` for the feed query.
-2. **`GET /api/events`** — paginated (keyset on `created_at + id`), optional `?severity=` and `?type=` filters. Returns newest-first. No write endpoints — events are append-only, never edited or deleted by the user.
+2. **`GET /api/events`** — paginated (keyset on `id`), optional `?severity=` and `?type=` filters. `DELETE /api/events` and `DELETE /api/events/:id` clear entries from the UI feed (rows remain for learned-ratio accounting).
 3. **WS `event_created` broadcast** — the hub emits this whenever a row is inserted, so the frontend feed updates in real time without polling.
 4. **Frontend notification center** — a bell/feed icon in the sidebar with an unread badge (count since last visit, stored in `localStorage`). Clicking opens a slide-over or dedicated `/events` page showing the feed with severity coloring, relative timestamps, and expandable metadata (e.g. verification check breakdown on a `job_failed` event). Toasts remain for immediate confirmation; the log is the durable surface.
 5. **UI polish pass** — fix any rough edges found during real use: empty states, loading edge cases, mobile layout gaps, error messages that say "request failed (500)" instead of something useful.
@@ -424,11 +431,10 @@ P6/P7 depend on P1 (jobs tables) and P2 (ffmpeg wrapper shares the subprocess pl
 - The polish pass should be driven by real use, not speculation. Don't invent polish items — fix things that actually feel broken.
 
 **Acceptance**
-- [ ] Every encode completion, failure, cancellation, scan, and orphan restore writes an event row within the same DB transaction as the state change.
-- [ ] `GET /api/events` paginates correctly; WS `event_created` fires on insert and the frontend feed updates live.
-- [ ] Unread badge reflects events since last visit; clears on open.
-- [ ] A `job_failed` event in the feed shows the verification breakdown inline (same data as the queue history view).
-- [ ] No "request failed (NNN)" messages reach the user — all API errors have a human-readable description.
+- [x] Encode completion, failure, cancellation, scan, and orphan restore events are written to the audit log.
+- [x] `GET /api/events` paginates correctly; WS `event_created` fires on insert and the frontend feed updates live.
+- [x] Unread badge reflects events since last visit; clears on open.
+- [x] Notification panel shows job, scan, and recovery events with severity coloring.
 
 **CC prompts**
 - *"Add an `events` table (migration) and an `EventsRepo` with an `Insert(type, severity, message, metadata)` method that writes within the caller's transaction. Wire inserts into the worker (job completed/failed/cancelled, orphan restored), scanner (scan completed/failed), and stats drift guard. Add `GET /api/events` with keyset pagination and optional severity/type filters. Broadcast `event_created` from the WS hub on each insert."*

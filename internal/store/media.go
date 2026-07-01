@@ -186,6 +186,27 @@ func (m *Media) ActiveFileSummaries(ctx context.Context) (map[string]*FileSummar
 	return out, rows.Err()
 }
 
+// ActivePaths returns filesystem paths for all active media rows.
+func (m *Media) ActivePaths(ctx context.Context) ([]string, error) {
+	rows, err := m.r.QueryContext(ctx,
+		"SELECT path FROM media_files WHERE status = 'active'",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var paths []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		paths = append(paths, path)
+	}
+	return paths, rows.Err()
+}
+
 // GetByFingerprintOtherThan returns the first active file with fp whose ID is
 // not excludeID. Used by rename detection to find a newly-inserted row that
 // matches a vanished file without returning the vanished row itself.
@@ -258,7 +279,15 @@ func (m *Media) ReplaceWithEncoded(ctx context.Context, id, newSize int64, newFi
 		return err
 	}
 	defer tx.Rollback()
+	if err := m.ReplaceWithEncodedTx(ctx, tx, id, newSize, newFingerprint, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
+// ReplaceWithEncodedTx is like ReplaceWithEncoded but runs inside the caller's
+// transaction so it can be bundled with job completion in one commit.
+func (m *Media) ReplaceWithEncodedTx(ctx context.Context, tx *sql.Tx, id, newSize int64, newFingerprint string, now int64) error {
 	old, err := loadStatRow(ctx, tx, id)
 	if err != nil {
 		return err
@@ -282,10 +311,7 @@ func (m *Media) ReplaceWithEncoded(ctx context.Context, id, newSize int64, newFi
 	if err != nil {
 		return err
 	}
-	if err := applyContribution(ctx, tx, updated, +1); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return applyContribution(ctx, tx, updated, +1)
 }
 
 // UpdatePredictedSavingsByCodec rewrites predicted_savings_bytes for every

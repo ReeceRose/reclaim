@@ -20,9 +20,12 @@ Reclaim is for large libraries with mixed codecs where you want a safe, manual-f
 | Does | Does not |
 |---|---|
 | Scans mounted library folders directly | Integrate with Sonarr, Radarr, Plex, Jellyfin, or Emby APIs |
-| Ranks candidates by estimated savings | Auto-encode your whole library |
-| Replaces files in-place after verification | Use GPU/NVENC hardware encoding (CPU `libx265` only) |
-| Runs encodes in a configurable overnight window | Pause for active streams (time window only) |
+| Ranks candidates by estimated savings (learns from your completed encodes) | Auto-encode your whole library |
+| Library view for every scanned file with eligibility reasons | Use GPU/NVENC hardware encoding (CPU `libx265` only) |
+| Helps spot bloated rips better re-downloaded than re-encoded | Pause for active streams (time window only) |
+| Optional TMDB posters and metadata for movies and TV | |
+| Replaces files in-place after verification | |
+| Runs encodes in a configurable overnight window (or force individual jobs) | |
 
 ---
 
@@ -38,6 +41,8 @@ docker compose up --build -d
 Open `http://<nas-ip>:8080`, create your login, and let the first scan run.
 
 Media mounts must be **read-write** because Reclaim replaces files in-place after verification. The included Compose file uses a named DB volume; NAS users may prefer a host `appdata` path as shown in [`docs/DOCKER.md`](docs/DOCKER.md).
+
+Set `PUID` and `PGID` in `docker-compose.yml` to match the user that owns your media library, or encodes fail with `Permission denied` when writing back to `/movies` and `/tv`. See [`docs/DOCKER.md`](docs/DOCKER.md) for Unraid and other NAS layouts.
 
 ### Building the image
 
@@ -73,7 +78,9 @@ export DB_PATH=/var/lib/reclaim/reclaim.db
 | `PROBE_CONCURRENCY` | no | `4` | Max parallel ffprobe calls during a scan |
 | `SCAN_ANCHOR` | no | `00:00` | Daily scan anchor time (`HH:MM`, local) |
 | `TZ` | no | — | Container timezone — **set this in Docker** so the encode window matches your clock |
-| `TMDB_API_KEY` | no | — | TMDB API key for movie/TV poster and backdrop fetching |
+| `TMDB_API_KEY` | no | — | TMDB API key for movie/TV poster, backdrop, and metadata fetching |
+| `PUID` | no | `1000` | Docker only — uid that owns your media library (see `docker-entrypoint.sh`) |
+| `PGID` | no | `1000` | Docker only — gid that owns your media library |
 | `DISABLE_AUTH` | no | `false` | Bypass login entirely — **trusted LAN use only** |
 | `RESET_AUTH` | no | `false` | Clear stored credentials on boot, re-triggering first-run setup |
 
@@ -100,16 +107,18 @@ For HTTPS reverse proxies, forward `X-Forwarded-Proto: https` so cookies get the
 
 1. **Scan** — walks `MOVIES_PATH` and `TV_PATH`, probes video files with `ffprobe`, and records codec, resolution, bitrate, size, mtime, and fingerprint. Later scans skip unchanged files and detect renames.
 
-2. **Rank** — files are sorted by predicted HEVC savings. After enough completed jobs for a codec, estimates switch from seed values to your observed results.
+2. **Rank** — files are sorted by predicted HEVC savings. After enough completed jobs for a codec, estimates switch from seed values to your observed results. Per-file codec, bitrate, and resolution help you spot rips that are better re-downloaded than re-encoded.
 
-3. **Queue** — select files, pick a profile, and confirm before jobs are created.
+3. **Browse** — the Library view shows every scanned file, including already-HEVC, missing, and probe-failed items, each with a `candidate_state` explaining eligibility.
 
-4. **Encode** — queued jobs run inside the encode window unless forced. Reclaim writes a `.reclaim-tmp` file, then:
+4. **Queue** — select files, pick a profile, and confirm before jobs are created. Queued jobs wait for the encode window unless you **Force** them to run immediately.
+
+5. **Encode** — queued jobs run inside the encode window unless forced. Reclaim writes a `.reclaim-tmp` file, then:
    - Verifies the output (duration ±1 s, stream counts, resolution match)
    - On pass: atomically swaps original → `.reclaim-backup`, temp → original, deletes backup
    - On fail: marks the job failed, keeps the temp for inspection, leaves the original untouched
 
-5. **Recover** — on boot, temp files are cleaned up, interrupted backups are restored, and stuck jobs are marked failed.
+6. **Recover** — on boot, temp files are cleaned up, interrupted backups are restored, and stuck jobs are marked failed. Job and scan events are logged to a persistent audit trail (bell icon in the UI).
 
 ---
 

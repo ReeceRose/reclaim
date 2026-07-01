@@ -30,7 +30,38 @@ jobs:
         run: go test ./...
 
       - name: Test (race detector)
-        run: go test -race ./internal/scanner/... ./internal/worker/... ./internal/jobs/...
+        run: go test -race ./internal/scanner/... ./internal/worker/... ./internal/jobs/... ./internal/api/... ./internal/store/...
+
+  landing:
+    name: Landing
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: landing
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.26.0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: landing/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Type check
+        run: pnpm run type-check
+
+      - name: Build
+        run: pnpm run build
 
   frontend:
     name: Frontend
@@ -73,8 +104,7 @@ jobs:
 
   docker:
     name: Docker
-    # Only needs the frontend artifact — runs in parallel with Go to save wall time.
-    needs: [frontend]
+    needs: [go, frontend]
     runs-on: ubuntu-latest
     permissions:
       contents: read

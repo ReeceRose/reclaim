@@ -102,6 +102,29 @@ func (s *Store) Version() (int64, error) {
 	return migrationVersion(s.r)
 }
 
+// CommitEncodeSwap atomically updates the media row after a verified filesystem
+// swap, marks the job completed, and inserts a job_completed event. The swap
+// must already have succeeded — a DB failure here leaves the file encoded on
+// disk with the job still in verifying for reconcile to retry.
+func (s *Store) CommitEncodeSwap(ctx context.Context, fileID, jobID, newSize int64, newFingerprint string, completedAt int64, message, meta string) (int64, error) {
+	tx, err := s.w.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if err := s.Media.ReplaceWithEncodedTx(ctx, tx, fileID, newSize, newFingerprint, completedAt); err != nil {
+		return 0, err
+	}
+	if err := s.Jobs.MarkCompletedTx(ctx, tx, jobID, newSize, completedAt); err != nil {
+		return 0, err
+	}
+	id, err := s.Events.InsertTx(ctx, tx, EventJobCompleted, SeverityInfo, message, meta)
+	if err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
+}
+
 // CompleteJob atomically marks a job completed and inserts a job_completed
 // event in the same transaction. Returns the new event ID for broadcasting.
 func (s *Store) CompleteJob(ctx context.Context, jobID, outputSize, completedAt int64, message, meta string) (int64, error) {

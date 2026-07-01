@@ -93,7 +93,7 @@ curl -s http://localhost:8080/healthz
 Tagged releases publish to GitHub Container Registry. See [`docs/RELEASES.md`](RELEASES.md).
 
 ```bash
-docker pull ghcr.io/reecerose/reclaim:1.0.0   # pin a version
+docker pull ghcr.io/reecerose/reclaim:0.0.20   # pin a version
 ```
 
 In `docker-compose.yml`, comment out `build: .` and set `image:` to the tag you pulled.
@@ -107,7 +107,7 @@ In `docker-compose.yml`, comment out `build: .` and set `image:` to the tag you 
 | Field             | Value                                                         |
 | ----------------- | ------------------------------------------------------------- |
 | **Name**          | `reclaim`                                                     |
-| **Repository**    | `ghcr.io/reecerose/reclaim:latest` (or a pinned `:1.0.0` tag) |
+| **Repository**    | `ghcr.io/reecerose/reclaim:latest` (or a pinned `:0.0.20` tag) |
 | **Network Type**  | `bridge`                                                      |
 | **WebUI**         | `8080`                                                        |
 | **Console shell** | `sh` (for debugging only)                                     |

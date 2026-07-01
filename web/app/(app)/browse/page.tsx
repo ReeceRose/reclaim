@@ -9,6 +9,7 @@ import { parseQueryEnum, useQueryParam } from '@/hooks/use-query-params';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { QueryErrorState } from '@/components/ui/query-error-state';
 import { ShowCard } from '@/components/media/show-card';
 import { ShowRow } from '@/components/media/show-row';
 import { MovieCard } from '@/components/media/movie-card';
@@ -91,7 +92,7 @@ function ListSkeleton() {
 function TVContent({ search, sort, view }: { search: string; sort: TVSortValue; view: string }) {
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError, error, refetch } = useInfiniteQuery({
     queryKey: ['browse', LIBRARY_TYPE.TV, search],
     queryFn: ({ pageParam }: { pageParam: number }) =>
       api.groupedFiles({ library_type: LIBRARY_TYPE.TV, search: search || undefined, limit: PAGE_SIZE, offset: pageParam }),
@@ -120,6 +121,10 @@ function TVContent({ search, sort, view }: { search: string; sort: TVSortValue; 
   const totalCount = data?.pages[0]?.total_count;
 
   const isList = view === VIEW_MODE.LIST;
+
+  if (isError && !data) {
+    return <QueryErrorState error={error} onRetry={() => void refetch()} title="Failed to load shows" />;
+  }
 
   return (
     <>
@@ -176,7 +181,7 @@ function TVContent({ search, sort, view }: { search: string; sort: TVSortValue; 
 function MoviesContent({ search, sort, view }: { search: string; sort: MovieSortValue; view: string }) {
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, isError, error, refetch } = useInfiniteQuery({
     queryKey: ['browse', LIBRARY_TYPE.MOVIES, search, sort],
     queryFn: ({ pageParam }: { pageParam: Record<string, number | undefined> }) =>
       api.files({ library_type: LIBRARY_TYPE.MOVIES, sort, search: search || undefined, limit: PAGE_SIZE, ...pageParam }),
@@ -201,6 +206,10 @@ function MoviesContent({ search, sort, view }: { search: string; sort: MovieSort
   const movies = useMemo(() => data?.pages.flatMap((p) => p.items) ?? [], [data]);
   const totalCount = data?.pages[0]?.total_count;
   const isList = view === VIEW_MODE.LIST;
+
+  if (isError && !data) {
+    return <QueryErrorState error={error} onRetry={() => void refetch()} title="Failed to load movies" />;
+  }
 
   return (
     <>

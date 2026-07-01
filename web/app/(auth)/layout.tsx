@@ -44,7 +44,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             Re<span className="text-brand">claim</span>
           </div>
         </div>
-        <p className="text-muted-fg text-sm mb-6">Media codec audit &amp; re-encode</p>
+        <p className="text-muted-fg text-sm mb-6">Codec audit, library browse, and safe re-encode</p>
         {children}
       </div>
     </div>

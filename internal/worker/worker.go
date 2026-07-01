@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"math"
@@ -31,6 +32,10 @@ const (
 	// durationToleranceSeconds is the ±window for the duration match.
 	durationToleranceSeconds = 1.0
 )
+
+// errPostSwapCommit marks a DB failure after the filesystem swap succeeded.
+// The job is left in verifying for reconcile to retry CommitEncodeSwap.
+var errPostSwapCommit = errors.New("post-swap db commit failed")
 
 // Broadcaster is the WS hub slice the worker pushes live progress to. Satisfied
 // by api.Hub; an interface so the worker is testable without a real hub.
@@ -58,6 +63,10 @@ type EncodeFunc func(ctx context.Context, opts ffmpeg.Options, onProgress ffmpeg
 // InspectFunc inspects a file for verification; defaults to ffprobe.Inspect.
 type InspectFunc func(ctx context.Context, path string) (*ffprobe.Inspection, error)
 
+// ProbeFunc probes a file for codec metadata; defaults to ffprobe.Probe.
+// Used by post-swap reconcile to detect an encoded file on disk.
+type ProbeFunc func(ctx context.Context, path string) (*ffprobe.Result, error)
+
 // Worker is the single-worker encode loop.
 type Worker struct {
 	store  *store.Store
@@ -68,6 +77,7 @@ type Worker struct {
 
 	encode  EncodeFunc
 	inspect InspectFunc
+	probe   ProbeFunc
 	clock   func() time.Time
 
 	pollInterval     time.Duration
@@ -91,6 +101,7 @@ type Option func(*Worker)
 
 func WithEncodeFunc(fn EncodeFunc) Option     { return func(w *Worker) { w.encode = fn } }
 func WithInspectFunc(fn InspectFunc) Option   { return func(w *Worker) { w.inspect = fn } }
+func WithProbeFunc(fn ProbeFunc) Option       { return func(w *Worker) { w.probe = fn } }
 func WithClock(fn func() time.Time) Option    { return func(w *Worker) { w.clock = fn } }
 func WithPollInterval(d time.Duration) Option { return func(w *Worker) { w.pollInterval = d } }
 func WithProgressDBPeriod(d time.Duration) Option {
@@ -115,6 +126,7 @@ func New(st *store.Store, window liveWindow, hub Broadcaster, roots []string, op
 		roots:            roots,
 		encode:           ffmpeg.Encode,
 		inspect:          ffprobe.Inspect,
+		probe:            ffprobe.Probe,
 		clock:            time.Now,
 		pollInterval:     5 * time.Second,
 		orphanInterval:   time.Hour,
@@ -331,6 +343,14 @@ func (w *Worker) verifyAndReplace(ctx context.Context, job *store.TranscodeJob, 
 	}
 
 	if err := w.replace(ctx, job, file, tmpPath); err != nil {
+		if errors.Is(err, errPostSwapCommit) {
+			slog.Error("worker: CRITICAL swap ok but db commit failed; job left verifying for reconcile",
+				"job", job.ID, "path", file.Path, "err", err)
+			if setErr := w.store.Jobs.SetCommitError(ctx, job.ID, err.Error()); setErr != nil {
+				slog.Error("worker: set commit error", "job", job.ID, "err", setErr)
+			}
+			return
+		}
 		slog.Error("worker: replace", "job", job.ID, "path", file.Path, "err", err)
 		w.failJob(ctx, job.ID, "replace failed: "+err.Error(), strptr(string(blob)))
 		return
@@ -411,11 +431,6 @@ func (w *Worker) replace(ctx context.Context, job *store.TranscodeJob, file *sto
 	}
 
 	now := w.clock().Unix()
-	if err := w.store.Media.ReplaceWithEncoded(ctx, file.ID, newSize, fp, now); err != nil {
-		return err
-	}
-
-	// Bundle MarkCompleted + event insert in one transaction.
 	completedMsg := "Encoded " + filepath.Base(file.Path)
 	completedMeta := jsonMeta(map[string]any{
 		"job_id":              job.ID,
@@ -423,12 +438,11 @@ func (w *Worker) replace(ctx context.Context, job *store.TranscodeJob, file *sto
 		"output_size_bytes":   newSize,
 		"original_size_bytes": file.SizeBytes,
 	})
-	eventID, err := w.store.CompleteJob(ctx, job.ID, newSize, now, completedMsg, completedMeta)
+	eventID, err := w.store.CommitEncodeSwap(ctx, file.ID, job.ID, newSize, fp, now, completedMsg, completedMeta)
 	if err != nil {
-		slog.Error("worker: complete job", "job", job.ID, "err", err)
-	} else {
-		w.hub.Broadcast("event_created", eventBroadcast(eventID, store.EventJobCompleted, store.SeverityInfo, completedMsg, completedMeta, now))
+		return fmt.Errorf("%w: %v", errPostSwapCommit, err)
 	}
+	w.hub.Broadcast("event_created", eventBroadcast(eventID, store.EventJobCompleted, store.SeverityInfo, completedMsg, completedMeta, now))
 
 	// After completing a job, check whether this codec now has enough samples
 	// to override its seed savings estimate with observed data.
@@ -524,6 +538,9 @@ func (w *Worker) reconcileInterrupted(ctx context.Context) {
 		return
 	}
 	for _, j := range stuck {
+		if j.Status == string(jobs.StatusVerifying) && w.tryCompletePostSwap(ctx, &j) {
+			continue
+		}
 		if j.OutputPath != nil {
 			removeIfExists(*j.OutputPath)
 		}
@@ -542,63 +559,148 @@ func (w *Worker) reconcileInterrupted(ctx context.Context) {
 	}
 }
 
-// sweepOrphans walks the media roots and cleans up stray reclaim files:
-// stale .reclaim-tmp are deleted; for each .reclaim-backup the backup is restored
-// iff its original is missing (a crash between swap steps), else deleted. Temps
-// belonging to an in-flight job are skipped.
+// tryCompletePostSwap finishes a verifying job whose filesystem swap already
+// succeeded but whose DB commit failed or was interrupted. Returns true when the
+// job was recovered.
+func (w *Worker) tryCompletePostSwap(ctx context.Context, job *store.TranscodeJob) bool {
+	file, err := w.store.Media.GetByID(ctx, job.MediaFileID)
+	if err != nil {
+		return false
+	}
+	if file.IsAlreadyHEVC {
+		return false
+	}
+	res, err := w.probe(ctx, file.Path)
+	if err != nil || !res.IsAlreadyHEVC {
+		return false
+	}
+	info, err := os.Stat(file.Path)
+	if err != nil {
+		return false
+	}
+	newSize := info.Size()
+	fp, err := media.Fingerprint(file.Path)
+	if err != nil {
+		slog.Warn("worker: reconcile fingerprint", "path", file.Path, "err", err)
+	}
+	now := w.clock().Unix()
+	completedMsg := "Encoded " + filepath.Base(file.Path)
+	completedMeta := jsonMeta(map[string]any{
+		"job_id":              job.ID,
+		"file_id":             file.ID,
+		"output_size_bytes":   newSize,
+		"original_size_bytes": file.SizeBytes,
+	})
+	eventID, err := w.store.CommitEncodeSwap(ctx, file.ID, job.ID, newSize, fp, now, completedMsg, completedMeta)
+	if err != nil {
+		slog.Warn("worker: reconcile post-swap commit", "job", job.ID, "err", err)
+		return false
+	}
+	w.hub.Broadcast("event_created", eventBroadcast(eventID, store.EventJobCompleted, store.SeverityInfo, completedMsg, completedMeta, now))
+	w.hub.Broadcast("job_completed", map[string]any{
+		"job_id":            job.ID,
+		"media_file_id":     file.ID,
+		"output_size_bytes": newSize,
+	})
+	w.invalidateCandidates()
+	slog.Info("worker: reconciled post-swap db commit", "job", job.ID, "path", file.Path)
+	return true
+}
+
+// sweepOrphans cleans up stray reclaim temp/backup files at paths derived from
+// the DB and in-flight encodes, rather than walking entire media trees.
 func (w *Worker) sweepOrphans(ctx context.Context) {
 	active := w.activeTempPaths()
 
-	for _, root := range w.roots {
-		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if d.IsDir() {
-				return nil
-			}
-			name := d.Name()
-			switch {
-			case strings.Contains(name, tmpSuffix):
-				if _, busy := active[path]; busy {
-					return nil
-				}
-				if err := os.Remove(path); err != nil {
-					slog.Warn("worker: remove stale temp", "path", path, "err", err)
-				} else {
-					slog.Info("worker: removed stale temp", "path", path)
-				}
-			case strings.HasSuffix(name, backupSuffix):
-				orig := strings.TrimSuffix(path, backupSuffix)
-				if _, serr := os.Stat(orig); serr == nil {
-					// Original present → backup is leftover from a completed swap.
-					if err := os.Remove(path); err != nil {
-						slog.Warn("worker: remove stale backup", "path", path, "err", err)
-					}
-				} else {
-					// Original missing → restore it (crash between swap steps).
-					if err := os.Rename(path, orig); err != nil {
-						slog.Error("worker: restore backup", "backup", path, "orig", orig, "err", err)
-					} else {
-						slog.Warn("worker: restored backup over missing original", "orig", orig)
-						bg := context.Background()
-						restoreMsg := "Restored backup over missing original: " + filepath.Base(orig)
-						restoreMeta := jsonMeta(map[string]any{"original": orig, "backup": path})
-						eventID, err := w.store.Events.Insert(bg, store.EventOrphanRestored, store.SeverityWarn, restoreMsg, restoreMeta)
-						if err != nil {
-							slog.Error("worker: orphan restored event", "err", err)
-						} else {
-							w.hub.Broadcast("event_created", eventBroadcast(eventID, store.EventOrphanRestored, store.SeverityWarn, restoreMsg, restoreMeta, time.Now().Unix()))
-						}
-					}
-				}
-			}
-			return nil
-		})
+	paths, err := w.reclaimArtifactPaths(ctx)
+	if err != nil {
+		slog.Error("worker: list reclaim artifacts", "err", err)
+		return
 	}
+
+	for _, path := range paths {
+		if ctx.Err() != nil {
+			return
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			slog.Warn("worker: stat reclaim artifact", "path", path, "err", err)
+			continue
+		}
+		if info.IsDir() {
+			continue
+		}
+		name := info.Name()
+		switch {
+		case strings.Contains(name, tmpSuffix):
+			if _, busy := active[path]; busy {
+				continue
+			}
+			if err := os.Remove(path); err != nil {
+				slog.Warn("worker: remove stale temp", "path", path, "err", err)
+			} else {
+				slog.Info("worker: removed stale temp", "path", path)
+			}
+		case strings.HasSuffix(name, backupSuffix):
+			orig := strings.TrimSuffix(path, backupSuffix)
+			if _, serr := os.Stat(orig); serr == nil {
+				if err := os.Remove(path); err != nil {
+					slog.Warn("worker: remove stale backup", "path", path, "err", err)
+				}
+			} else {
+				if err := os.Rename(path, orig); err != nil {
+					slog.Error("worker: restore backup", "backup", path, "orig", orig, "err", err)
+				} else {
+					slog.Warn("worker: restored backup over missing original", "orig", orig)
+					bg := context.Background()
+					restoreMsg := "Restored backup over missing original: " + filepath.Base(orig)
+					restoreMeta := jsonMeta(map[string]any{"original": orig, "backup": path})
+					eventID, err := w.store.Events.Insert(bg, store.EventOrphanRestored, store.SeverityWarn, restoreMsg, restoreMeta)
+					if err != nil {
+						slog.Error("worker: orphan restored event", "err", err)
+					} else {
+						w.hub.Broadcast("event_created", eventBroadcast(eventID, store.EventOrphanRestored, store.SeverityWarn, restoreMsg, restoreMeta, time.Now().Unix()))
+					}
+				}
+			}
+		}
+	}
+}
+
+func (w *Worker) reclaimArtifactPaths(ctx context.Context) ([]string, error) {
+	seen := make(map[string]struct{})
+
+	for p := range w.activeTempPaths() {
+		seen[p] = struct{}{}
+	}
+
+	outputs, err := w.store.Jobs.OutputPaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range outputs {
+		if p != "" {
+			seen[p] = struct{}{}
+		}
+	}
+
+	mediaPaths, err := w.store.Media.ActivePaths(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range mediaPaths {
+		seen[tempPathFor(p)] = struct{}{}
+		seen[p+backupSuffix] = struct{}{}
+	}
+
+	out := make([]string, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	return out, nil
 }
 
 func (w *Worker) activeTempPaths() map[string]struct{} {

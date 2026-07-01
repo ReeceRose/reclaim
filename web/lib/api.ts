@@ -235,6 +235,20 @@ export interface Job {
   source_path: string | null;
   queue_position: number;
   forced: boolean;
+  encode_preset: string | null;
+  encode_crf: number | null;
+  encode_extra_args: string | null;
+  estimated_duration_seconds?: number | null;
+  encode_duration_seconds?: number | null;
+  estimate_source?: string;
+  estimate_sample_count?: number | null;
+}
+
+export interface JobsListResult {
+  items: Job[];
+  total_count?: number;
+  queue_total_estimated_seconds?: number;
+  queued_count?: number;
 }
 
 export interface Settings {
@@ -456,10 +470,7 @@ export const api = {
       profile_id: profileId ?? null,
     }),
   jobs: (params?: { status?: string; limit?: number; offset?: number }) =>
-    request<{ items: Job[]; total_count?: number }>(
-      "GET",
-      `/api/jobs${buildQuery(params ?? {})}`,
-    ),
+    request<JobsListResult>("GET", `/api/jobs${buildQuery(params ?? {})}`),
   cancelJob: (id: number) =>
     request<{ job_id: number; status: string }>(
       "POST",

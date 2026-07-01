@@ -69,7 +69,7 @@ To enable artwork and metadata fetching, create a TMDB API key at [themoviedb.or
 2. Open `http://<nas-ip>:8080`.
 3. Create a username and password on the setup page.
 4. Let the startup scan finish, then queue files from **Candidates**.
-5. Encodes run only inside the configured window unless you use **Force** on a queued job.
+5. Encodes run only inside the configured window unless you use **Force** on a queued job. Per-job time estimates on the **Queue** page start as conservative preset guesses and improve after a few completed jobs on each profile.
 
 For HTTPS reverse proxies, forward `X-Forwarded-Proto: https`.
 
@@ -233,3 +233,13 @@ docker build -t ghcr.io/reecerose/reclaim:latest .
 ```
 
 The Dockerfile is a three-stage build: Next.js static export → Go binary (frontend embedded) → Alpine runtime with pinned ffmpeg.
+
+---
+
+## Related docs
+
+| Doc | Audience |
+|---|---|
+| [`API.md`](API.md) | REST + WebSocket reference (`GET /api/jobs` encode time fields) |
+| [`ENCODE-TIME-PLAN.md`](ENCODE-TIME-PLAN.md) | How per-job encode time estimates are calculated and learned |
+| [`RELEASES.md`](RELEASES.md) | Pulling versioned images from GHCR |

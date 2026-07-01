@@ -329,10 +329,12 @@ func TestCreateJobsEchoesResolvedSelection(t *testing.T) {
 	ctx := context.Background()
 
 	codec := "h264"
+	duration := 3600.0
 	id, err := st.Media.Insert(ctx, &store.MediaFile{
 		Path: "/media/movies/a.mkv", LibraryType: "movie", SizeBytes: 5000,
 		Mtime: 1, Fingerprint: "fpa", VideoCodec: &codec,
 		PredictedSavingsBytes: 2000, Status: "active",
+		DurationSeconds: &duration,
 	})
 	if err != nil {
 		t.Fatalf("insert: %v", err)
@@ -375,6 +377,12 @@ func TestCreateJobsEchoesResolvedSelection(t *testing.T) {
 	}
 	if pos := items[0].(map[string]any)["queue_position"].(float64); pos != 1 {
 		t.Errorf("queue_position = %v, want 1", pos)
+	}
+	if est, ok := items[0].(map[string]any)["estimated_duration_seconds"].(float64); !ok || est <= 0 {
+		t.Errorf("estimated_duration_seconds = %v, want a positive estimate", items[0].(map[string]any)["estimated_duration_seconds"])
+	}
+	if src, ok := items[0].(map[string]any)["estimate_source"].(string); !ok || src == "" {
+		t.Errorf("estimate_source = %v, want a non-empty source", items[0].(map[string]any)["estimate_source"])
 	}
 }
 

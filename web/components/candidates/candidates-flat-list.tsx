@@ -4,14 +4,53 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { type RefObject, useEffect } from "react";
 import { BROWSE_ROUTES } from "@/app/(app)/browse/browse";
 import { MediaFlatRow } from "@/components/media/media-flat-row";
+import { SortHeaderCell } from "@/components/media/sort-header-cell";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QueryErrorState } from "@/components/ui/query-error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { IdToggleHandler } from "@/hooks/use-id-selection";
 import type { MediaFile } from "@/lib/api";
+import {
+  type CandidateSortColumn,
+  type CandidateSortKey,
+  candidateSortArrow,
+  candidateSortColumn,
+  toggleCandidateSort,
+} from "./constants";
+
+function CandidateSortHeader({
+  column,
+  sort,
+  className,
+  align = "left",
+  onSortChange,
+  children,
+}: {
+  column: CandidateSortColumn;
+  sort: CandidateSortKey;
+  className?: string;
+  align?: "left" | "right";
+  onSortChange: (sort: CandidateSortKey) => void;
+  children: React.ReactNode;
+}) {
+  const active = candidateSortColumn(sort) === column;
+  return (
+    <SortHeaderCell
+      active={active}
+      arrow={active ? candidateSortArrow(sort) : null}
+      onClick={() => onSortChange(toggleCandidateSort(sort, column))}
+      className={className}
+      align={align}
+    >
+      {children}
+    </SortHeaderCell>
+  );
+}
 
 export function CandidatesFlatList({
+  sort,
+  onSortChange,
   parentRef,
   allItems,
   orderedIds,
@@ -27,6 +66,8 @@ export function CandidatesFlatList({
   isFetchingNextPage,
   onLoadMore,
 }: {
+  sort: CandidateSortKey;
+  onSortChange: (sort: CandidateSortKey) => void;
   parentRef: RefObject<HTMLDivElement | null>;
   allItems: MediaFile[];
   orderedIds: number[];
@@ -79,15 +120,41 @@ export function CandidatesFlatList({
             className="size-[17px] rounded-[5px] cursor-pointer"
           />
         </div>
-        <div className="flex-1 py-3 pr-3">File</div>
-        <div className="w-[64px] sm:w-[80px] py-3">Codec</div>
-        <div className="hidden sm:block w-[60px] py-3">Res</div>
-        <div className="hidden sm:block w-[90px] py-3 text-right pr-2">
+        <CandidateSortHeader
+          column="file"
+          sort={sort}
+          onSortChange={onSortChange}
+          className="flex-1 py-3 pr-3 min-w-0"
+        >
+          File
+        </CandidateSortHeader>
+        <CandidateSortHeader
+          column="codec"
+          sort={sort}
+          onSortChange={onSortChange}
+          className="w-[64px] sm:w-[80px] py-3 shrink-0"
+        >
+          Codec
+        </CandidateSortHeader>
+        <div className="hidden sm:block w-[60px] py-3 shrink-0">Res</div>
+        <CandidateSortHeader
+          column="size"
+          sort={sort}
+          align="right"
+          onSortChange={onSortChange}
+          className="hidden sm:flex w-[90px] py-3 pr-2 shrink-0"
+        >
           Size
-        </div>
-        <div className="w-[84px] sm:w-[110px] py-3 text-right pr-3 sm:pr-4 text-brand">
-          Est. savings ↓
-        </div>
+        </CandidateSortHeader>
+        <CandidateSortHeader
+          column="savings"
+          sort={sort}
+          align="right"
+          onSortChange={onSortChange}
+          className="w-[84px] sm:w-[110px] py-3 pr-3 sm:pr-4 shrink-0"
+        >
+          Est. savings
+        </CandidateSortHeader>
       </div>
 
       {showError ? (

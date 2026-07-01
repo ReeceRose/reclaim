@@ -144,6 +144,10 @@ Precomputed library overview (O(buckets), not O(files)).
 }
 ```
 
+`ratio_source` on each `by_codec` entry is `seed` (shipped rule-of-thumb per
+codec) or `learned` (mean output/original ratio from completed jobs on this
+instance, after ≥10 samples per codec).
+
 ### `GET /api/candidates`
 One page of ranked re-encode candidates. Excludes files that are already HEVC,
 `missing`, failed to probe, or already queued/completed.
@@ -305,14 +309,28 @@ A job object:
 ```
 id, media_file_id, profile_id, status, queued_at, started_at, completed_at,
 original_size_bytes, output_size_bytes, progress_percent, output_path,
-error_message, verification_result, source_path, queue_position, forced
+error_message, verification_result, source_path, queue_position, forced,
+encode_preset, encode_crf, encode_extra_args,
+estimated_duration_seconds, encode_duration_seconds,
+estimate_source, estimate_sample_count
 ```
-`queue_position` is 1-based for `queued` jobs, `0` otherwise. `forced` is `true`
-when the job was marked to bypass the encode window.
+
+| Field | Notes |
+|---|---|
+| `queue_position` | 1-based for `queued` jobs, `0` otherwise |
+| `forced` | `true` when the job was marked to bypass the encode window |
+| `encode_preset`, `encode_crf`, `encode_extra_args` | Snapshot of the profile settings at queue time. The worker still reads the **live** profile when encoding, but learning and history display use these columns |
+| `estimated_duration_seconds` | Wall-clock encode estimate in seconds. Populated for `queued` and `running` jobs only. Omitted when the media file has no `duration_seconds` |
+| `encode_duration_seconds` | Actual wall-clock encode time (`completed_at − started_at`). Populated for `completed` jobs only |
+| `estimate_source` | Where `estimated_duration_seconds` came from: `seed`, `learned_profile`, `learned_preset_crf`, `learned_preset`, or `learned_global` |
+| `estimate_sample_count` | Number of completed jobs in the bucket that produced the estimate. Omitted for `seed` |
+
+**Encode time estimates** are computed at read time from this instance's completed jobs, bucketed by profile first with fallbacks (preset+CRF → preset → global → conservative seed rates per preset). See [`docs/ENCODE-TIME-PLAN.md`](ENCODE-TIME-PLAN.md) for the rate model. Estimates require probed `duration_seconds` on the media file; without duration, no estimate is returned.
 
 ### `POST /api/jobs`
 Enqueues one job per eligible file and **echoes the resolved selection** so the
-UI can show an honest confirm step (§9.1).
+UI can show an honest confirm step (§9.1). Each created job stores a snapshot
+of the resolved profile's `preset`, `crf`, and `extra_args` on the job row.
 
 **Body**
 ```json
@@ -336,9 +354,40 @@ Skip reasons: `file not found`, `file is not active`, `file is already HEVC`,
 Combined queue + history, newest first.
 **Query:** `status` (optional filter, e.g. `queued`, `running`, `completed`, `failed`, `cancelled`),
 `limit` (default 50, max 200), `offset`.
+
+**Response**
 ```json
-{ "items": [ { "id": 10, "status": "queued", "queue_position": 1, "...": "..." } ], "total_count": 42 }
+{
+  "items": [
+    {
+      "id": 10,
+      "status": "queued",
+      "queue_position": 1,
+      "encode_preset": "medium",
+      "encode_crf": 26,
+      "estimated_duration_seconds": 840,
+      "estimate_source": "seed",
+      "...": "..."
+    },
+    {
+      "id": 9,
+      "status": "completed",
+      "encode_duration_seconds": 2820,
+      "encode_preset": "medium",
+      "encode_crf": 26,
+      "...": "..."
+    }
+  ],
+  "total_count": 42,
+  "queue_total_estimated_seconds": 8400,
+  "queued_count": 8
+}
 ```
+
+`total_count`, `queue_total_estimated_seconds`, and `queued_count` are included
+on the first page only (`offset=0`). `queue_total_estimated_seconds` sums
+per-job estimates for all queued jobs plus remaining time for any running job
+(estimated total minus elapsed since `started_at`). Omitted when zero.
 
 ### `POST /api/jobs/:id/cancel`
 Cancels a `queued`/`running`/`verifying` job. The worker kills the ffmpeg process
@@ -355,8 +404,9 @@ encode window.
 ### `DELETE /api/jobs/:id`
 Removes a `completed`/`failed`/`cancelled` job from the history list. The row
 isn't actually deleted — it's hidden from `GET /api/jobs` but still counts
-toward learned compression ratios and prevents the file from being re-queued
-as a duplicate. Queued/running/verifying jobs must be cancelled first.
+toward learned compression ratios, encode-time learning, and prevents the file
+from being re-queued as a duplicate. Queued/running/verifying jobs must be
+cancelled first.
 - `204` → dismissed
 - `404` → not found · `409` → job is still queued/running/verifying
 
@@ -551,10 +601,10 @@ curl -s -b $JAR "$BASE/api/candidates?limit=5"
 # Trigger a scan (watch the WS for progress)
 curl -s -b $JAR -X POST $BASE/api/scan
 
-# Queue them
+# Queue them (inspect estimated_duration_seconds on queued items)
 curl -s -b $JAR -X POST $BASE/api/jobs \
   -H 'Content-Type: application/json' -d '{"file_ids":[1,2]}'
-curl -s -b $JAR "$BASE/api/jobs?status=queued"
+curl -s -b $JAR "$BASE/api/jobs?status=queued" | jq '.items[0].estimated_duration_seconds, .queue_total_estimated_seconds'
 ```
 
 With `DISABLE_AUTH=true` (the `make dev` default) you can drop the `-c/-b $JAR`

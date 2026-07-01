@@ -19,10 +19,19 @@ import {
 import { toast } from "sonner";
 import { BROWSE_ROUTES } from "@/app/(app)/browse/browse";
 import { FilterSelect } from "@/components/filter-select";
+import {
+  LIBRARY_SORT_OPTIONS,
+  type LibrarySortColumn,
+  type LibrarySortKey,
+  librarySortArrow,
+  librarySortColumn,
+  toggleLibrarySort,
+} from "@/components/library/constants";
 import { isQueueable, STATE_OPTIONS } from "@/components/media/candidate-state";
 import { MediaFlatRow } from "@/components/media/media-flat-row";
 import { QueueConfirmDialog } from "@/components/media/queue-confirm-dialog";
 import { QueueSelectionBar } from "@/components/media/selection-bar";
+import { SortHeaderCell } from "@/components/media/sort-header-cell";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
@@ -57,15 +66,34 @@ import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 100;
 
-type SortKey = "path_asc" | "size_desc" | "mtime_desc" | "codec" | "resolution";
-
-const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: "path_asc", label: "Path" },
-  { value: "size_desc", label: "Largest file" },
-  { value: "mtime_desc", label: "Recently modified" },
-  { value: "codec", label: "Codec" },
-  { value: "resolution", label: "Resolution" },
-];
+function LibrarySortHeader({
+  column,
+  sort,
+  className,
+  align = "left",
+  onSortChange,
+  children,
+}: {
+  column: LibrarySortColumn;
+  sort: LibrarySortKey;
+  className?: string;
+  align?: "left" | "right";
+  onSortChange: (sort: LibrarySortKey) => void;
+  children: React.ReactNode;
+}) {
+  const active = librarySortColumn(sort) === column;
+  return (
+    <SortHeaderCell
+      active={active}
+      arrow={active ? librarySortArrow(sort) : null}
+      onClick={() => onSortChange(toggleLibrarySort(sort, column))}
+      className={className}
+      align={align}
+    >
+      {children}
+    </SortHeaderCell>
+  );
+}
 
 const STATUS_OPTIONS = [
   { value: "active", label: "Active" },
@@ -81,7 +109,7 @@ function LibraryPage() {
   const [sortRaw, setSortRaw] = useQueryParam("sort", "mtime_desc");
   const sort = parseQueryEnum(
     sortRaw,
-    SORT_OPTIONS.map((o) => o.value),
+    LIBRARY_SORT_OPTIONS.map((o) => o.value),
     "mtime_desc",
   );
   const [codec, setCodec] = useQueryParam("codec");
@@ -310,7 +338,7 @@ function LibraryPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {SORT_OPTIONS.map((o) => (
+              {LIBRARY_SORT_OPTIONS.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
                   {o.label}
                 </SelectItem>
@@ -370,14 +398,41 @@ function LibraryPage() {
                 className="size-[17px] rounded-[5px] cursor-pointer"
               />
             </div>
-            <div className="flex-1 py-3 pr-3">File</div>
-            <div className="w-[64px] sm:w-[80px] py-3">Codec</div>
-            <div className="hidden sm:block w-[60px] py-3">Res</div>
-            <div className="hidden lg:block w-[118px] py-3">State</div>
-            <div className="hidden sm:block w-[90px] py-3 text-right pr-2">
+            <LibrarySortHeader
+              column="file"
+              sort={sort}
+              onSortChange={(v) => startTransition(() => setSortRaw(v))}
+              className="flex-1 py-3 pr-3 min-w-0"
+            >
+              File
+            </LibrarySortHeader>
+            <LibrarySortHeader
+              column="codec"
+              sort={sort}
+              onSortChange={(v) => startTransition(() => setSortRaw(v))}
+              className="w-[64px] sm:w-[80px] py-3 shrink-0"
+            >
+              Codec
+            </LibrarySortHeader>
+            <LibrarySortHeader
+              column="res"
+              sort={sort}
+              onSortChange={(v) => startTransition(() => setSortRaw(v))}
+              className="hidden sm:flex w-[60px] py-3 shrink-0"
+            >
+              Res
+            </LibrarySortHeader>
+            <div className="hidden lg:block w-[118px] py-3 shrink-0">State</div>
+            <LibrarySortHeader
+              column="size"
+              sort={sort}
+              align="right"
+              onSortChange={(v) => startTransition(() => setSortRaw(v))}
+              className="hidden sm:flex w-[90px] py-3 pr-2 shrink-0"
+            >
               Size
-            </div>
-            <div className="w-[84px] sm:w-[110px] py-3 text-right pr-3 sm:pr-4 text-brand">
+            </LibrarySortHeader>
+            <div className="w-[84px] sm:w-[110px] py-3 text-right pr-3 sm:pr-4 shrink-0">
               Est. savings
             </div>
           </div>

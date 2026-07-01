@@ -95,6 +95,9 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 			Status:            string(ijobs.StatusQueued),
 			QueuedAt:          now,
 			OriginalSizeBytes: f.SizeBytes,
+			EncodePreset:      &profile.Preset,
+			EncodeCRF:         &profile.CRF,
+			EncodeExtraArgs:   profile.ExtraArgs,
 		})
 		if err != nil {
 			return serverError(c, err)
@@ -141,15 +144,49 @@ func (s *Server) handleListJobs(c *echo.Context) error {
 		return serverError(c, err)
 	}
 
+	lookup, err := s.store.Jobs.LearnedEncodeRates(ctx)
+	if err != nil {
+		return serverError(c, err)
+	}
+
 	out := make([]jobDTO, 0, len(jobs))
+	var queueTotalEstimated int64
+	var queuedCount int64
 	for i := range jobs {
-		out = append(out, toJobDTO(&jobs[i], positions[jobs[i].ID]))
+		dto := toJobDTO(&jobs[i], positions[jobs[i].ID], lookup)
+		out = append(out, dto)
+
+		switch jobs[i].Status {
+		case string(ijobs.StatusQueued):
+			queuedCount++
+			if dto.EstimatedDurationSeconds != nil {
+				queueTotalEstimated += *dto.EstimatedDurationSeconds
+			}
+		case string(ijobs.StatusRunning):
+			if dto.EstimatedDurationSeconds != nil {
+				remaining := *dto.EstimatedDurationSeconds
+				if jobs[i].StartedAt != nil {
+					elapsed := time.Now().Unix() - *jobs[i].StartedAt
+					remaining -= elapsed
+					if remaining < 0 {
+						remaining = 0
+					}
+				}
+				queueTotalEstimated += remaining
+			}
+		}
 	}
 
 	resp := map[string]any{"items": out}
 	if offset == 0 {
 		if total, err := s.store.Jobs.CountJobs(ctx, statusFilter); err == nil {
 			resp["total_count"] = total
+		}
+		if queueTotalEstimated > 0 {
+			resp["queue_total_estimated_seconds"] = queueTotalEstimated
+		}
+		if queuedCount > 0 {
+			resp["queued_count"] = queuedCount
 		}
 	}
 	return c.JSON(http.StatusOK, resp)

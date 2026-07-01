@@ -11,6 +11,10 @@ import (
 // populated and predicted_savings_bytes were never computed. Fresh installs
 // with no media are a no-op.
 func (s *Store) bootstrapIfNeeded(ctx context.Context) error {
+	if err := s.ensureJobEncodeSnapshot(ctx); err != nil {
+		return fmt.Errorf("ensure job encode snapshot: %w", err)
+	}
+
 	needsStats, err := s.Stats.needsRebuild(ctx)
 	if err != nil {
 		return fmt.Errorf("check stats bootstrap: %w", err)
@@ -34,6 +38,38 @@ func (s *Store) bootstrapIfNeeded(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// ensureJobEncodeSnapshot repairs databases where migration 00009 was recorded
+// but the snapshot columns are missing (can happen if goose advanced version
+// tracking without applying every statement).
+func (s *Store) ensureJobEncodeSnapshot(ctx context.Context) error {
+	has, err := tableHasColumn(ctx, s.w, "transcode_jobs", "encode_preset")
+	if err != nil {
+		return err
+	}
+	if has {
+		return nil
+	}
+
+	alters := []string{
+		`ALTER TABLE transcode_jobs ADD COLUMN encode_preset TEXT`,
+		`ALTER TABLE transcode_jobs ADD COLUMN encode_crf INTEGER`,
+		`ALTER TABLE transcode_jobs ADD COLUMN encode_extra_args TEXT`,
+	}
+	for _, q := range alters {
+		if _, err := s.w.ExecContext(ctx, q); err != nil {
+			return err
+		}
+	}
+
+	_, err = s.w.ExecContext(ctx, `
+		UPDATE transcode_jobs
+		SET encode_preset = (SELECT preset FROM transcode_profiles WHERE id = transcode_jobs.profile_id),
+		    encode_crf = (SELECT crf FROM transcode_profiles WHERE id = transcode_jobs.profile_id),
+		    encode_extra_args = (SELECT extra_args FROM transcode_profiles WHERE id = transcode_jobs.profile_id)
+		WHERE encode_preset IS NULL`)
+	return err
 }
 
 // needsRebuild reports whether library_stats is empty or missing expected

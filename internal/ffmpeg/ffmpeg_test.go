@@ -6,6 +6,35 @@ import (
 	"testing"
 )
 
+func TestEncodeArgsMapsAllInputStreams(t *testing.T) {
+	args := encodeArgs(Options{
+		InputPath:  "in.mkv",
+		OutputPath: "out.mkv",
+		CRF:        22,
+		Preset:     "medium",
+	})
+
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "-map 0") {
+		t.Fatalf("encode args missing -map 0: %q", joined)
+	}
+	// -map must come immediately after the input so every stream is selected.
+	if i := indexOf(args, "-i"); i < 0 {
+		t.Fatal("missing -i")
+	} else if args[i+2] != "-map" || args[i+3] != "0" {
+		t.Fatalf("-map 0 not placed after input: %v", args)
+	}
+}
+
+func indexOf(ss []string, s string) int {
+	for i, v := range ss {
+		if v == s {
+			return i
+		}
+	}
+	return -1
+}
+
 func TestParseFFTime(t *testing.T) {
 	cases := map[string]float64{
 		"00:00:00.000000": 0,

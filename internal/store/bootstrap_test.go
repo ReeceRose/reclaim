@@ -94,3 +94,25 @@ func TestBootstrap_noOpOnEmptyLibrary(t *testing.T) {
 		t.Fatalf("TotalFiles = %d, want 0 on fresh store", ov.TotalFiles)
 	}
 }
+
+func TestEnsureJobEncodeSnapshot_repairsMissingColumns(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+
+	for _, col := range []string{"encode_extra_args", "encode_crf", "encode_preset"} {
+		if _, err := st.w.ExecContext(ctx, "ALTER TABLE transcode_jobs DROP COLUMN "+col); err != nil {
+			t.Skipf("sqlite DROP COLUMN unavailable: %v", err)
+		}
+	}
+
+	if err := st.ensureJobEncodeSnapshot(ctx); err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+	has, err := tableHasColumn(ctx, st.w, "transcode_jobs", "encode_preset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !has {
+		t.Fatal("encode_preset column missing after repair")
+	}
+}

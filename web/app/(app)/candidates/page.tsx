@@ -266,6 +266,8 @@ function CandidatesPage() {
         )}
       >
         <CandidatesFlatList
+          sort={sort}
+          onSortChange={(v) => startTransition(() => setSortRaw(v))}
           parentRef={parentRef}
           allItems={allItems}
           orderedIds={orderedIds}

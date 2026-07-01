@@ -21,8 +21,9 @@ Reclaim is for large libraries with mixed codecs where you want a safe, manual-f
 |---|---|
 | Scans mounted library folders directly | Integrate with Sonarr, Radarr, Plex, Jellyfin, or Emby APIs |
 | Ranks candidates by estimated savings (learns from your completed encodes) | Auto-encode your whole library |
-| Library view for every scanned file with eligibility reasons | Use GPU/NVENC hardware encoding (CPU `libx265` only) |
-| Helps spot bloated rips better re-downloaded than re-encoded | Pause for active streams (time window only) |
+| Per-job encode time estimates on the Queue page (learns from completed jobs) | Use GPU/NVENC hardware encoding (CPU `libx265` only) |
+| Library view for every scanned file with eligibility reasons | Pause for active streams (time window only) |
+| Helps spot bloated rips better re-downloaded than re-encoded | |
 | Optional TMDB posters and metadata for movies and TV | |
 | Replaces files in-place after verification | |
 | Runs encodes in a configurable overnight window (or force individual jobs) | |
@@ -111,7 +112,7 @@ For HTTPS reverse proxies, forward `X-Forwarded-Proto: https` so cookies get the
 
 3. **Browse** — the Library view shows every scanned file, including already-HEVC, missing, and probe-failed items, each with a `candidate_state` explaining eligibility.
 
-4. **Queue** — select files, pick a profile, and confirm before jobs are created. Queued jobs wait for the encode window unless you **Force** them to run immediately.
+4. **Queue** — select files, pick a profile, and confirm before jobs are created. Queued jobs wait for the encode window unless you **Force** them to run immediately. The Queue page shows per-job encode time estimates (seed-based at first, then learned from your completed jobs) and live remaining time on the running job.
 
 5. **Encode** — queued jobs run inside the encode window unless forced. Reclaim writes a `.reclaim-tmp` file, then:
    - Verifies the output (duration ±1 s, stream counts, resolution match)
@@ -133,6 +134,8 @@ CPU x265 is slow by design. Rough expectations:
 | `ultrafast` | ~8–10× realtime | 6–8 min |
 
 **A 20 000-file library at `medium` can take months of overnight windows.** Reclaim is meant to chip away safely, not batch-convert everything at once.
+
+Per-job encode time estimates on the Queue page learn from your completed jobs after a few runs on each profile; until then they use conservative preset-based guesses.
 
 A running job is never interrupted when the window closes — it finishes and no new job is pulled.
 
@@ -180,3 +183,4 @@ Both renames happen in the same directory and are recovered on next boot if inte
 | [`docs/DOCKER.md`](docs/DOCKER.md) | Homelab deployment (Unraid, Synology, Compose, `docker run`) |
 | [`docs/RELEASES.md`](docs/RELEASES.md) | Pulling versioned images from GHCR |
 | [`docs/API.md`](docs/API.md) | REST + WebSocket reference for scripting and integrations |
+| [`docs/ENCODE-TIME-PLAN.md`](docs/ENCODE-TIME-PLAN.md) | Encode time estimation design (rate model, learning buckets, API fields) |

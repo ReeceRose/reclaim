@@ -115,6 +115,20 @@ export function dirName(path: string): string {
   return i >= 0 ? path.slice(0, i) : "";
 }
 
+/** formatDurationCompact renders seconds without trailing zero seconds. */
+export function formatDurationCompact(
+  seconds: number | null | undefined,
+): string {
+  if (seconds == null || seconds <= 0) return "—";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  if (m > 0) return `${m}m`;
+  return `${s}s`;
+}
+
 /** formatDuration renders seconds as h/m/s. */
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || seconds <= 0) return "—";

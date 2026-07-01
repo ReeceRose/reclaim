@@ -6,6 +6,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"reclaim/internal/media"
 	"reclaim/internal/store"
 )
 
@@ -123,10 +124,20 @@ type jobDTO struct {
 	// QueuePosition is 1-based for queued jobs, 0 otherwise.
 	QueuePosition int  `json:"queue_position"`
 	Forced        bool `json:"forced"`
+	// Snapshot encode settings at queue time.
+	EncodePreset    *string `json:"encode_preset"`
+	EncodeCRF       *int    `json:"encode_crf"`
+	EncodeExtraArgs *string `json:"encode_extra_args"`
+	// EstimatedDurationSeconds is populated for queued/running jobs.
+	EstimatedDurationSeconds *int64 `json:"estimated_duration_seconds,omitempty"`
+	// EncodeDurationSeconds is actual wall-clock time for completed jobs.
+	EncodeDurationSeconds *int64 `json:"encode_duration_seconds,omitempty"`
+	EstimateSource        string `json:"estimate_source,omitempty"`
+	EstimateSampleCount   *int   `json:"estimate_sample_count,omitempty"`
 }
 
-func toJobDTO(j *store.TranscodeJob, position int) jobDTO {
-	return jobDTO{
+func toJobDTO(j *store.TranscodeJob, position int, lookup *media.EncodeRateLookup) jobDTO {
+	dto := jobDTO{
 		ID:                 j.ID,
 		MediaFileID:        j.MediaFileID,
 		ProfileID:          j.ProfileID,
@@ -143,5 +154,36 @@ func toJobDTO(j *store.TranscodeJob, position int) jobDTO {
 		SourcePath:         j.SourcePath,
 		QueuePosition:      position,
 		Forced:             j.Forced,
+		EncodePreset:       j.EncodePreset,
+		EncodeCRF:          j.EncodeCRF,
+		EncodeExtraArgs:    j.EncodeExtraArgs,
 	}
+
+	preset := ""
+	if j.EncodePreset != nil {
+		preset = *j.EncodePreset
+	}
+	crf := 0
+	if j.EncodeCRF != nil {
+		crf = *j.EncodeCRF
+	}
+
+	switch j.Status {
+	case "queued", "running":
+		rate, source, samples := media.ResolveEncodeRate(j.ProfileID, preset, crf, lookup)
+		if est := media.PredictedEncodeSeconds(rate, j.DurationSeconds, j.Width, j.Height); est > 0 {
+			dto.EstimatedDurationSeconds = &est
+			dto.EstimateSource = string(source)
+			if samples > 0 {
+				dto.EstimateSampleCount = &samples
+			}
+		}
+	case "completed":
+		if j.StartedAt != nil && j.CompletedAt != nil && *j.CompletedAt > *j.StartedAt {
+			elapsed := *j.CompletedAt - *j.StartedAt
+			dto.EncodeDurationSeconds = &elapsed
+		}
+	}
+
+	return dto
 }

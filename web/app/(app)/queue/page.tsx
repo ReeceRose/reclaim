@@ -15,11 +15,22 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type Job, type VerificationResult } from "@/lib/api";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  api,
+  type Job,
+  type Profile,
+  type VerificationResult,
+} from "@/lib/api";
 import {
   baseName,
   dirName,
   formatBytes,
+  formatDurationCompact,
   relativeTime,
   windowInfo,
 } from "@/lib/format";
@@ -29,6 +40,67 @@ import {
 function jobName(job: Job): string {
   const path = job.source_path ?? job.output_path;
   return path ? baseName(path) : `File #${job.media_file_id}`;
+}
+
+function encodeSettingsLabel(job: Job): string {
+  const preset = job.encode_preset ?? "medium";
+  const crf = job.encode_crf ?? 26;
+  return `libx265 · CRF ${crf} · preset ${preset}`;
+}
+
+function estimateTooltip(job: Job, profileName?: string): string | undefined {
+  if (job.estimate_source === "learned_profile") return undefined;
+  const preset = job.encode_preset ?? "medium";
+  const crf = job.encode_crf ?? 26;
+  const n = job.estimate_sample_count;
+  switch (job.estimate_source) {
+    case "learned_preset_crf":
+      return `Based on ${n} jobs at ${preset}/CRF ${crf}`;
+    case "learned_preset":
+      return `Based on ${n} jobs at preset ${preset}`;
+    case "learned_global":
+      return `Based on ${n} completed jobs on this instance`;
+    case "seed":
+      return profileName
+        ? `Conservative estimate for ${preset}/CRF ${crf} — ${profileName} has no encode history yet`
+        : `Conservative estimate for ${preset}/CRF ${crf} until enough jobs complete`;
+    default:
+      return undefined;
+  }
+}
+
+function EstimateLine({
+  job,
+  profileName,
+}: {
+  job: Job;
+  profileName?: string;
+}) {
+  const est = job.estimated_duration_seconds;
+  if (!est || est <= 0) return null;
+  const tip = estimateTooltip(job, profileName);
+  const line = (
+    <span className="text-[0.74rem] text-muted-dim font-mono mt-0.5 truncate">
+      {formatBytes(job.original_size_bytes)} · ~{formatDurationCompact(est)}{" "}
+      estimated
+      {job.estimate_source === "seed" && (
+        <Badge className="ml-1.5 text-[0.62rem] font-bold tracking-widest text-brand bg-brand-soft border-brand-line rounded-[5px] uppercase align-middle">
+          estimate
+        </Badge>
+      )}
+    </span>
+  );
+  if (!tip) return line;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="block cursor-help">{line}</span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-xs text-xs">
+        {tip}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 function VerifyChecks({ json }: { json: string | null }) {
@@ -125,6 +197,14 @@ function QueueContent() {
     queryFn: api.settings,
   });
 
+  const { data: profilesData } = useSuspenseQuery({
+    queryKey: ["profiles"],
+    queryFn: api.profiles,
+  });
+  const profileByID = new Map<number, Profile>(
+    (profilesData.items ?? []).map((p) => [p.id, p]),
+  );
+
   const cancelMutation = useMutation({
     mutationFn: (id: number) => api.cancelJob(id),
     onSuccess: () => {
@@ -164,6 +244,18 @@ function QueueContent() {
   const livePercent = runningJob
     ? (progressMap[runningJob.id] ?? runningJob.progress_percent)
     : 0;
+  const runningElapsed = runningJob?.started_at
+    ? Math.floor(Date.now() / 1000) - runningJob.started_at
+    : 0;
+  const runningRemaining =
+    runningJob && runningElapsed >= 0
+      ? livePercent >= 3
+        ? Math.round((runningElapsed * (100 - livePercent)) / livePercent)
+        : Math.max(
+            (runningJob.estimated_duration_seconds ?? 0) - runningElapsed,
+            0,
+          )
+      : 0;
   const win = windowInfo(
     settingsData.encode_window_start,
     settingsData.encode_window_end,
@@ -208,7 +300,7 @@ function QueueContent() {
                 Encoding
               </span>
               <span className="text-muted-fg text-[0.8rem]">
-                libx265 · CRF 26 · preset medium
+                {encodeSettingsLabel(runningJob)}
               </span>
             </div>
             <Link
@@ -236,7 +328,12 @@ function QueueContent() {
               />
             </div>
             <div className="flex justify-between text-[0.8rem] text-muted-fg">
-              <span>{livePercent}%</span>
+              <span>
+                {livePercent}%
+                {runningRemaining > 0 && (
+                  <> · ~{formatDurationCompact(runningRemaining)} remaining</>
+                )}
+              </span>
               {runningJob.original_size_bytes > 0 && (
                 <span className="font-mono">
                   {formatBytes(runningJob.original_size_bytes)} → est.{" "}
@@ -255,6 +352,17 @@ function QueueContent() {
           <>
             <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-3">
               Queued · {queued.length}
+              {jobsAll.queue_total_estimated_seconds != null &&
+                jobsAll.queue_total_estimated_seconds > 0 && (
+                  <>
+                    {" "}
+                    · ~
+                    {formatDurationCompact(
+                      jobsAll.queue_total_estimated_seconds,
+                    )}{" "}
+                    total
+                  </>
+                )}
             </div>
             {queued.map((job) => (
               <div
@@ -271,9 +379,10 @@ function QueueContent() {
                   <div className="font-semibold text-[0.88rem] truncate">
                     {jobName(job)}
                   </div>
-                  <div className="text-[0.74rem] text-muted-dim font-mono mt-0.5 truncate">
-                    {formatBytes(job.original_size_bytes)}
-                  </div>
+                  <EstimateLine
+                    job={job}
+                    profileName={profileByID.get(job.profile_id)?.name}
+                  />
                 </Link>
                 {job.forced ? (
                   <Badge className="text-[0.72rem] rounded-[20px] border-transparent text-brand bg-brand-soft shrink-0">
@@ -353,6 +462,21 @@ function QueueContent() {
                       )}
                     </div>
                     <VerifyChecks json={job.verification_result} />
+                    {!failed && job.encode_duration_seconds != null && (
+                      <div className="text-[0.72rem] text-muted-dim mt-1">
+                        took{" "}
+                        {formatDurationCompact(job.encode_duration_seconds)}
+                        {job.encode_preset && (
+                          <>
+                            {" "}
+                            · {job.encode_preset}
+                            {job.encode_crf != null && (
+                              <> · CRF {job.encode_crf}</>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
                     {failed && job.output_path && (
                       <div
                         className="text-xs text-red mt-2 rounded-[9px] px-[11px] py-2 border"

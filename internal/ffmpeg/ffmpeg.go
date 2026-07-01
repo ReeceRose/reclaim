@@ -40,16 +40,13 @@ func (e *EncodeError) Error() string {
 	return fmt.Sprintf("ffmpeg %q: %s", e.Path, e.Msg)
 }
 
-// Encode runs libx265 against opts.InputPath, writing to opts.OutputPath. Video
-// is re-encoded; audio and subtitles are copied untouched so nothing is
-// silently dropped on remux. Progress is parsed from `-progress pipe:1` and
-// reported via onProgress (may be nil). Cancelling ctx kills the whole ffmpeg
-// process group, not just the parent — ffmpeg can spawn children.
-func Encode(ctx context.Context, opts Options, onProgress ProgressFunc) error {
+// encodeArgs builds the ffmpeg argv for one encode.
+func encodeArgs(opts Options) []string {
 	args := []string{
 		"-nostdin",
 		"-y",
 		"-i", opts.InputPath,
+		"-map", "0",
 		"-c:v", "libx265",
 		"-crf", strconv.Itoa(opts.CRF),
 		"-preset", opts.Preset,
@@ -57,8 +54,17 @@ func Encode(ctx context.Context, opts Options, onProgress ProgressFunc) error {
 		"-c:s", "copy",
 	}
 	args = append(args, opts.ExtraArgs...)
-	// Progress on stdout, no noisy stats on stderr; output last.
 	args = append(args, "-progress", "pipe:1", "-nostats", opts.OutputPath)
+	return args
+}
+
+// Encode runs libx265 against opts.InputPath, writing to opts.OutputPath. Video
+// is re-encoded; audio and subtitles are copied untouched so nothing is
+// silently dropped on remux. Progress is parsed from `-progress pipe:1` and
+// reported via onProgress (may be nil). Cancelling ctx kills the whole ffmpeg
+// process group, not just the parent — ffmpeg can spawn children.
+func Encode(ctx context.Context, opts Options, onProgress ProgressFunc) error {
+	args := encodeArgs(opts)
 
 	if ctx == nil {
 		ctx = context.Background()

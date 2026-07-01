@@ -97,7 +97,7 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 3. `store.Open()` — opens SQLite (WAL mode, two pools: 1 writer / 25 readers), runs goose migrations, bootstraps defaults
 4. `config.NewLive(cfg)` — creates the runtime-mutable settings holder (encode window, scan interval, probe concurrency); read by the scanner and worker on every use so PUT `/api/settings` takes effect without a restart
 5. `scanner.New()` + `sc.Start(ctx)` — runs startup scan, starts fsnotify watcher, schedules periodic rescans
-6. `api.New()` — wires routes on Echo v5; full route list: `/healthz`, `/api/{setup,login,logout,session}`, `/api/{stats,files,candidates}{,/grouped,/grouped/seasons,/grouped/episodes}`, `/api/files/:id`, `/api/scan{,/full}`, `/api/profiles{,/:id}`, `/api/jobs{,/:id/cancel,/:id/force}`, `/api/events{,/:id}`, `/api/settings{,/credentials}`, `/api/metadata{,/search,/refresh}`, `/api/ws`
+6. `api.New()` — wires routes on Echo v5; full route list: `/healthz`, `/api/{setup,login,logout,session}`, `/api/{stats,files,candidates}{,/grouped,/grouped/seasons,/grouped/episodes}`, `/api/files/:id`, `/api/scan{,/full}`, `/api/profiles{,/:id}`, `/api/jobs{,/:id/cancel,/:id/force,/:id}`, `/api/events{,/:id}`, `/api/settings{,/credentials}`, `/api/metadata{,/search,/refresh}`, `/api/ws`
 7. `worker.New()` + `wk.Run(ctx)` — encode loop; polls for queued jobs inside the window
 
 ### Package map
@@ -110,7 +110,7 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 | `internal/worker` | Encode loop: claim job → ffmpeg → verify → atomic swap |
 | `internal/ffprobe` | Thin `ffprobe -v quiet -print_format json -show_streams -show_format` wrapper |
 | `internal/ffmpeg` | Thin `ffmpeg` wrapper with progress parsing |
-| `internal/media` | Fingerprinting (sha256 of size + first/last 64 KB) and savings estimation |
+| `internal/media` | Fingerprinting (sha256 of size + first/last 64 KB), savings estimation (`savings.go`), and encode-time estimation (`encodetime.go`) |
 | `internal/jobs` | Pure state machine — legal transitions for the job lifecycle |
 | `internal/api` | Echo v5 HTTP server, WebSocket hub, auth middleware |
 | `internal/startup` | Pre-flight checks (binaries, mounts) |
@@ -145,7 +145,7 @@ Key frontend pieces:
 
 The frontend uses the **Next.js App Router** (`web/app/`). **Important:** `web/AGENTS.md` warns that this is Next.js 16 with breaking changes from prior versions. Read `node_modules/next/dist/docs/` before writing Next.js code.
 
-`docs/API.md` is the authoritative REST API reference.
+`docs/API.md` is the authoritative REST API reference. Encode time estimation design: `docs/ENCODE-TIME-PLAN.md`.
 
 ### WebSocket events
 
@@ -158,4 +158,8 @@ The hub broadcasts: `job_started`, `job_progress` (with `percent`), `job_complet
 `GET /api/files` is the Library view — same filters plus `status` (`active`|`missing`) and `candidate_state` (`candidate`|`already_hevc`|`probe_failed`|`unknown_codec`|`queued`|`completed`|`missing`). Sort options: `path_asc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`.
 
 Pagination: the default `savings_desc` sort uses keyset cursors (`after_savings` + `after_id`) for gap-free infinite scroll over large libraries. All other sorts fall back to `offset` pagination.
+
+### Encode time estimates
+
+Per-job encode duration estimates on the Queue page learn from completed jobs on this instance, bucketed by **profile first** with fallbacks (preset+CRF → preset → global → seed rates). Settings are snapshotted on the job row at queue time (`encode_preset`, `encode_crf`, `encode_extra_args`, migration `00009`); the worker still reads the live profile when encoding. `GET /api/jobs` returns `estimated_duration_seconds` / `estimate_source` for queued and running jobs, `encode_duration_seconds` for completed jobs, and `queue_total_estimated_seconds` on the first page. See `docs/ENCODE-TIME-PLAN.md` and `docs/API.md` § Jobs.
 

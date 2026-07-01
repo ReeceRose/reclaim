@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"reclaim/internal/jobs"
+	"reclaim/internal/media"
 )
 
 type TranscodeJob struct {
@@ -24,10 +25,19 @@ type TranscodeJob struct {
 	ErrorMessage       *string
 	VerificationResult *string
 	Forced             bool
+	// Snapshot of encode settings at queue time — used for learning, not for
+	// the worker (which reads the live profile).
+	EncodePreset    *string
+	EncodeCRF       *int
+	EncodeExtraArgs *string
 	// SourcePath is the original media file path, populated only by the
 	// path-joining list query (ListAllWithPath). It is nil elsewhere because
 	// the file row may have been deleted after the job ran.
 	SourcePath *string
+	// Media probe fields populated only by ListWithPath / jobWithPathQ.
+	DurationSeconds *float64
+	Width           *int
+	Height          *int
 }
 
 type Jobs struct {
@@ -36,9 +46,12 @@ type Jobs struct {
 
 func (j *Jobs) Create(ctx context.Context, job *TranscodeJob) (int64, error) {
 	res, err := j.w.ExecContext(ctx, `
-		INSERT INTO transcode_jobs (media_file_id, profile_id, status, queued_at, original_size_bytes)
-		VALUES (?, ?, ?, ?, ?)`,
+		INSERT INTO transcode_jobs (
+			media_file_id, profile_id, status, queued_at, original_size_bytes,
+			encode_preset, encode_crf, encode_extra_args
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.MediaFileID, job.ProfileID, job.Status, job.QueuedAt, job.OriginalSizeBytes,
+		job.EncodePreset, job.EncodeCRF, job.EncodeExtraArgs,
 	)
 	if err != nil {
 		return 0, err
@@ -518,7 +531,8 @@ func (j *Jobs) ListInterrupted(ctx context.Context) ([]TranscodeJob, error) {
 const jobQ = `
 	SELECT id, media_file_id, profile_id, status, queued_at, started_at, completed_at,
 		original_size_bytes, output_size_bytes, progress_percent, output_path,
-		error_message, verification_result, forced
+		error_message, verification_result, forced,
+		encode_preset, encode_crf, encode_extra_args
 	FROM transcode_jobs`
 
 func scanJob(s rowScanner) (*TranscodeJob, error) {
@@ -527,7 +541,7 @@ func scanJob(s rowScanner) (*TranscodeJob, error) {
 		&j.ID, &j.MediaFileID, &j.ProfileID, &j.Status, &j.QueuedAt,
 		&j.StartedAt, &j.CompletedAt, &j.OriginalSizeBytes, &j.OutputSizeBytes,
 		&j.ProgressPercent, &j.OutputPath, &j.ErrorMessage, &j.VerificationResult,
-		&j.Forced,
+		&j.Forced, &j.EncodePreset, &j.EncodeCRF, &j.EncodeExtraArgs,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -544,7 +558,9 @@ func scanJob(s rowScanner) (*TranscodeJob, error) {
 const jobWithPathQ = `
 	SELECT j.id, j.media_file_id, j.profile_id, j.status, j.queued_at, j.started_at, j.completed_at,
 		j.original_size_bytes, j.output_size_bytes, j.progress_percent, j.output_path,
-		j.error_message, j.verification_result, j.forced, m.path
+		j.error_message, j.verification_result, j.forced,
+		j.encode_preset, j.encode_crf, j.encode_extra_args,
+		m.path, m.duration_seconds, m.width, m.height
 	FROM transcode_jobs j
 	LEFT JOIN media_files m ON m.id = j.media_file_id`
 
@@ -612,13 +628,149 @@ func (j *Jobs) LearnedRatios(ctx context.Context, minSamples int) (map[string]Le
 	return out, rows.Err()
 }
 
+const (
+	LearnedEncodeProfileMinSamples   = 3
+	LearnedEncodePresetCRFMinSamples = 5
+	LearnedEncodePresetMinSamples    = 5
+	LearnedEncodeGlobalMinSamples    = 10
+)
+
+// LearnedEncodeRates aggregates normalized encode speeds from completed jobs,
+// bucketed for the profile-first fallback cascade in media.ResolveEncodeRate.
+func (j *Jobs) LearnedEncodeRates(ctx context.Context) (*media.EncodeRateLookup, error) {
+	rows, err := j.r.QueryContext(ctx, `
+		SELECT j.profile_id,
+		       COALESCE(j.encode_preset, p.preset),
+		       COALESCE(j.encode_crf, p.crf),
+		       j.started_at,
+		       j.completed_at,
+		       m.duration_seconds,
+		       m.width,
+		       m.height
+		FROM transcode_jobs j
+		JOIN media_files m ON m.id = j.media_file_id
+		LEFT JOIN transcode_profiles p ON p.id = j.profile_id
+		WHERE j.status = 'completed'
+		  AND j.started_at IS NOT NULL
+		  AND j.completed_at IS NOT NULL
+		  AND j.completed_at > j.started_at
+		  AND m.duration_seconds IS NOT NULL
+		  AND m.duration_seconds > 0
+		  AND COALESCE(j.encode_preset, p.preset) IS NOT NULL
+		  AND COALESCE(j.encode_crf, p.crf) IS NOT NULL`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type bucket struct {
+		sum   float64
+		count int
+	}
+
+	byProfile := make(map[int64]*bucket)
+	byPresetCRF := make(map[string]*bucket)
+	byPreset := make(map[string]*bucket)
+	var global bucket
+
+	add := func(m map[int64]*bucket, key int64, rate float64) {
+		b, ok := m[key]
+		if !ok {
+			b = &bucket{}
+			m[key] = b
+		}
+		b.sum += rate
+		b.count++
+	}
+	addStr := func(m map[string]*bucket, key string, rate float64) {
+		b, ok := m[key]
+		if !ok {
+			b = &bucket{}
+			m[key] = b
+		}
+		b.sum += rate
+		b.count++
+	}
+
+	for rows.Next() {
+		var profileID int64
+		var preset string
+		var crf int
+		var startedAt, completedAt int64
+		var durationSeconds float64
+		var width, height sql.NullInt64
+		if err := rows.Scan(&profileID, &preset, &crf, &startedAt, &completedAt,
+			&durationSeconds, &width, &height); err != nil {
+			return nil, err
+		}
+		var w, h *int
+		if width.Valid {
+			v := int(width.Int64)
+			w = &v
+		}
+		if height.Valid {
+			v := int(height.Int64)
+			h = &v
+		}
+		elapsed := completedAt - startedAt
+		rate, ok := media.NormalizedEncodeRate(elapsed, durationSeconds, w, h)
+		if !ok {
+			continue
+		}
+		add(byProfile, profileID, rate)
+		addStr(byPresetCRF, media.PresetCRFKey(preset, crf), rate)
+		addStr(byPreset, strings.ToLower(preset), rate)
+		global.sum += rate
+		global.count++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	toRate := func(b *bucket, min int) (media.LearnedEncodeRate, bool) {
+		if b == nil || b.count < min {
+			return media.LearnedEncodeRate{}, false
+		}
+		return media.LearnedEncodeRate{
+			Rate:        media.ClampEncodeRate(b.sum / float64(b.count)),
+			SampleCount: b.count,
+		}, true
+	}
+
+	lookup := &media.EncodeRateLookup{
+		ByProfileID: make(map[int64]media.LearnedEncodeRate),
+		ByPresetCRF: make(map[string]media.LearnedEncodeRate),
+		ByPreset:    make(map[string]media.LearnedEncodeRate),
+	}
+	for id, b := range byProfile {
+		if lr, ok := toRate(b, LearnedEncodeProfileMinSamples); ok {
+			lookup.ByProfileID[id] = lr
+		}
+	}
+	for key, b := range byPresetCRF {
+		if lr, ok := toRate(b, LearnedEncodePresetCRFMinSamples); ok {
+			lookup.ByPresetCRF[key] = lr
+		}
+	}
+	for key, b := range byPreset {
+		if lr, ok := toRate(b, LearnedEncodePresetMinSamples); ok {
+			lookup.ByPreset[key] = lr
+		}
+	}
+	if lr, ok := toRate(&global, LearnedEncodeGlobalMinSamples); ok {
+		lookup.Global = &lr
+	}
+	return lookup, nil
+}
+
 func scanJobWithPath(s rowScanner) (*TranscodeJob, error) {
 	var j TranscodeJob
 	err := s.Scan(
 		&j.ID, &j.MediaFileID, &j.ProfileID, &j.Status, &j.QueuedAt,
 		&j.StartedAt, &j.CompletedAt, &j.OriginalSizeBytes, &j.OutputSizeBytes,
 		&j.ProgressPercent, &j.OutputPath, &j.ErrorMessage, &j.VerificationResult,
-		&j.Forced, &j.SourcePath,
+		&j.Forced, &j.EncodePreset, &j.EncodeCRF, &j.EncodeExtraArgs,
+		&j.SourcePath, &j.DurationSeconds, &j.Width, &j.Height,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound

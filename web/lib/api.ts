@@ -119,9 +119,6 @@ export interface MediaFile {
   vote_count?: number | null;
   release_year?: number | null;
   runtime_mins?: number | null;
-  // Compatibility-engine fields — only populated by api.file() (file detail).
-  streams?: StreamInfo[];
-  compatibility?: CompatibilityInfo[];
 }
 
 export type CandidateState =
@@ -152,6 +149,32 @@ export interface FilesPage {
 export interface Episode extends MediaFile {
   season: number;
   episode: number | null;
+}
+
+export interface SeasonGroup {
+  season: number;
+  file_count: number;
+  candidate_count: number;
+  total_bytes: number;
+  predicted_savings_bytes: number;
+  episode_ids: number[];
+  eligible_ids: number[];
+}
+
+export interface SeriesGroup {
+  title: string;
+  library_type: string;
+  file_count: number;
+  candidate_count: number;
+  season_count: number;
+  total_bytes: number;
+  predicted_savings_bytes: number;
+  seasons: SeasonGroup[];
+}
+
+export interface GroupedCandidates {
+  series: SeriesGroup[];
+  total_count?: number;
 }
 
 export interface LibrarySeasonGroup {
@@ -223,7 +246,6 @@ export interface Settings {
   movies_path: string;
   tv_path: string;
   tmdb_configured?: boolean;
-  default_client_profile: string;
 }
 
 export interface MetadataSearchResult {
@@ -319,104 +341,6 @@ export interface ScanProgress {
   errors: number;
 }
 
-export type BackfillAction = "full_scan" | "inline";
-
-export interface BackfillTask {
-  key: string;
-  label: string;
-  action: BackfillAction;
-  needed: boolean;
-  running: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// Compatibility ("Direct play")
-// ---------------------------------------------------------------------------
-
-export type CompatibilitySeverity = "hard" | "advisory";
-
-export type CompatibilityAction =
-  | "none"
-  | "reencode_hevc"
-  | "remux"
-  | "audio_transcode"
-  | "manual";
-
-export interface CompatibilityReason {
-  code: string;
-  severity: CompatibilitySeverity;
-  stream?: number | null;
-  message: string;
-}
-
-export interface CompatibilityInfo {
-  client_profile: string;
-  direct_play_predicted: boolean;
-  risk_score: number;
-  reasons: CompatibilityReason[];
-  recommended_action: CompatibilityAction;
-}
-
-export interface StreamInfo {
-  index: number;
-  codec_type: "video" | "audio" | "subtitle";
-  codec_name: string | null;
-  profile: string | null;
-  channels: number | null;
-  language: string | null;
-  is_default: boolean;
-}
-
-export interface CompatibilityProfile {
-  id: string;
-  name: string;
-  description: string;
-}
-
-// CompatibilityItem's `compatibility` is a single verdict for the requested
-// profile (GET /api/compatibility), unlike MediaFile.compatibility which
-// holds one verdict per built-in profile (GET /api/files/:id) — Omit +
-// re-add to avoid the type conflict rather than widening MediaFile's field.
-export type CompatibilityItem = Omit<MediaFile, "compatibility"> & {
-  compatibility: CompatibilityInfo;
-};
-
-export interface CompatibilityKeysetCursor {
-  after_risk: number;
-  after_id: number;
-}
-
-export interface CompatibilityPage {
-  items: CompatibilityItem[];
-  next_cursor?: CompatibilityKeysetCursor;
-  total_count?: number;
-}
-
-export interface CompatibilityReasonCount {
-  code: string;
-  file_count: number;
-}
-
-export interface CompatibilityStats {
-  client_profile: string;
-  total_files: number;
-  direct_play_count: number;
-  transcode_risk_count: number;
-  savings_overlap_count: number;
-  by_reason: CompatibilityReasonCount[];
-}
-
-export interface CompatibilityFilters {
-  client_profile?: string;
-  sort?: string;
-  direct_play?: "false" | "true" | "all";
-  reason?: string;
-  library_type?: string;
-  video_codec?: string;
-  height?: string;
-  search?: string;
-}
-
 // ---------------------------------------------------------------------------
 // Query params
 // ---------------------------------------------------------------------------
@@ -493,13 +417,29 @@ export const api = {
       after_id?: number;
     },
   ) => request<CandidatesPage>("GET", `/api/candidates${buildQuery(filters)}`),
+  groupedCandidates: (
+    filters: CandidateFilters & { limit?: number; offset?: number },
+  ) =>
+    request<GroupedCandidates>(
+      "GET",
+      `/api/candidates/grouped${buildQuery(filters)}`,
+    ),
+  groupedSeasonEpisodes: (
+    filters: CandidateFilters & {
+      series: string;
+      season: number;
+      limit?: number;
+      offset?: number;
+    },
+  ) =>
+    request<GroupedSeasonEpisodes>(
+      "GET",
+      `/api/candidates/grouped/episodes${buildQuery(filters)}`,
+    ),
   file: (id: number) => request<MediaFile>("GET", `/api/files/${id}`),
 
   // Scanning
   scan: () => request<{ started: boolean; kind: string }>("POST", "/api/scan"),
-  scanFull: () =>
-    request<{ started: boolean; kind: string }>("POST", "/api/scan/full"),
-  backfill: () => request<{ tasks: BackfillTask[] }>("GET", "/api/backfill"),
 
   // Profiles
   profiles: () => request<{ items: Profile[] }>("GET", "/api/profiles"),
@@ -510,22 +450,10 @@ export const api = {
   deleteProfile: (id: number) => request<void>("DELETE", `/api/profiles/${id}`),
 
   // Jobs
-  //
-  // `opts.source: "compatibility"` queues from the Direct-play view (Phase 2,
-  // docs/COMPATIBILITY PLAN.md §8): the server validates each file's stored
-  // verdict for `opts.clientProfile` recommends reencode_hevc, instead of
-  // the default "not already HEVC" savings rule.
-  createJobs: (
-    fileIds: number[],
-    profileId?: number,
-    opts?: { source?: "compatibility"; clientProfile?: string },
-  ) =>
+  createJobs: (fileIds: number[], profileId?: number) =>
     request<CreateJobsResult>("POST", "/api/jobs", {
       file_ids: fileIds,
       profile_id: profileId ?? null,
-      ...(opts?.source
-        ? { source: opts.source, client_profile: opts.clientProfile }
-        : {}),
     }),
   jobs: (params?: { status?: string; limit?: number; offset?: number }) =>
     request<{ items: Job[]; total_count?: number }>(
@@ -569,34 +497,9 @@ export const api = {
         | "scan_interval"
         | "scan_anchor"
         | "probe_concurrency"
-        | "default_client_profile"
       >
     >,
   ) => request<Settings>("PUT", "/api/settings", s),
-
-  // Compatibility ("Direct play")
-  compatibilityProfiles: () =>
-    request<{ profiles: CompatibilityProfile[] }>(
-      "GET",
-      "/api/compatibility/profiles",
-    ),
-  compatibility: (
-    filters: CompatibilityFilters & {
-      limit?: number;
-      offset?: number;
-      after_risk?: number;
-      after_id?: number;
-    },
-  ) =>
-    request<CompatibilityPage>(
-      "GET",
-      `/api/compatibility${buildQuery(filters)}`,
-    ),
-  compatibilityStats: (clientProfile?: string) =>
-    request<CompatibilityStats>(
-      "GET",
-      `/api/compatibility/stats${buildQuery({ client_profile: clientProfile })}`,
-    ),
 
   // Metadata
   getMetadata: (key: string) =>

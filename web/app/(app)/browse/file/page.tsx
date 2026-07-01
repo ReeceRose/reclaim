@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { Suspense, useState } from "react";
 import { toast } from "sonner";
 import { BROWSE_ROUTES } from "@/app/(app)/browse/browse";
-import { PredictedPlaybackSection } from "@/components/compatibility/predicted-playback-section";
 import { StateBadge } from "@/components/media/candidate-state";
 import { QueueConfirmDialog } from "@/components/media/queue-confirm-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -250,13 +249,6 @@ function FilePageContent() {
   const [refreshing, setRefreshing] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
-  // Set only when the queue dialog was opened from the "Queue re-encode"
-  // button in the Predicted Playback section (Phase 2, docs/COMPATIBILITY
-  // PLAN.md §10) — the header "Queue" button leaves this null, which keeps
-  // the default savings-eligibility rule on the server.
-  const [queueClientProfile, setQueueClientProfile] = useState<string | null>(
-    null,
-  );
 
   const {
     data: file,
@@ -286,15 +278,11 @@ function FilePageContent() {
   const queueMutation = useMutation({
     mutationFn: (profileId: number | null) =>
       // biome-ignore lint/style/noNonNullAssertion: mutation is only triggered from UI gated on a valid id
-      api.createJobs([id!], profileId ?? undefined, {
-        source: queueClientProfile ? "compatibility" : undefined,
-        clientProfile: queueClientProfile ?? undefined,
-      }),
+      api.createJobs([id!], profileId ?? undefined),
     onSuccess: () => {
       toast.success("Job queued");
       void queryClient.invalidateQueries({ queryKey: ["jobs"] });
       void queryClient.invalidateQueries({ queryKey: ["candidates"] });
-      void queryClient.invalidateQueries({ queryKey: ["compatibility"] });
       void queryClient.invalidateQueries({ queryKey: ["file", id] });
     },
     onError: () => toast.error("Failed to queue job"),
@@ -428,10 +416,7 @@ function FilePageContent() {
               {file.candidate_state === "candidate" && (
                 <Button
                   size="sm"
-                  onClick={() => {
-                    setQueueClientProfile(null);
-                    setQueueOpen(true);
-                  }}
+                  onClick={() => setQueueOpen(true)}
                   className="h-7 text-xs gap-1.5"
                   style={{
                     background:
@@ -629,17 +614,6 @@ function FilePageContent() {
           <DetailSection title="Container">
             <DetailRow label="Format" value={file.container_format} mono />
           </DetailSection>
-
-          <PredictedPlaybackSection
-            compatibility={file.compatibility ?? []}
-            streams={file.streams ?? []}
-            candidateState={file.candidate_state}
-            predictedSavingsBytes={file.predicted_savings_bytes}
-            onQueueReencode={(clientProfile) => {
-              setQueueClientProfile(clientProfile);
-              setQueueOpen(true);
-            }}
-          />
 
           <DetailSection title="File">
             <DetailRow label="Modified" value={relativeTime(file.mtime)} />

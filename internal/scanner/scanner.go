@@ -17,7 +17,6 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
-	"reclaim/internal/compatibility"
 	"reclaim/internal/config"
 	"reclaim/internal/ffprobe"
 	"reclaim/internal/media"
@@ -39,7 +38,6 @@ const (
 	TriggerStartup   = "startup"
 	TriggerScheduled = "scheduled"
 	TriggerManual    = "manual"
-	TriggerBackfill  = "backfill"
 )
 
 // Scan kinds sent in scan_started WS payloads and POST /api/scan responses.
@@ -626,15 +624,6 @@ func (s *Scanner) probeAndStore(
 		f.ContainerFormat = result.ContainerFormat
 		f.IsAlreadyHEVC = result.IsAlreadyHEVC
 		f.LastProbedAt = &now
-		f.PixelFormat = result.PixelFormat
-		f.VideoBitDepth = result.VideoBitDepth
-		f.ColorTransfer = result.ColorTransfer
-		f.ColorPrimaries = result.ColorPrimaries
-		f.AudioSampleRate = result.AudioSampleRate
-		f.SubtitleCodec = result.SubtitleCodec
-		f.ProbeExtraJSON = result.FormatExtraJSON
-		f.DolbyVisionProfile = result.DolbyVisionProfile
-		f.DolbyVisionLevel = result.DolbyVisionLevel
 		// Compute the savings estimate at probe time and store it so the
 		// candidate ranking and dashboard never have to recompute it per query.
 		f.PredictedSavingsBytes = media.PredictedSavingsBytes(
@@ -656,15 +645,11 @@ func (s *Scanner) probeAndStore(
 					slog.Error("scanner: update probe (resurrected)", "path", path, "err", uerr)
 					return fp, -1, false
 				}
-				s.persistStreams(ctx, path, prior.ID, result)
-				s.persistCompatibility(ctx, path, prior.ID, result)
 				return fp, prior.ID, false
 			}
 			slog.Error("scanner: insert", "path", path, "err", err)
 			return fp, -1, true
 		}
-		s.persistStreams(ctx, path, id, result)
-		s.persistCompatibility(ctx, path, id, result)
 		return fp, id, true
 	}
 
@@ -673,117 +658,7 @@ func (s *Scanner) probeAndStore(
 		slog.Error("scanner: update probe", "path", path, "err", err)
 		return fp, -1, false
 	}
-	s.persistStreams(ctx, path, existing.ID, result)
-	s.persistCompatibility(ctx, path, existing.ID, result)
 	return fp, existing.ID, false
-}
-
-// persistStreams replaces the media_streams rows for fileID from a fresh
-// probe result. Skipped when the probe failed (result == nil) so a
-// transient ffprobe error doesn't wipe out previously-known stream data.
-// Failures are logged, not returned — stream data is compatibility-engine-only and
-// must never block indexing (probe_error / candidate ranking still work
-// without it).
-func (s *Scanner) persistStreams(ctx context.Context, path string, fileID int64, result *ffprobe.Result) {
-	if result == nil {
-		return
-	}
-	streams := make([]store.MediaStream, 0, len(result.Streams))
-	for _, si := range result.Streams {
-		ms := store.MediaStream{
-			StreamIndex:        si.Index,
-			CodecType:          si.CodecType,
-			DispositionDefault: si.DispositionDefault,
-		}
-		if si.CodecName != "" {
-			codec := si.CodecName
-			ms.CodecName = &codec
-		}
-		if si.Profile != "" {
-			profile := si.Profile
-			ms.Profile = &profile
-		}
-		if si.Channels > 0 {
-			ch := si.Channels
-			ms.Channels = &ch
-		}
-		if si.Language != "" {
-			lang := si.Language
-			ms.Language = &lang
-		}
-		if len(si.Extra) > 0 {
-			if b, err := json.Marshal(si.Extra); err == nil {
-				extra := string(b)
-				ms.ExtraJSON = &extra
-			}
-		}
-		streams = append(streams, ms)
-	}
-	if err := s.store.Streams.ReplaceForFile(ctx, fileID, streams); err != nil {
-		slog.Warn("scanner: replace streams", "path", path, "err", err)
-	}
-}
-
-// persistCompatibility evaluates result against every built-in client
-// profile and stores the verdicts in media_compatibility — see
-// docs/COMPATIBILITY PLAN.md §9 "Scanner hook". Skipped when the probe
-// failed (result == nil), same as persistStreams: a transient ffprobe error
-// must not overwrite a file's last-known-good compatibility verdicts.
-// Failures are logged, not returned — compatibility data must never block
-// indexing.
-func (s *Scanner) persistCompatibility(ctx context.Context, path string, fileID int64, result *ffprobe.Result) {
-	if result == nil {
-		return
-	}
-	input := compatibilityEvalInputFromProbe(result)
-	profiles := compatibility.BuiltinProfiles()
-	verdicts := make(map[string]compatibility.Verdict, len(profiles))
-	for _, p := range profiles {
-		verdicts[p.ID] = compatibility.Evaluate(input, p)
-	}
-	if err := s.store.Media.UpsertCompatibility(ctx, fileID, verdicts); err != nil {
-		slog.Warn("scanner: upsert compatibility", "path", path, "err", err)
-	}
-}
-
-// compatibilityEvalInputFromProbe maps a ffprobe.Result onto
-// compatibility.EvalInput. internal/compatibility deliberately depends on
-// neither internal/ffprobe nor internal/store (store depends on
-// compatibility, for UpsertCompatibility), so this mapping lives here, on
-// the one caller that already imports both. The primary video stream's bit
-// depth comes from Result.VideoBitDepth (already derived from pix_fmt)
-// since ffprobe.StreamInfo doesn't carry per-stream bit depth —
-// compatibility.Evaluate only consults the first video stream anyway.
-func compatibilityEvalInputFromProbe(result *ffprobe.Result) compatibility.EvalInput {
-	input := compatibility.EvalInput{
-		DolbyVisionProfile: result.DolbyVisionProfile,
-	}
-	if result.ContainerFormat != nil {
-		input.ContainerFormat = *result.ContainerFormat
-	}
-	if result.ColorTransfer != nil {
-		input.ColorTransfer = *result.ColorTransfer
-	}
-
-	seenVideo := false
-	input.Streams = make([]compatibility.StreamInfo, 0, len(result.Streams))
-	for _, si := range result.Streams {
-		cs := compatibility.StreamInfo{
-			Index:     si.Index,
-			CodecType: si.CodecType,
-			CodecName: si.CodecName,
-			Profile:   si.Profile,
-			Channels:  si.Channels,
-		}
-		if si.CodecType == "video" && !seenVideo {
-			seenVideo = true
-			if result.VideoBitDepth != nil {
-				cs.BitDepth = *result.VideoBitDepth
-			}
-		}
-		input.Streams = append(input.Streams, cs)
-	}
-	return input
 }
 
 // Start launches the fsnotify watcher and scheduled rescan loops. Blocks until
@@ -1019,8 +894,6 @@ func scanTriggerLabel(trigger string) string {
 		return "Scheduled"
 	case TriggerStartup:
 		return "Startup"
-	case TriggerBackfill:
-		return "Backfill"
 	default:
 		return trigger
 	}

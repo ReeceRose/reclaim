@@ -13,7 +13,6 @@ import (
 	_ "time/tzdata"
 
 	"reclaim/internal/api"
-	"reclaim/internal/backfill"
 	"reclaim/internal/config"
 	"reclaim/internal/metadata"
 	"reclaim/internal/scanner"
@@ -25,23 +24,12 @@ import (
 
 type scanBroadcaster struct {
 	*api.Hub
-	onScanCompleted func()
+	trigger func()
 }
 
 func (sb *scanBroadcaster) ScanCompleted(data map[string]any) {
 	sb.Hub.ScanCompleted(data)
-	sb.notifyScanFinished()
-}
-
-func (sb *scanBroadcaster) ScanFailed(errMsg string) {
-	sb.Hub.ScanFailed(errMsg)
-	sb.notifyScanFinished()
-}
-
-func (sb *scanBroadcaster) notifyScanFinished() {
-	if sb.onScanCompleted != nil {
-		sb.onScanCompleted()
-	}
+	sb.trigger()
 }
 
 func main() {
@@ -92,15 +80,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	backfillCoord := backfill.NewCoordinator(db, sc, nil)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	apiSrv := api.New(api.Deps{
 		Store:           db,
 		Scanner:         sc,
-		Backfill:        backfillCoord,
 		Live:            live,
 		MoviesPath:      cfg.MoviesPath,
 		TVPath:          cfg.TVPath,
@@ -111,22 +96,15 @@ func main() {
 	})
 
 	sc.SetBroadcaster(&scanBroadcaster{
-		Hub: apiSrv.Hub(),
-		onScanCompleted: func() {
-			metaFetcher.Trigger()
-			backfillCoord.OnScanCompleted()
-		},
+		Hub:     apiSrv.Hub(),
+		trigger: metaFetcher.Trigger,
 	})
 
 	wk := worker.New(db, live, apiSrv.Hub(), []string{cfg.MoviesPath, cfg.TVPath})
 	apiSrv.SetCanceller(wk)
 
 	var bg sync.WaitGroup
-	bg.Add(4)
-	go func() {
-		defer bg.Done()
-		backfillCoord.Start(ctx)
-	}()
+	bg.Add(3)
 	go func() {
 		defer bg.Done()
 		sc.Start(ctx)

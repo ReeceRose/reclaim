@@ -42,7 +42,6 @@ type MetadataFetcher interface {
 type Deps struct {
 	Store           *store.Store
 	Scanner         ScanTrigger
-	Backfill        BackfillCoordinator
 	Live            *config.Live
 	MoviesPath      string
 	TVPath          string
@@ -73,7 +72,6 @@ type Server struct {
 	loginLimiter *rateLimiter
 	canceller    JobCanceller
 	metaFetcher  MetadataFetcher
-	backfill     BackfillCoordinator
 }
 
 func New(d Deps) *Server {
@@ -89,7 +87,6 @@ func New(d Deps) *Server {
 		hub:          NewHub(),
 		loginLimiter: newRateLimiter(),
 		metaFetcher:  d.MetadataFetcher,
-		backfill:     d.Backfill,
 	}
 	if d.Store != nil {
 		s.auth = d.Store.Settings
@@ -159,13 +156,7 @@ func (s *Server) Handler() http.Handler {
 	api.GET("/candidates", s.handleCandidates)
 	api.GET("/files/:id", s.handleFileDetail)
 
-	// Compatibility ("Direct play").
-	api.GET("/compatibility/profiles", s.handleCompatibilityProfiles)
-	api.GET("/compatibility/stats", s.handleCompatibilityStats)
-	api.GET("/compatibility", s.handleCompatibility)
-
 	// Scanning.
-	api.GET("/backfill", s.handleBackfill)
 	api.POST("/scan", s.handleScan)
 	api.POST("/scan/full", s.handleFullScan)
 

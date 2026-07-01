@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"reclaim/internal/compatibility"
 	"reclaim/internal/config"
 	"reclaim/internal/scanner"
 	"reclaim/internal/store"
@@ -376,101 +375,6 @@ func TestCreateJobsEchoesResolvedSelection(t *testing.T) {
 	}
 	if pos := items[0].(map[string]any)["queue_position"].(float64); pos != 1 {
 		t.Errorf("queue_position = %v, want 1", pos)
-	}
-}
-
-// TestCreateJobsFromCompatibilitySourceValidatesRecommendedAction covers
-// docs/COMPATIBILITY PLAN.md §8 Phase 2: POST /api/jobs with
-// source="compatibility" must validate each file's stored verdict for the
-// given client_profile recommends reencode_hevc, rather than applying the
-// savings rule ("not already HEVC"). A file that's already HEVC but whose
-// verdict recommends reencode_hevc must still be queued; a file whose
-// verdict recommends something else must be skipped even though it isn't
-// HEVC.
-func TestCreateJobsFromCompatibilitySourceValidatesRecommendedAction(t *testing.T) {
-	_, h, st, _ := newTestServer(t, false)
-	cookie := completeSetup(t, st)
-	ctx := context.Background()
-
-	// Already-HEVC file whose apple_tv_4k verdict recommends reencode_hevc
-	// (e.g. wrong bit depth) — the savings rule would skip this, but the
-	// compatibility rule must allow it.
-	hevc := "hevc"
-	reencodeID, err := st.Media.Insert(ctx, &store.MediaFile{
-		Path: "/media/movies/a.mkv", LibraryType: "movie", SizeBytes: 5000,
-		Mtime: 1, Fingerprint: "fp-reencode", VideoCodec: &hevc, IsAlreadyHEVC: true, Status: "active",
-	})
-	if err != nil {
-		t.Fatalf("insert reencode candidate: %v", err)
-	}
-	if err := st.Media.UpsertCompatibility(ctx, reencodeID, map[string]compatibility.Verdict{
-		"apple_tv_4k": {RecommendedAction: compatibility.ActionReencodeHEVC},
-	}); err != nil {
-		t.Fatalf("upsert compatibility: %v", err)
-	}
-
-	// Non-HEVC file whose apple_tv_4k verdict recommends a manual fix
-	// (e.g. PGS subtitles) — must be skipped despite not being HEVC.
-	h264 := "h264"
-	manualID, err := st.Media.Insert(ctx, &store.MediaFile{
-		Path: "/media/movies/b.mkv", LibraryType: "movie", SizeBytes: 5000,
-		Mtime: 1, Fingerprint: "fp-manual", VideoCodec: &h264, Status: "active",
-	})
-	if err != nil {
-		t.Fatalf("insert manual file: %v", err)
-	}
-	if err := st.Media.UpsertCompatibility(ctx, manualID, map[string]compatibility.Verdict{
-		"apple_tv_4k": {RecommendedAction: compatibility.ActionManual},
-	}); err != nil {
-		t.Fatalf("upsert compatibility: %v", err)
-	}
-
-	// Non-HEVC file with no stored verdict at all (pending backfill).
-	unevaluatedID, err := st.Media.Insert(ctx, &store.MediaFile{
-		Path: "/media/movies/c.mkv", LibraryType: "movie", SizeBytes: 5000,
-		Mtime: 1, Fingerprint: "fp-unevaluated", VideoCodec: &h264, Status: "active",
-	})
-	if err != nil {
-		t.Fatalf("insert unevaluated file: %v", err)
-	}
-
-	w := doReq(h, http.MethodPost, "/api/jobs", map[string]any{
-		"file_ids":       []int64{reencodeID, manualID, unevaluatedID},
-		"source":         "compatibility",
-		"client_profile": "apple_tv_4k",
-	}, cookie)
-	if w.Code != http.StatusOK {
-		t.Fatalf("create jobs: want 200, got %d (%s)", w.Code, w.Body.String())
-	}
-	body := decodeBody(t, w)
-	queued, _ := body["queued"].([]any)
-	skipped, _ := body["skipped"].([]any)
-	if len(queued) != 1 {
-		t.Fatalf("queued = %d, want 1 (only the reencode_hevc-recommended file): %+v", len(queued), queued)
-	}
-	q0 := queued[0].(map[string]any)
-	if int64(q0["media_file_id"].(float64)) != reencodeID {
-		t.Errorf("queued media_file_id = %v, want %d", q0["media_file_id"], reencodeID)
-	}
-	if len(skipped) != 2 {
-		t.Fatalf("skipped = %d, want 2 (manual verdict + unevaluated file): %+v", len(skipped), skipped)
-	}
-
-	// Missing client_profile or an unknown one is rejected up front.
-	w = doReq(h, http.MethodPost, "/api/jobs", map[string]any{
-		"file_ids": []int64{reencodeID},
-		"source":   "compatibility",
-	}, cookie)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("missing client_profile: want 400, got %d (%s)", w.Code, w.Body.String())
-	}
-	w = doReq(h, http.MethodPost, "/api/jobs", map[string]any{
-		"file_ids":       []int64{reencodeID},
-		"source":         "compatibility",
-		"client_profile": "totally_made_up",
-	}, cookie)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("unknown client_profile: want 400, got %d (%s)", w.Code, w.Body.String())
 	}
 }
 

@@ -39,7 +39,6 @@ type Store struct {
 	Stats    *Stats
 	Events   *Events
 	Metadata *Metadata
-	Streams  *Streams
 
 	w *sql.DB
 	r *sql.DB
@@ -76,7 +75,6 @@ func Open(path string) (*Store, error) {
 		Stats:    &Stats{r: r, w: w},
 		Events:   &Events{r: r, w: w},
 		Metadata: &Metadata{r: r, w: w},
-		Streams:  &Streams{r: r, w: w},
 	}
 
 	if err := runMigrations(w); err != nil {

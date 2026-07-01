@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-Self-hosted codec audit and re-encode tool for homelabs. Point it at the same movie and TV folders Plex, Jellyfin, or Emby already use, rank files by predicted HEVC savings **or** predicted direct-play compatibility on your playback device, and manually queue overnight `ffmpeg` jobs.
+Self-hosted codec audit and re-encode tool for homelabs. Point it at the same movie and TV folders Plex, Jellyfin, or Emby already use, rank files by predicted HEVC savings, and manually queue overnight `ffmpeg` jobs.
 
 **Website:** [reclaim.reecerose.com](https://reclaim.reecerose.com)
 
@@ -21,7 +21,6 @@ Reclaim is for large libraries with mixed codecs where you want a safe, manual-f
 |---|---|
 | Scans mounted library folders directly | Integrate with Sonarr, Radarr, Plex, Jellyfin, or Emby APIs |
 | Ranks candidates by estimated savings (learns from your completed encodes) | Auto-encode your whole library |
-| Predicts direct-play compatibility per client profile (Apple TV, Shield, Plex Web, etc.) | Claim ground-truth playback — everything is labeled **predicted** |
 | Library view for every scanned file with eligibility reasons | Use GPU/NVENC hardware encoding (CPU `libx265` only) |
 | Helps spot bloated rips better re-downloaded than re-encoded | Pause for active streams (time window only) |
 | Optional TMDB posters and metadata for movies and TV | |
@@ -110,18 +109,16 @@ For HTTPS reverse proxies, forward `X-Forwarded-Proto: https` so cookies get the
 
 2. **Rank** — files are sorted by predicted HEVC savings. After enough completed jobs for a codec, estimates switch from seed values to your observed results. Per-file codec, bitrate, and resolution help you spot rips that are better re-downloaded than re-encoded.
 
-3. **Direct play** — a parallel compatibility view ranks files predicted to force transcoding on a chosen client profile (codec, container, audio, HDR, PGS subtitles). Verdicts are computed from `ffprobe` metadata at scan time and stored per profile.
+3. **Browse** — the Library view shows every scanned file, including already-HEVC, missing, and probe-failed items, each with a `candidate_state` explaining eligibility.
 
-4. **Browse** — the Library view shows every scanned file, including already-HEVC, missing, and probe-failed items, each with a `candidate_state` explaining eligibility.
+4. **Queue** — select files, pick a profile, and confirm before jobs are created. Queued jobs wait for the encode window unless you **Force** them to run immediately.
 
-5. **Queue** — select files, pick a profile, and confirm before jobs are created. Queued jobs wait for the encode window unless you **Force** them to run immediately.
-
-6. **Encode** — queued jobs run inside the encode window unless forced. Reclaim writes a `.reclaim-tmp` file, then:
+5. **Encode** — queued jobs run inside the encode window unless forced. Reclaim writes a `.reclaim-tmp` file, then:
    - Verifies the output (duration ±1 s, stream counts, resolution match)
    - On pass: atomically swaps original → `.reclaim-backup`, temp → original, deletes backup
    - On fail: marks the job failed, keeps the temp for inspection, leaves the original untouched
 
-7. **Recover** — on boot, temp files are cleaned up, interrupted backups are restored, and stuck jobs are marked failed. Job and scan events are logged to a persistent audit trail (bell icon in the UI).
+6. **Recover** — on boot, temp files are cleaned up, interrupted backups are restored, and stuck jobs are marked failed. Job and scan events are logged to a persistent audit trail (bell icon in the UI).
 
 ---
 
@@ -183,4 +180,3 @@ Both renames happen in the same directory and are recovered on next boot if inte
 | [`docs/DOCKER.md`](docs/DOCKER.md) | Homelab deployment (Unraid, Synology, Compose, `docker run`) |
 | [`docs/RELEASES.md`](docs/RELEASES.md) | Pulling versioned images from GHCR |
 | [`docs/API.md`](docs/API.md) | REST + WebSocket reference for scripting and integrations |
-| [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) | Direct-play prediction: profiles, reason codes, limitations |

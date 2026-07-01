@@ -75,10 +75,10 @@ func (s *Server) handleCandidates(c *echo.Context) error {
 	q := store.CandidateQuery{
 		Sort: store.CandidateSort(defaultStr(c.QueryParam("sort"), string(store.SortSavingsDesc))),
 		Filter: store.CandidateFilter{
-			LibraryType: c.QueryParam("library_type"),
-			VideoCodec:  c.QueryParam("video_codec"),
+			LibraryType:    c.QueryParam("library_type"),
+			VideoCodec:     c.QueryParam("video_codec"),
 			Height:      c.QueryParam("height"),
-			Search:      c.QueryParam("search"),
+			Search:         c.QueryParam("search"),
 		},
 	}
 
@@ -181,19 +181,6 @@ func (s *Server) handleFileDetail(c *echo.Context) error {
 				dto.ReleaseYear = m.ReleaseYear
 				dto.RuntimeMins = m.RuntimeMins
 			}
-		}
-	}
-
-	if streams, err := s.store.Streams.ListForFile(ctx, f.ID); err == nil {
-		dto.Streams = make([]streamDTO, 0, len(streams))
-		for i := range streams {
-			dto.Streams = append(dto.Streams, toStreamDTO(&streams[i]))
-		}
-	}
-	if compatibilityRows, err := s.store.Media.CompatibilityForFile(ctx, f.ID); err == nil {
-		dto.Compatibility = make([]compatibilityDTO, 0, len(compatibilityRows))
-		for i := range compatibilityRows {
-			dto.Compatibility = append(dto.Compatibility, toCompatibilityDTO(&compatibilityRows[i]))
 		}
 	}
 

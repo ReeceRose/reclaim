@@ -9,10 +9,6 @@ import {
 import Link from "next/link";
 import { Suspense } from "react";
 import { toast } from "sonner";
-import {
-  CompatibilityOverviewCard,
-  CompatibilityOverviewCardSkeleton,
-} from "@/components/compatibility/compatibility-overview-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -409,23 +405,12 @@ function DashboardContent() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-5 mt-5 max-sm:grid-cols-1">
-        <Suspense fallback={<CompatibilityOverviewCardSkeleton />}>
-          <CompatibilityOverviewCard />
-        </Suspense>
-      </div>
-
-      <div className="mt-4 flex items-center gap-4 flex-wrap">
-        <Link href="/candidates" className="text-sm text-brand hover:underline">
-          Review candidates →
-        </Link>
-        <Link
-          href="/compatibility"
-          className="text-sm text-brand hover:underline"
-        >
-          Review direct-play risks →
-        </Link>
-      </div>
+      <Link
+        href="/candidates"
+        className="mt-4 text-sm text-brand hover:underline inline-block"
+      >
+        Review candidates →
+      </Link>
     </div>
   );
 }

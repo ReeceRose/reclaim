@@ -253,150 +253,8 @@ plus `limit` (default 50, max 200) and `offset`.
 Single media file by id. Returns the shared file object plus TMDB detail fields
 (`overview`, `tagline`, `genres`, etc.) when metadata exists for the movie path
 key or TV series title.
-
-Also includes:
-- `streams[]` — every probed stream (video, audio, subtitle) from `media_streams`
-- `compatibility[]` — one predicted verdict per built-in client profile
-
-Each compatibility block:
-```json
-{
-  "client_profile": "apple_tv_4k",
-  "direct_play_predicted": false,
-  "risk_score": 85,
-  "reasons": [
-    { "code": "audio_dts-hd", "severity": "advisory", "stream": 1,
-      "message": "DTS-HD audio — Apple TV has no bitstream passthrough; ..." }
-  ],
-  "recommended_action": "remux"
-}
-```
-
-`recommended_action` is one of: `none`, `reencode_hevc`, `remux`, `audio_transcode`, `manual`.
-
 - `200` → file object
 - `404` → not found
-
----
-
-## Direct-play compatibility
-
-Predicted direct-play compatibility for Plex/Jellyfin/Emby client profiles.
-Verdicts are computed at scan time from `ffprobe` metadata and stored in
-`media_compatibility`. All user-facing copy should say **predicted** — actual
-playback also depends on server version, client settings, and AVR passthrough.
-
-See [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) for profile definitions,
-reason codes, and limitations.
-
-### Compatibility object (shared shape)
-
-Attached as `compatibility` on list items and as `compatibility[]` on file detail.
-
-| Field | Notes |
-|---|---|
-| `client_profile` | Built-in profile id, e.g. `apple_tv_4k` |
-| `direct_play_predicted` | `true` when no reasons were found |
-| `risk_score` | 0–100; higher = more likely to transcode |
-| `reasons` | Array of `{ code, severity, stream?, message }` — `severity` is `hard` or `advisory` |
-| `recommended_action` | Suggested fix. `reencode_hevc` is queueable today via `POST /api/jobs` (§"Queuing from the Direct-play view" above, Phase 2); `remux`/`audio_transcode` are read-only pending Phase 3 worker support; `manual`/`none` are never queueable |
-
-### `GET /api/compatibility/profiles`
-Lists the four built-in client profiles.
-
-```json
-{
-  "profiles": [
-    { "id": "apple_tv_4k", "name": "Apple TV 4K",
-      "description": "Modern Apple TV 4K hardware (tvOS 17/18) via Plex/Jellyfin. ..." }
-  ]
-}
-```
-
-### `GET /api/compatibility`
-One page of files predicted **not** to direct-play on the selected profile
-(default filter: `direct_play=false`). Unlike `/api/candidates`, **includes
-already-HEVC files**.
-
-**Query params**
-
-| Param | Notes |
-|---|---|
-| `client_profile` | optional; defaults to `default_client_profile` from settings |
-| `sort` | `risk_desc` (default), `size_desc`, `mtime_desc`, `library_type`, `codec` |
-| `direct_play` | `false` (default), `true`, or `all` |
-| `reason` | filter by reason code, e.g. `container_mkv`, `hdr_hdr10` |
-| `library_type`, `video_codec`, `height`, `search` | same as `/api/candidates` |
-| `limit` | page size (default 50, max 200) |
-| `offset` | for non-default sorts only |
-| `after_risk`, `after_id` | **keyset cursor** for the default `risk_desc` sort |
-
-**Response**
-```json
-{
-  "items": [
-    {
-      "id": 42,
-      "path": "/media/movies/Foo (2020)/Foo.mkv",
-      "video_codec": "hevc",
-      "is_already_hevc": true,
-      "predicted_savings_bytes": 0,
-      "compatibility": {
-        "client_profile": "apple_tv_4k",
-        "direct_play_predicted": false,
-        "risk_score": 22,
-        "reasons": [
-          { "code": "container_mkv", "severity": "advisory", "message": "..." }
-        ],
-        "recommended_action": "remux"
-      }
-    }
-  ],
-  "total_count": 5800,
-  "next_cursor": { "after_risk": 22, "after_id": 42 }
-}
-```
-
-`total_count` is on the first page of `risk_desc` (no cursor, no offset).
-`next_cursor` is present when the page is full.
-
-### `GET /api/compatibility/stats`
-Overview for one client profile.
-
-```json
-{
-  "client_profile": "apple_tv_4k",
-  "total_files": 20000,
-  "direct_play_count": 14200,
-  "transcode_risk_count": 5800,
-  "savings_overlap_count": 1200,
-  "by_reason": [
-    { "code": "container_mkv", "file_count": 1800 },
-    { "code": "audio_dts-hd", "file_count": 2100 }
-  ]
-}
-```
-
-`savings_overlap_count` is how many transcode-risk files are also HEVC savings
-candidates (`predicted_savings_bytes > 0`).
-
-### `GET /api/backfill`
-Status of automatic upgrade/backfill tasks (e.g. compatibility data missing
-after an upgrade). The coordinator auto-starts a full rescan when needed.
-
-```json
-{
-  "tasks": [
-    {
-      "key": "compatibility_probe",
-      "label": "Compatibility evaluation",
-      "action": "full_scan",
-      "needed": true,
-      "running": false
-    }
-  ]
-}
-```
 
 ---
 
@@ -462,18 +320,6 @@ UI can show an honest confirm step (§9.1).
 ```
 `profile_id` is optional; the default profile is used when omitted.
 
-**Queuing from the Direct-play view (Phase 2 — [`COMPATIBILITY.md`](COMPATIBILITY.md)):**
-```json
-{ "file_ids": [5, 6], "source": "compatibility", "client_profile": "apple_tv_4k" }
-```
-`source: "compatibility"` switches the per-file eligibility rule: instead of
-"not already HEVC" (the default, savings-oriented rule), each file's stored
-compatibility verdict for `client_profile` (required, must be a known
-built-in profile) must have `recommended_action == "reencode_hevc"`. This
-lets a file that's already HEVC be queued for a compatibility-motivated
-re-encode (e.g. wrong bit depth for a client profile), which the default
-rule would otherwise skip.
-
 **Response (`200`)**
 ```json
 {
@@ -482,13 +328,9 @@ rule would otherwise skip.
   "skipped": [ { "media_file_id": 6, "reason": "file is already HEVC" } ]
 }
 ```
-Skip reasons: `file not found`, `file is not active`, `file is already HEVC`
-(default source only), `no compatibility verdict for this client profile` /
-`recommended action for this client profile is not reencode_hevc`
-(`source: "compatibility"` only), `file already has an active or completed job`.
-- `400` → empty `file_ids`, unknown `profile_id`/`client_profile`, missing
-  `client_profile` when `source` is `"compatibility"`, unknown `source`, or
-  no default profile when `profile_id` is omitted.
+Skip reasons: `file not found`, `file is not active`, `file is already HEVC`,
+`file already has an active or completed job`.
+- `400` → empty `file_ids`, unknown `profile_id`, or no default profile when omitted.
 
 ### `GET /api/jobs`
 Combined queue + history, newest first.
@@ -564,14 +406,9 @@ re-seeds from env.
   "probe_concurrency": 4,
   "movies_path": "/media/movies",
   "tv_path": "/media/tv",
-  "tmdb_configured": true,
-  "default_client_profile": "apple_tv_4k"
+  "tmdb_configured": true
 }
 ```
-
-`default_client_profile` is one of the built-in ids from `GET /api/compatibility/profiles`
-(`apple_tv_4k`, `nvidia_shield`, `plex_web`, `generic_hevc`). Used when
-compatibility endpoints omit `?client_profile=`.
 
 `tmdb_configured` is `true` when a TMDB API key is present (set via `TMDB_API_KEY` env var).
 
@@ -579,8 +416,7 @@ compatibility endpoints omit `?client_profile=`.
 Any subset of the mutable fields. Validated as a set before applying.
 ```json
 { "encode_window_start": "01:00", "encode_window_end": "07:00",
-  "scan_interval": "12h", "probe_concurrency": 8,
-  "default_client_profile": "nvidia_shield" }
+  "scan_interval": "12h", "probe_concurrency": 8 }
 ```
 - `200` → the full settings object (same shape as GET)
 - `400` → invalid value (e.g. `encode_window_start: "99:99"`, non-positive interval/concurrency)
@@ -711,10 +547,6 @@ curl -s -b $JAR $BASE/api/session
 # Overview + first candidate page
 curl -s -b $JAR $BASE/api/stats
 curl -s -b $JAR "$BASE/api/candidates?limit=5"
-
-# Compatibility overview + first at-risk page (default profile: Apple TV 4K)
-curl -s -b $JAR $BASE/api/compatibility/stats
-curl -s -b $JAR "$BASE/api/compatibility?limit=5"
 
 # Trigger a scan (watch the WS for progress)
 curl -s -b $JAR -X POST $BASE/api/scan

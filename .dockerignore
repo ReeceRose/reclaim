@@ -1,7 +1,6 @@
 # Build artifacts
 bin/
 .dev/
-web/out/
 web/node_modules/
 web/.next/
 
@@ -11,6 +10,9 @@ web/.next/
 *.db-shm
 .env
 .env.*
+
+# Unrelated apps in the monorepo
+landing/
 
 # Docs and repo metadata
 docs/

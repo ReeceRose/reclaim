@@ -24,6 +24,7 @@ type librarySeasonSummary struct {
 	Season                int     `json:"season"`
 	FileCount             int     `json:"file_count"`
 	EligibleCount         int     `json:"eligible_count"`
+	MissingCount          int     `json:"missing_count"`
 	TotalBytes            int64   `json:"total_bytes"`
 	PredictedSavingsBytes int64   `json:"predicted_savings_bytes"`
 	EpisodeIDs            []int64 `json:"episode_ids"`
@@ -35,6 +36,7 @@ type librarySeriesSummary struct {
 	LibraryType           string                 `json:"library_type"`
 	FileCount             int                    `json:"file_count"`
 	EligibleCount         int                    `json:"eligible_count"`
+	MissingCount          int                    `json:"missing_count"`
 	SeasonCount           int                    `json:"season_count"`
 	TotalBytes            int64                  `json:"total_bytes"`
 	PredictedSavingsBytes int64                  `json:"predicted_savings_bytes"`
@@ -142,6 +144,7 @@ func (s *Server) handleGroupedFiles(c *echo.Context) error {
 			LibraryType:           store.LibraryTypeTV,
 			FileCount:             r.FileCount,
 			EligibleCount:         r.EligibleCount,
+			MissingCount:          r.MissingCount,
 			SeasonCount:           r.SeasonCount,
 			TotalBytes:            r.TotalBytes,
 			PredictedSavingsBytes: r.PredictedSavingsBytes,
@@ -182,6 +185,7 @@ func (s *Server) handleGroupedFileSeasons(c *echo.Context) error {
 		Season                int   `json:"season"`
 		FileCount             int   `json:"file_count"`
 		EligibleCount         int   `json:"eligible_count"`
+		MissingCount          int   `json:"missing_count"`
 		TotalBytes            int64 `json:"total_bytes"`
 		PredictedSavingsBytes int64 `json:"predicted_savings_bytes"`
 	}
@@ -191,6 +195,7 @@ func (s *Server) handleGroupedFileSeasons(c *echo.Context) error {
 			Season:                s.Season,
 			FileCount:             s.FileCount,
 			EligibleCount:         s.EligibleCount,
+			MissingCount:          s.MissingCount,
 			TotalBytes:            s.TotalBytes,
 			PredictedSavingsBytes: s.PredictedSavingsBytes,
 		})

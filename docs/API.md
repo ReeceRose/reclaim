@@ -222,7 +222,7 @@ max 200) and `offset`. Returns an empty `series` list when `library_type=movies`
 {
   "series": [
     { "title": "Breaking Bad", "library_type": "tv", "file_count": 12,
-      "eligible_count": 8, "season_count": 2, "total_bytes": 50000000000,
+      "eligible_count": 8, "missing_count": 0, "season_count": 2, "total_bytes": 50000000000,
       "predicted_savings_bytes": 15000000000,
       "poster_path": "/abc123.jpg", "backdrop_path": null }
   ],
@@ -240,7 +240,7 @@ Season breakdown for one TV series.
 ```json
 {
   "seasons": [
-    { "season": 1, "file_count": 6, "eligible_count": 4,
+    { "season": 1, "file_count": 6, "eligible_count": 4, "missing_count": 0,
       "total_bytes": 25000000000, "predicted_savings_bytes": 7000000000,
       "episode_ids": [1, 2, 3, 4, 5, 6], "eligible_ids": [1, 3, 5, 6] }
   ]

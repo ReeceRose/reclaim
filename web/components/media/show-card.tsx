@@ -15,7 +15,9 @@ export function ShowCard({
     .replace(/^(the |a |an )/i, "")
     .charAt(0)
     .toUpperCase();
-  const fullyConverted = show.eligible_count === 0;
+  const fullyConverted = show.eligible_count === 0 && show.missing_count === 0;
+  const allMissing =
+    show.file_count > 0 && show.missing_count === show.file_count;
   const imageURL =
     tmdbImageURL(show.backdrop_path, "w780") ??
     tmdbImageURL(show.poster_path, "w342");
@@ -79,7 +81,15 @@ export function ShowCard({
           <span className="text-xs text-muted-fg font-mono">
             {formatBytes(show.total_bytes)}
           </span>
-          {fullyConverted ? (
+          {allMissing ? (
+            <span className="text-xs font-medium text-muted-fg">
+              All files missing
+            </span>
+          ) : show.missing_count > 0 ? (
+            <span className="text-xs font-medium text-muted-fg">
+              {formatInt(show.missing_count)} missing
+            </span>
+          ) : fullyConverted ? (
             <span className="text-xs font-medium text-green">
               All converted
             </span>
@@ -94,6 +104,7 @@ export function ShowCard({
       <EncodeHealthBar
         fileCount={show.file_count}
         eligibleCount={show.eligible_count}
+        missingCount={show.missing_count}
       />
     </Link>
   );

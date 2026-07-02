@@ -1,14 +1,19 @@
 export function EncodeHealthBar({
   fileCount,
   eligibleCount,
+  missingCount = 0,
 }: {
   fileCount: number;
   eligibleCount: number;
+  missingCount?: number;
 }) {
+  const activeCount = fileCount - missingCount;
   const donePct =
-    fileCount > 0
-      ? Math.round((Math.max(0, fileCount - eligibleCount) / fileCount) * 100)
-      : 100;
+    activeCount > 0
+      ? Math.round(
+          (Math.max(0, activeCount - eligibleCount) / activeCount) * 100,
+        )
+      : 0;
   return (
     <div
       className="w-full h-1 overflow-hidden rounded-full"

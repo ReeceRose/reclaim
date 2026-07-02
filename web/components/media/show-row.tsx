@@ -11,7 +11,9 @@ export function ShowRow({
   href: string;
   expanded?: boolean;
 }) {
-  const fullyConverted = show.eligible_count === 0;
+  const fullyConverted = show.eligible_count === 0 && show.missing_count === 0;
+  const allMissing =
+    show.file_count > 0 && show.missing_count === show.file_count;
   const hasChevron = expanded !== undefined;
   return (
     <Link
@@ -50,7 +52,13 @@ export function ShowRow({
         {formatBytes(show.total_bytes)}
       </span>
       <div className="text-right w-24">
-        {fullyConverted ? (
+        {allMissing ? (
+          <span className="text-xs font-medium text-muted-fg">All missing</span>
+        ) : show.missing_count > 0 ? (
+          <span className="text-xs font-medium text-muted-fg">
+            {formatInt(show.missing_count)} missing
+          </span>
+        ) : fullyConverted ? (
           <span className="text-xs font-medium text-green">All converted</span>
         ) : show.predicted_savings_bytes > 0 ? (
           <span className="text-xs font-semibold text-brand font-mono">

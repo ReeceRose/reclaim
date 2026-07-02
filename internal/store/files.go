@@ -384,6 +384,7 @@ type TVSeriesRow struct {
 	SeasonCount           int
 	TotalBytes            int64
 	EligibleCount         int
+	MissingCount          int
 	PredictedSavingsBytes int64
 }
 
@@ -415,6 +416,7 @@ func (m *Media) TVSeriesGroups(ctx context.Context, search string, limit, offset
 			COUNT(DISTINCT season_number) AS season_count,
 			SUM(size_bytes) AS total_bytes,
 			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN 1 ELSE 0 END) AS eligible_count,
+			SUM(CASE WHEN status = 'missing' THEN 1 ELSE 0 END) AS missing_count,
 			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN predicted_savings_bytes ELSE 0 END) AS predicted_savings_bytes
 		FROM media_files
 		WHERE ` + strings.Join(where, " AND ") + `
@@ -432,7 +434,7 @@ func (m *Media) TVSeriesGroups(ctx context.Context, search string, limit, offset
 	var out []TVSeriesRow
 	for rows.Next() {
 		var r TVSeriesRow
-		if err := rows.Scan(&r.Title, &r.FileCount, &r.SeasonCount, &r.TotalBytes, &r.EligibleCount, &r.PredictedSavingsBytes); err != nil {
+		if err := rows.Scan(&r.Title, &r.FileCount, &r.SeasonCount, &r.TotalBytes, &r.EligibleCount, &r.MissingCount, &r.PredictedSavingsBytes); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -445,6 +447,7 @@ type TVSeasonRow struct {
 	Season                int
 	FileCount             int
 	EligibleCount         int
+	MissingCount          int
 	TotalBytes            int64
 	PredictedSavingsBytes int64
 }
@@ -456,6 +459,7 @@ func (m *Media) TVShowSeasons(ctx context.Context, seriesTitle string) ([]TVSeas
 			season_number,
 			COUNT(*) AS file_count,
 			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN 1 ELSE 0 END) AS eligible_count,
+			SUM(CASE WHEN status = 'missing' THEN 1 ELSE 0 END) AS missing_count,
 			SUM(size_bytes) AS total_bytes,
 			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN predicted_savings_bytes ELSE 0 END) AS predicted_savings_bytes
 		FROM media_files
@@ -472,7 +476,7 @@ func (m *Media) TVShowSeasons(ctx context.Context, seriesTitle string) ([]TVSeas
 	var out []TVSeasonRow
 	for rows.Next() {
 		var r TVSeasonRow
-		if err := rows.Scan(&r.Season, &r.FileCount, &r.EligibleCount, &r.TotalBytes, &r.PredictedSavingsBytes); err != nil {
+		if err := rows.Scan(&r.Season, &r.FileCount, &r.EligibleCount, &r.MissingCount, &r.TotalBytes, &r.PredictedSavingsBytes); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

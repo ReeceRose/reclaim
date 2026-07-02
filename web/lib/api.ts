@@ -181,6 +181,7 @@ export interface LibrarySeasonGroup {
   season: number;
   file_count: number;
   eligible_count: number;
+  missing_count: number;
   total_bytes: number;
   predicted_savings_bytes: number;
   episode_ids: number[];
@@ -191,6 +192,7 @@ export interface LibrarySeriesGroup {
   library_type: string;
   file_count: number;
   eligible_count: number;
+  missing_count: number;
   season_count: number;
   total_bytes: number;
   predicted_savings_bytes: number;

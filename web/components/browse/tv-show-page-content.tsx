@@ -139,14 +139,10 @@ export function TvShowPageContent() {
     );
   }
 
+  const activeCount = showData.file_count - showData.missing_count;
+  const convertedCount = Math.max(0, activeCount - showData.eligible_count);
   const donePct =
-    showData.file_count > 0
-      ? Math.round(
-          (Math.max(0, showData.file_count - showData.eligible_count) /
-            showData.file_count) *
-            100,
-        )
-      : 100;
+    activeCount > 0 ? Math.round((convertedCount / activeCount) * 100) : 0;
 
   const genres = metadata?.genres?.length ? metadata.genres : null;
 
@@ -325,13 +321,17 @@ export function TvShowPageContent() {
             <EncodeHealthBar
               fileCount={showData.file_count}
               eligibleCount={showData.eligible_count}
+              missingCount={showData.missing_count}
             />
             <div className="flex justify-between text-xs text-muted-dim mt-1">
               <span>
-                {formatInt(showData.file_count - showData.eligible_count)}{" "}
-                converted · {donePct}%
+                {formatInt(convertedCount)} converted · {donePct}%
               </span>
-              <span>{formatInt(showData.eligible_count)} remaining</span>
+              <span>
+                {showData.missing_count > 0 &&
+                  `${formatInt(showData.missing_count)} missing · `}
+                {formatInt(showData.eligible_count)} remaining
+              </span>
             </div>
           </div>
         </div>

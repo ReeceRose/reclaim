@@ -30,17 +30,15 @@ export function AccountPanel({
       className="border border-line rounded-(--radius) p-5"
       style={{ background: "var(--surface)" }}
     >
-      <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">
+      <div className="text-xs uppercase tracking-widest text-muted-fg font-bold mb-4">
         Account
       </div>
       <div className="mb-4">
-        <Label className="text-[0.8rem] font-semibold mb-1.5 block">
-          Username
-        </Label>
+        <Label className="text-xs font-semibold mb-1.5 block">Username</Label>
         <Input value={username} disabled autoComplete="username" />
       </div>
       <div className="mb-4">
-        <Label className="text-[0.8rem] font-semibold mb-1.5 block">
+        <Label className="text-xs font-semibold mb-1.5 block">
           New password
         </Label>
         <Input
@@ -52,7 +50,7 @@ export function AccountPanel({
         />
       </div>
       <div className="mb-4">
-        <Label className="text-[0.8rem] font-semibold mb-1.5 block">
+        <Label className="text-xs font-semibold mb-1.5 block">
           Confirm password
         </Label>
         <Input
@@ -65,25 +63,25 @@ export function AccountPanel({
       <Button
         onClick={onSave}
         disabled={isSaving || !credPassword}
-        className="rounded-[11px]"
+        className="rounded-xl"
         style={{
           background: "linear-gradient(145deg, var(--brand), var(--brand-2))",
         }}
       >
         {isSaving ? "Saving…" : "Save credentials"}
       </Button>
-      <p className="text-[0.75rem] text-muted-dim mt-3">
+      <p className="text-xs text-muted-dim mt-3">
         Re-hashed server-side. Takes effect on your next login.
       </p>
 
       <div className="border-t border-line-soft my-4" />
-      <Label className="text-[0.8rem] font-semibold mb-2 block">
+      <Label className="text-xs font-semibold mb-2 block">
         Media mounts{" "}
-        <span className="font-mono text-[0.72rem] text-muted-dim bg-surface-2 border border-line rounded-[6px] px-[7px] py-[2px] ml-1">
+        <span className="font-mono text-xs text-muted-dim bg-surface-2 border border-line rounded-md px-2 py-0.5 ml-1">
           read-only · set via env
         </span>
       </Label>
-      <div className="font-mono text-[0.75rem] text-muted-dim break-all">
+      <div className="font-mono text-xs text-muted-dim break-all">
         {moviesPath && <div>{moviesPath} · rw</div>}
         {tvPath && <div>{tvPath} · rw</div>}
       </div>

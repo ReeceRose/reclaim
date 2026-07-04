@@ -31,16 +31,14 @@ export function FilterSelect({
     >
       <SelectTrigger
         className={cn(
-          "rounded-[11px] text-[0.84rem] h-auto py-[9px] gap-1 transition-colors",
-          active
-            ? "border-[color-mix(in_srgb,var(--brand)_45%,transparent)] bg-[color-mix(in_srgb,var(--brand)_7%,transparent)]"
-            : "bg-surface",
+          "rounded-xl text-sm h-auto py-2.5 gap-1 transition-colors",
+          active ? "border-brand/45 bg-brand/7" : "bg-surface",
           className,
         )}
       >
         <span
           className={cn(
-            "text-[0.78rem] shrink-0",
+            "text-xs shrink-0",
             active ? "text-brand/60" : "text-muted-dim",
           )}
         >

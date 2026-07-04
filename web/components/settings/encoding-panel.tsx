@@ -38,11 +38,11 @@ export function EncodingPanel({
       className="border border-line rounded-(--radius) p-5"
       style={{ background: "var(--surface)" }}
     >
-      <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">
+      <div className="text-xs uppercase tracking-widest text-muted-fg font-bold mb-4">
         Encoding
       </div>
       <div className="mb-4">
-        <Label className="text-[0.8rem] font-semibold mb-1.5 block">
+        <Label className="text-xs font-semibold mb-1.5 block">
           Encode window{" "}
           <span className="text-muted-dim font-normal">
             · when jobs may run
@@ -53,7 +53,7 @@ export function EncodingPanel({
           <span className="text-muted-fg">to</span>
           <TimeSelect value={windowEnd} onChange={onWindowEndChange} />
         </div>
-        <p className="text-[0.75rem] text-muted-dim mt-1.5">
+        <p className="text-xs text-muted-dim mt-1.5">
           A running job finishes even if the window closes — only new pulls
           stop.
         </p>
@@ -78,7 +78,7 @@ export function EncodingPanel({
           value={probeConcurrency}
           onChange={(e) => onProbeConcurrencyChange(Number(e.target.value))}
         />
-        <p className="text-[0.75rem] text-muted-dim mt-1.5">
+        <p className="text-xs text-muted-dim mt-1.5">
           Parallel ffprobe cap during scans.
         </p>
       </div>
@@ -107,18 +107,18 @@ export function EncodingPanel({
               }
               className="w-24"
             />
-            <span className="text-[0.85rem] text-muted-fg">hours · at</span>
+            <span className="text-sm text-muted-fg">hours · at</span>
           </div>
           <TimeSelect value={scanAnchor} onChange={onScanAnchorChange} />
         </div>
-        <p className="text-[0.75rem] text-muted-dim mt-1.5">
+        <p className="text-xs text-muted-dim mt-1.5">
           Rescans repeat every N hours, aligned to the chosen time.
         </p>
       </div>
       <Button
         onClick={onSave}
         disabled={isSaving}
-        className="rounded-[11px]"
+        className="rounded-xl"
         style={{
           background: "linear-gradient(145deg, var(--brand), var(--brand-2))",
         }}

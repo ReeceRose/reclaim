@@ -13,7 +13,7 @@ export function ScanBanner({
     >
       <div className="overflow-hidden">
         <div
-          className="flex items-center gap-2 px-5 py-[9px] text-[0.75rem] font-medium text-brand border-b border-brand-line"
+          className="flex items-center gap-2 px-5 py-2.5 text-xs font-medium text-brand border-b border-brand-line"
           style={{ background: "var(--brand-soft)" }}
         >
           <svg
@@ -30,7 +30,7 @@ export function ScanBanner({
           <div className="min-w-0">
             <div>Scanning library…</div>
             {detail && (
-              <div className="truncate text-[0.66rem] font-normal opacity-80">
+              <div className="truncate text-xs font-normal opacity-80">
                 {detail}
               </div>
             )}

@@ -22,13 +22,13 @@ export function StatusScreen({
 }) {
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center p-6 z-[200]"
+      className="fixed inset-0 flex items-center justify-center p-6 z-200"
       style={{
         background:
           "radial-gradient(130% 120% at 50% 0%, var(--brand-soft), transparent 55%), var(--bg)",
       }}
     >
-      <div className="w-full max-w-[420px] text-center">
+      <div className="w-full max-w-md text-center">
         <div className="flex items-center justify-center gap-3 mb-6">
           <LogoMark
             size={34}
@@ -38,7 +38,7 @@ export function StatusScreen({
               borderRadius: 10,
             }}
           />
-          <div className="text-[1.45rem] font-extrabold tracking-tight">
+          <div className="text-2xl font-extrabold tracking-tight">
             Re<span className="text-brand">claim</span>
           </div>
         </div>

@@ -112,12 +112,12 @@ export function CandidatesFlatList({
 
   return (
     <div className="bg-surface border border-line rounded-(--radius) overflow-hidden flex flex-col h-full">
-      <div className="flex items-center text-[0.7rem] uppercase tracking-wider text-muted-fg font-bold bg-surface-2 border-b border-line shrink-0">
-        <div className="w-[52px] flex justify-center py-3">
+      <div className="flex items-center text-xs uppercase tracking-wider text-muted-fg font-bold bg-surface-2 border-b border-line shrink-0">
+        <div className="w-14 flex justify-center py-3">
           <Checkbox
             checked={allSelected}
             onCheckedChange={onToggleAll}
-            className="size-[17px] rounded-[5px] cursor-pointer"
+            className="size-4 rounded-md cursor-pointer"
           />
         </div>
         <CandidateSortHeader
@@ -132,17 +132,17 @@ export function CandidatesFlatList({
           column="codec"
           sort={sort}
           onSortChange={onSortChange}
-          className="w-[64px] sm:w-[80px] py-3 shrink-0"
+          className="w-16 sm:w-20 py-3 shrink-0"
         >
           Codec
         </CandidateSortHeader>
-        <div className="hidden sm:block w-[60px] py-3 shrink-0">Res</div>
+        <div className="hidden sm:block w-16 py-3 shrink-0">Res</div>
         <CandidateSortHeader
           column="size"
           sort={sort}
           align="right"
           onSortChange={onSortChange}
-          className="hidden sm:flex w-[90px] py-3 pr-2 shrink-0"
+          className="hidden sm:flex w-24 py-3 pr-2 shrink-0"
         >
           Size
         </CandidateSortHeader>
@@ -151,7 +151,7 @@ export function CandidatesFlatList({
           sort={sort}
           align="right"
           onSortChange={onSortChange}
-          className="w-[84px] sm:w-[110px] py-3 pr-3 sm:pr-4 shrink-0"
+          className="w-20 sm:w-28 py-3 pr-3 sm:pr-4 shrink-0"
         >
           Est. savings
         </CandidateSortHeader>
@@ -172,17 +172,17 @@ export function CandidatesFlatList({
               className="flex items-center gap-0 border-b border-line-soft px-0"
               style={{ height: 52 }}
             >
-              <div className="w-[52px] flex justify-center shrink-0">
-                <Skeleton className="w-[17px] h-[17px] rounded-[5px]" />
+              <div className="w-14 flex justify-center shrink-0">
+                <Skeleton className="w-4 h-4 rounded-md" />
               </div>
               <div className="flex-1 min-w-0 pr-3">
                 <Skeleton className="h-4 w-48 mb-1.5" />
                 <Skeleton className="h-3 w-64" />
               </div>
-              <Skeleton className="w-[64px] sm:w-[80px] h-5 rounded-[7px] shrink-0" />
-              <Skeleton className="hidden sm:block w-[60px] h-3 shrink-0 mx-1" />
-              <Skeleton className="hidden sm:block w-[90px] h-3 shrink-0 mr-2" />
-              <Skeleton className="w-[84px] sm:w-[110px] h-4 shrink-0 mr-3 sm:mr-4" />
+              <Skeleton className="w-16 sm:w-20 h-5 rounded-lg shrink-0" />
+              <Skeleton className="hidden sm:block w-16 h-3 shrink-0 mx-1" />
+              <Skeleton className="hidden sm:block w-24 h-3 shrink-0 mr-2" />
+              <Skeleton className="w-20 sm:w-28 h-4 shrink-0 mr-3 sm:mr-4" />
             </div>
           ))}
         </div>

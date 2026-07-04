@@ -35,13 +35,13 @@ export default function AuthLayout({
 
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center p-6 z-[200]"
+      className="fixed inset-0 flex items-center justify-center p-6 z-200"
       style={{
         background:
           "radial-gradient(130% 120% at 50% 0%, var(--brand-soft), transparent 55%), var(--bg)",
       }}
     >
-      <div className="w-full max-w-[380px] text-center">
+      <div className="w-full max-w-sm text-center">
         <div className="flex items-center justify-center gap-3 mb-2">
           <LogoMark
             size={38}
@@ -51,7 +51,7 @@ export default function AuthLayout({
               borderRadius: 11,
             }}
           />
-          <div className="text-[1.7rem] font-extrabold tracking-tight">
+          <div className="text-3xl font-extrabold tracking-tight">
             Re<span className="text-brand">claim</span>
           </div>
         </div>

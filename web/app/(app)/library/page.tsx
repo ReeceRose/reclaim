@@ -314,7 +314,7 @@ function LibraryPage() {
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
-              className="w-[14px] h-[14px] absolute left-[11px] top-1/2 -translate-y-1/2 text-muted-dim pointer-events-none"
+              className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-dim pointer-events-none"
             >
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -323,7 +323,7 @@ function LibraryPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by title or path..."
-              className="rounded-[11px] pl-[34px] text-sm"
+              className="rounded-xl pl-9 text-sm"
             />
           </div>
         </div>
@@ -332,7 +332,7 @@ function LibraryPage() {
             value={sort}
             onValueChange={(v) => startTransition(() => setSortRaw(v))}
           >
-            <SelectTrigger className="rounded-[11px] bg-surface text-sm h-auto py-[7px] gap-1 min-w-[155px]">
+            <SelectTrigger className="rounded-xl bg-surface text-sm h-auto py-2 gap-1 min-w-40">
               <span className="text-xs text-muted-dim shrink-0">Sort</span>
               <span className="text-muted-dim mx-px">·</span>
               <SelectValue />
@@ -350,35 +350,35 @@ function LibraryPage() {
             value={effectiveCodec}
             options={codecOptions}
             onChange={(v) => startTransition(() => setCodec(v))}
-            className="min-w-[120px]"
+            className="min-w-32"
           />
           <FilterSelect
             label="Res"
             value={effectiveResolution}
             options={resolutionOptions}
             onChange={(v) => startTransition(() => setResolution(v))}
-            className="min-w-[100px]"
+            className="min-w-24"
           />
           <FilterSelect
             label="Library"
             value={effectiveLibrary}
             options={libraryOptions}
             onChange={(v) => startTransition(() => setLibrary(v))}
-            className="min-w-[130px]"
+            className="min-w-32"
           />
           <FilterSelect
             label="Status"
             value={status}
             options={STATUS_OPTIONS}
             onChange={(v) => startTransition(() => setStatus(v))}
-            className="min-w-[120px]"
+            className="min-w-32"
           />
           <FilterSelect
             label="State"
             value={candidateState}
             options={STATE_OPTIONS}
             onChange={(v) => startTransition(() => setCandidateState(v))}
-            className="min-w-[150px]"
+            className="min-w-36"
           />
         </div>
       </div>
@@ -390,12 +390,12 @@ function LibraryPage() {
         )}
       >
         <div className="bg-surface border border-line rounded-(--radius) overflow-hidden flex flex-col h-full">
-          <div className="flex items-center text-[0.7rem] uppercase tracking-wider text-muted-fg font-bold bg-surface-2 border-b border-line shrink-0">
-            <div className="w-[52px] flex justify-center py-3">
+          <div className="flex items-center text-xs uppercase tracking-wider text-muted-fg font-bold bg-surface-2 border-b border-line shrink-0">
+            <div className="w-14 flex justify-center py-3">
               <Checkbox
                 checked={allSelected}
                 onCheckedChange={toggleAll}
-                className="size-[17px] rounded-[5px] cursor-pointer"
+                className="size-4 rounded-md cursor-pointer"
               />
             </div>
             <LibrarySortHeader
@@ -410,7 +410,7 @@ function LibraryPage() {
               column="codec"
               sort={sort}
               onSortChange={(v) => startTransition(() => setSortRaw(v))}
-              className="w-[64px] sm:w-[80px] py-3 shrink-0"
+              className="w-16 sm:w-20 py-3 shrink-0"
             >
               Codec
             </LibrarySortHeader>
@@ -418,21 +418,21 @@ function LibraryPage() {
               column="res"
               sort={sort}
               onSortChange={(v) => startTransition(() => setSortRaw(v))}
-              className="hidden sm:flex w-[60px] py-3 shrink-0"
+              className="hidden sm:flex w-16 py-3 shrink-0"
             >
               Res
             </LibrarySortHeader>
-            <div className="hidden lg:block w-[118px] py-3 shrink-0">State</div>
+            <div className="hidden lg:block w-28 py-3 shrink-0">State</div>
             <LibrarySortHeader
               column="size"
               sort={sort}
               align="right"
               onSortChange={(v) => startTransition(() => setSortRaw(v))}
-              className="hidden sm:flex w-[90px] py-3 pr-2 shrink-0"
+              className="hidden sm:flex w-24 py-3 pr-2 shrink-0"
             >
               Size
             </LibrarySortHeader>
-            <div className="w-[84px] sm:w-[110px] py-3 text-right pr-3 sm:pr-4 shrink-0">
+            <div className="w-20 sm:w-28 py-3 text-right pr-3 sm:pr-4 shrink-0">
               Est. savings
             </div>
           </div>
@@ -457,10 +457,10 @@ function LibraryPage() {
             </div>
           ) : allItems.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 py-20 text-center">
-              <div className="text-[0.9rem] font-semibold text-text">
+              <div className="text-sm font-semibold text-text">
                 No files match
               </div>
-              <div className="text-[0.78rem] text-muted-dim mt-1 max-w-[260px]">
+              <div className="text-xs text-muted-dim mt-1 max-w-3xs">
                 Try adjusting your filters or trigger a scan to index new files.
               </div>
             </div>
@@ -539,7 +539,7 @@ function LibraryPage() {
 function LibrarySkeleton() {
   return (
     <div className="flex flex-col min-w-0 h-screen overflow-hidden max-sm:h-full">
-      <div className="px-4 py-[14px] border-b border-line sm:px-7 sm:py-[18px]">
+      <div className="px-4 py-3.5 border-b border-line sm:px-7 sm:py-5">
         <Skeleton className="h-7 w-32 mb-2" />
         <Skeleton className="h-3 w-44" />
       </div>

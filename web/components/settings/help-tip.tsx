@@ -34,7 +34,7 @@ export function LabelWithHelp({
   help: React.ReactNode;
 }) {
   return (
-    <Label className="text-[0.8rem] font-semibold mb-1.5 flex items-center gap-1.5">
+    <Label className="text-xs font-semibold mb-1.5 flex items-center gap-1.5">
       {label}
       <HelpTip>{help}</HelpTip>
     </Label>

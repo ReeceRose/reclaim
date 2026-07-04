@@ -21,6 +21,7 @@ export function Sidebar({
   encodeWindow,
   username,
   initials,
+  version,
   onOpenNotifications,
   onLogout,
 }: {
@@ -34,6 +35,7 @@ export function Sidebar({
   encodeWindow: EncodeWindow | null;
   username: string;
   initials: string;
+  version: string | null;
   onOpenNotifications: () => void;
   onLogout: () => void;
 }) {
@@ -42,7 +44,7 @@ export function Sidebar({
       className="flex flex-col sticky top-0 h-screen border-r border-line max-sm:hidden"
       style={{ background: "var(--surface)" }}
     >
-      <div className="flex items-center gap-[11px] px-5 py-5 border-b border-line-soft">
+      <div className="flex items-center gap-3 px-5 py-5 border-b border-line-soft">
         <BrandLink />
         <NotificationBell
           unreadCount={unreadCount}
@@ -53,10 +55,10 @@ export function Sidebar({
       <ScanBanner visible={isScanning} detail={scanProgressDetail} />
       <WsDisconnectedBanner visible={!wsConnected} />
 
-      <nav className="flex flex-col gap-[3px] px-3 py-[14px] flex-1">
+      <nav className="flex flex-col gap-1 px-3 py-3.5 flex-1">
         {NAV_GROUPS.map((group) => (
           <div key={group}>
-            <span className="px-[10px] pt-[11px] pb-[6px] text-[0.66rem] uppercase tracking-[0.13em] text-muted-dim font-bold block">
+            <span className="px-2.5 pt-3 pb-1.5 text-xs uppercase tracking-widest text-muted-dim font-bold block">
               {group}
             </span>
             {NAV_ITEMS.filter((n) => n.group === group).map((item) => {
@@ -67,8 +69,8 @@ export function Sidebar({
                   key={item.path}
                   href={item.path}
                   className={[
-                    "flex items-center gap-[11px] px-[11px] py-[10px] rounded-[11px] w-full",
-                    "text-[0.93rem] font-medium border transition-all duration-130",
+                    "flex items-center gap-3 px-3 py-2.5 rounded-xl w-full",
+                    "text-sm font-medium border transition-all duration-130",
                     active
                       ? "bg-brand-soft text-brand border-brand-line font-semibold"
                       : "text-muted-fg border-transparent hover:bg-surface-2 hover:text-text",
@@ -78,7 +80,7 @@ export function Sidebar({
                   <span className="flex-1">{item.label}</span>
                   {badge && (
                     <span
-                      className={`text-[0.7rem] font-bold px-[9px] py-px rounded-[20px] ${active ? "bg-brand-soft text-brand" : "bg-surface-3 text-muted-fg"}`}
+                      className={`text-xs font-bold px-2.5 py-px rounded-3xl ${active ? "bg-brand-soft text-brand" : "bg-surface-3 text-muted-fg"}`}
                     >
                       {badge}
                     </span>
@@ -90,7 +92,10 @@ export function Sidebar({
         ))}
       </nav>
 
-      <div className="border-t border-line-soft px-4 py-[14px]">
+      <div className="border-t border-line-soft px-4 py-3.5">
+        {version && (
+          <div className="text-xs text-muted-dim mb-3">Version: {version}</div>
+        )}
         {encodeWindow && settings && (
           <div className="flex items-center gap-3 mb-3">
             <WindowArc
@@ -99,20 +104,20 @@ export function Sidebar({
               isOpen={encodeWindow.open}
             />
             <div className="min-w-0">
-              <div className="text-[0.76rem] font-semibold text-text leading-tight">
+              <div className="text-xs font-semibold text-text leading-tight">
                 {encodeWindow.label}
               </div>
               <div
-                className={`text-[0.7rem] leading-tight mt-[2px] ${encodeWindow.open ? "text-green" : "text-muted-dim"}`}
+                className={`text-xs leading-tight mt-0.5 ${encodeWindow.open ? "text-green" : "text-muted-dim"}`}
               >
                 {encodeWindow.detail}
               </div>
             </div>
           </div>
         )}
-        <div className="flex items-center gap-[10px] text-[0.84rem]">
+        <div className="flex items-center gap-2.5 text-sm">
           <div
-            className="w-[30px] h-[30px] rounded-full grid place-items-center font-bold text-[0.8rem] text-on-brand shrink-0"
+            className="w-8 h-8 rounded-full grid place-items-center font-bold text-xs text-on-brand shrink-0"
             style={{
               background: "linear-gradient(145deg, var(--brand), var(--green))",
             }}
@@ -123,7 +128,7 @@ export function Sidebar({
           <button
             type="button"
             onClick={() => void onLogout()}
-            className="text-[0.76rem] text-muted-dim hover:text-red transition-colors cursor-pointer"
+            className="text-xs text-muted-dim hover:text-red transition-colors cursor-pointer"
           >
             Log out
           </button>

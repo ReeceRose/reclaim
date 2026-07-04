@@ -80,11 +80,11 @@ function EstimateLine({
   if (!est || est <= 0) return null;
   const tip = estimateTooltip(job, profileName);
   const line = (
-    <span className="text-[0.74rem] text-muted-dim font-mono mt-0.5 truncate">
+    <span className="text-xs text-muted-dim font-mono mt-0.5 truncate">
       {formatBytes(job.original_size_bytes)} · ~{formatDurationCompact(est)}{" "}
       estimated
       {job.estimate_source === "seed" && (
-        <Badge className="ml-1.5 text-[0.62rem] font-bold tracking-widest text-brand bg-brand-soft border-brand-line rounded-[5px] uppercase align-middle">
+        <Badge className="ml-1.5 text-xs font-bold tracking-widest text-brand bg-brand-soft border-brand-line rounded-md uppercase align-middle">
           estimate
         </Badge>
       )}
@@ -109,7 +109,7 @@ function VerifyChecks({ json }: { json: string | null }) {
   try {
     vr = JSON.parse(json) as VerificationResult;
   } catch {
-    return <span className="text-[0.76rem] text-muted-dim">{json}</span>;
+    return <span className="text-xs text-muted-dim">{json}</span>;
   }
 
   const checks: { label: string; pass: boolean }[] = [];
@@ -129,11 +129,11 @@ function VerifyChecks({ json }: { json: string | null }) {
     checks.push({ label: "resolution", pass: vr.resolution_match });
 
   return (
-    <div className="flex gap-[7px] mt-[7px] flex-wrap">
+    <div className="flex gap-2 mt-2 flex-wrap">
       {checks.map(({ label, pass }) => (
         <Badge
           key={label}
-          className={`text-[0.71rem] rounded-[6px] gap-[5px] border-transparent ${pass ? "text-green bg-green-soft" : "text-red bg-red-soft"}`}
+          className={`text-xs rounded-md gap-1.5 border-transparent ${pass ? "text-green bg-green-soft" : "text-red bg-red-soft"}`}
         >
           {pass ? "✓" : "✕"} {label}
         </Badge>
@@ -144,15 +144,15 @@ function VerifyChecks({ json }: { json: string | null }) {
 
 function QueueSkeleton() {
   return (
-    <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
+    <div className="px-4 py-6 w-full pb-14 sm:px-7 sm:py-7">
       <div
-        className="border border-line rounded-(--radius) p-5 mb-[18px]"
+        className="border border-line rounded-(--radius) p-5 mb-5"
         style={{ background: "var(--surface)" }}
       >
         <Skeleton className="h-4 w-24 mb-3" />
         <Skeleton className="h-5 w-64 mb-1" />
         <Skeleton className="h-3 w-40 mb-3" />
-        <Skeleton className="h-[11px] w-full rounded-[7px] mb-3" />
+        <Skeleton className="h-3 w-full rounded-lg mb-3" />
         <div className="flex justify-between">
           <Skeleton className="h-3 w-8" />
           <Skeleton className="h-3 w-32" />
@@ -162,15 +162,15 @@ function QueueSkeleton() {
       {[0, 1, 2].map((i) => (
         <div
           key={i}
-          className="flex items-center gap-3.5 px-4 py-[13px] border border-line rounded-[12px] bg-surface mb-2.5"
+          className="flex items-center gap-3.5 px-4 py-3.5 border border-line rounded-xl bg-surface mb-2.5"
         >
-          <Skeleton className="w-7 h-7 rounded-[9px] shrink-0" />
+          <Skeleton className="w-7 h-7 rounded-lg shrink-0" />
           <div className="flex-1 min-w-0">
             <Skeleton className="h-4 w-48 mb-1.5" />
             <Skeleton className="h-3 w-24" />
           </div>
-          <Skeleton className="h-5 w-14 rounded-[20px]" />
-          <Skeleton className="h-7 w-16 rounded-[11px]" />
+          <Skeleton className="h-5 w-14 rounded-3xl" />
+          <Skeleton className="h-7 w-16 rounded-xl" />
         </div>
       ))}
     </div>
@@ -270,10 +270,10 @@ function QueueContent() {
         <div className="sm:ml-auto">
           <Badge
             variant="outline"
-            className="gap-2 text-[0.82rem] font-semibold px-[13px] py-[7px] rounded-[10px] border-line bg-surface"
+            className="gap-2 text-sm font-semibold px-3.5 py-2 rounded-xl border-line bg-surface"
           >
             <span
-              className={`w-[7px] h-[7px] rounded-full shrink-0 ${win.open ? "bg-green" : "bg-muted-dim"}`}
+              className={`w-2 h-2 rounded-full shrink-0 ${win.open ? "bg-green" : "bg-muted-dim"}`}
               style={
                 win.open
                   ? { boxShadow: "0 0 0 3px var(--green-soft)" }
@@ -285,21 +285,21 @@ function QueueContent() {
         </div>
       </PageHeader>
 
-      <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
+      <div className="px-4 py-6 w-full pb-14 sm:px-7 sm:py-7">
         {runningJob && (
           <div
-            className="border border-brand-line rounded-(--radius) p-5 mb-[18px]"
+            className="border border-brand-line rounded-(--radius) p-5 mb-5"
             style={{
               background:
                 "radial-gradient(120% 140% at 0% 0%, var(--brand-soft), transparent 50%), var(--surface)",
             }}
           >
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1.5">
-              <span className="flex items-center gap-1.5 text-[0.68rem] font-bold tracking-widest uppercase text-brand">
-                <span className="w-[7px] h-[7px] rounded-full bg-brand animate-pulse" />
+              <span className="flex items-center gap-1.5 text-xs font-bold tracking-widest uppercase text-brand">
+                <span className="w-2 h-2 rounded-full bg-brand animate-pulse" />
                 Encoding
               </span>
-              <span className="text-muted-fg text-[0.8rem]">
+              <span className="text-muted-fg text-xs">
                 {encodeSettingsLabel(runningJob)}
               </span>
             </div>
@@ -307,18 +307,18 @@ function QueueContent() {
               href={BROWSE_ROUTES.FILE(runningJob.media_file_id)}
               className="block group cursor-pointer"
             >
-              <div className="font-semibold text-[0.88rem] group-hover:text-brand transition-colors">
+              <div className="font-semibold text-sm group-hover:text-brand transition-colors">
                 {jobName(runningJob)}
               </div>
-              <div className="text-[0.74rem] text-muted-dim font-mono mt-0.5 group-hover:text-brand transition-colors">
+              <div className="text-xs text-muted-dim font-mono mt-0.5 group-hover:text-brand transition-colors">
                 {dirName(
                   runningJob.source_path ?? runningJob.output_path ?? "",
                 )}
               </div>
             </Link>
-            <div className="h-[11px] bg-surface-2 rounded-[7px] overflow-hidden my-3 shadow-[inset_0_0_0_1px_var(--line)]">
+            <div className="h-3 bg-surface-2 rounded-lg overflow-hidden my-3 shadow-[inset_0_0_0_1px_var(--line)]">
               <div
-                className="h-full rounded-[7px] transition-[width_.4s]"
+                className="h-full rounded-lg transition-[width_.4s]"
                 style={{
                   width: `${livePercent}%`,
                   background:
@@ -327,7 +327,7 @@ function QueueContent() {
                 }}
               />
             </div>
-            <div className="flex justify-between text-[0.8rem] text-muted-fg">
+            <div className="flex justify-between text-xs text-muted-fg">
               <span>
                 {livePercent}%
                 {runningRemaining > 0 && (
@@ -350,7 +350,7 @@ function QueueContent() {
 
         {queued.length > 0 && (
           <>
-            <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-3">
+            <div className="text-xs uppercase tracking-widest text-muted-fg font-bold mb-3">
               Queued · {queued.length}
               {jobsAll.queue_total_estimated_seconds != null &&
                 jobsAll.queue_total_estimated_seconds > 0 && (
@@ -367,16 +367,16 @@ function QueueContent() {
             {queued.map((job) => (
               <div
                 key={job.id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-2.5 px-4 py-[13px] border border-line rounded-[12px] bg-surface mb-2.5"
+                className="flex flex-wrap items-center gap-x-3 gap-y-2.5 px-4 py-3.5 border border-line rounded-xl bg-surface mb-2.5"
               >
-                <div className="w-7 h-7 rounded-[9px] bg-surface-3 text-muted-fg grid place-items-center font-bold text-[0.82rem] shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-surface-3 text-muted-fg grid place-items-center font-bold text-sm shrink-0">
                   {job.queue_position}
                 </div>
                 <Link
                   href={BROWSE_ROUTES.FILE(job.media_file_id)}
                   className="block flex-1 min-w-0 hover:opacity-80 transition-opacity cursor-pointer"
                 >
-                  <div className="font-semibold text-[0.88rem] truncate">
+                  <div className="font-semibold text-sm truncate">
                     {jobName(job)}
                   </div>
                   <EstimateLine
@@ -385,13 +385,13 @@ function QueueContent() {
                   />
                 </Link>
                 {job.forced ? (
-                  <Badge className="text-[0.72rem] rounded-[20px] border-transparent text-brand bg-brand-soft shrink-0">
+                  <Badge className="text-xs rounded-3xl border-transparent text-brand bg-brand-soft shrink-0">
                     forced
                   </Badge>
                 ) : (
                   <Badge
                     variant="secondary"
-                    className="text-[0.72rem] rounded-[20px] text-muted-fg shrink-0"
+                    className="text-xs rounded-3xl text-muted-fg shrink-0"
                   >
                     queued
                   </Badge>
@@ -403,7 +403,7 @@ function QueueContent() {
                       variant="outline"
                       onClick={() => forceMutation.mutate(job.id)}
                       disabled={forceMutation.isPending}
-                      className="rounded-[11px] text-[0.78rem]"
+                      className="rounded-xl text-xs"
                       title="Run now, bypassing the encode window"
                     >
                       Run now
@@ -414,7 +414,7 @@ function QueueContent() {
                     variant="outline"
                     onClick={() => cancelMutation.mutate(job.id)}
                     disabled={cancelMutation.isPending}
-                    className="rounded-[11px] text-red border-red/30 hover:bg-red-soft hover:text-red"
+                    className="rounded-xl text-red border-red/30 hover:bg-red-soft hover:text-red"
                   >
                     Cancel
                   </Button>
@@ -426,7 +426,7 @@ function QueueContent() {
 
         {history.length > 0 && (
           <>
-            <div className="text-xs uppercase tracking-[0.11em] text-muted-fg font-bold mb-3 mt-6">
+            <div className="text-xs uppercase tracking-widest text-muted-fg font-bold mb-3 mt-6">
               History
             </div>
             {history.map((job) => {
@@ -437,7 +437,7 @@ function QueueContent() {
               return (
                 <div
                   key={job.id}
-                  className="group flex flex-wrap items-start gap-3.5 px-4 py-[13px] border rounded-[12px] bg-surface mb-2.5"
+                  className="group flex flex-wrap items-start gap-3.5 px-4 py-3.5 border rounded-xl bg-surface mb-2.5"
                   style={{
                     borderColor: failed
                       ? "color-mix(in srgb, var(--red) 35%, transparent)"
@@ -446,7 +446,7 @@ function QueueContent() {
                 >
                   <Link
                     href={BROWSE_ROUTES.FILE(job.media_file_id)}
-                    className="block flex-1 min-w-[60%] hover:opacity-80 transition-opacity cursor-pointer"
+                    className="block flex-1 min-w-3/5 hover:opacity-80 transition-opacity cursor-pointer"
                   >
                     <div className="font-semibold text-sm">{jobName(job)}</div>
                     <div className="flex items-baseline gap-2 mt-0.5 flex-wrap">
@@ -463,7 +463,7 @@ function QueueContent() {
                     </div>
                     <VerifyChecks json={job.verification_result} />
                     {!failed && job.encode_duration_seconds != null && (
-                      <div className="text-[0.72rem] text-muted-dim mt-1">
+                      <div className="text-xs text-muted-dim mt-1">
                         took{" "}
                         {formatDurationCompact(job.encode_duration_seconds)}
                         {job.encode_preset && (
@@ -479,7 +479,7 @@ function QueueContent() {
                     )}
                     {failed && job.output_path && (
                       <div
-                        className="text-xs text-red mt-2 rounded-[9px] px-[11px] py-2 border"
+                        className="text-xs text-red mt-2 rounded-lg px-3 py-2 border"
                         style={{
                           background: "var(--red-soft)",
                           borderColor:
@@ -488,7 +488,7 @@ function QueueContent() {
                       >
                         Temp output kept for inspection:
                         <br />
-                        <span className="font-mono text-[0.72rem]">
+                        <span className="font-mono text-xs">
                           {job.output_path}
                         </span>
                       </div>
@@ -501,7 +501,7 @@ function QueueContent() {
                       </span>
                     )}
                     <Badge
-                      className={`text-xs rounded-[20px] border-transparent ${failed ? "text-red bg-red-soft" : "text-green bg-green-soft"}`}
+                      className={`text-xs rounded-3xl border-transparent ${failed ? "text-red bg-red-soft" : "text-green bg-green-soft"}`}
                     >
                       {failed ? "failed" : "completed"}
                     </Badge>

@@ -18,10 +18,7 @@ export function CodecBadge({
   if (!codec) {
     if (!showUnknown) return null;
     return (
-      <Badge
-        variant="outline"
-        className="font-mono text-[0.7rem] rounded-[7px]"
-      >
+      <Badge variant="outline" className="font-mono text-xs rounded-lg">
         unknown
       </Badge>
     );
@@ -29,7 +26,7 @@ export function CodecBadge({
   const c = codec.toLowerCase();
   return (
     <Badge
-      className={`font-mono text-[0.7rem] rounded-[7px] font-semibold ${CODEC_COLORS[c] ?? "text-slate"} ${CODEC_BORDER[c] ?? "border-line bg-surface-3"}`}
+      className={`font-mono text-xs rounded-lg font-semibold ${CODEC_COLORS[c] ?? "text-slate"} ${CODEC_BORDER[c] ?? "border-line bg-surface-3"}`}
     >
       {codec}
     </Badge>

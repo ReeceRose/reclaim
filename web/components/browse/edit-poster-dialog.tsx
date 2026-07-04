@@ -128,7 +128,7 @@ export function EditPosterDialog({
                   )}
                 >
                   {r.poster_url ? (
-                    <div className="relative w-full aspect-[2/3]">
+                    <div className="relative w-full aspect-2/3">
                       <Image
                         src={r.poster_url}
                         alt={r.title}
@@ -138,7 +138,7 @@ export function EditPosterDialog({
                       />
                     </div>
                   ) : (
-                    <div className="w-full aspect-[2/3] bg-surface-3 flex items-center justify-center text-xs text-muted-dim p-1 text-center">
+                    <div className="w-full aspect-2/3 bg-surface-3 flex items-center justify-center text-xs text-muted-dim p-1 text-center">
                       {r.title}
                     </div>
                   )}

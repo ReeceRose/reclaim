@@ -49,12 +49,12 @@ export function StateBadge({ state }: { state: CandidateState }) {
       : state === "already_hevc" || state === "completed"
         ? "text-green border-green-soft bg-green-soft"
         : state === "probe_failed"
-          ? "text-red border-[rgba(255,120,120,.28)] bg-[rgba(255,120,120,.09)]"
+          ? "text-red border-red/28 bg-red/9"
           : state === "queued"
-            ? "text-sky border-[rgba(51,177,255,.32)] bg-[rgba(51,177,255,.1)]"
+            ? "text-sky border-sky/32 bg-sky/10"
             : "text-muted-fg border-line bg-surface-3";
   return (
-    <Badge className={`text-[0.7rem] rounded-[7px] font-semibold ${cls}`}>
+    <Badge className={`text-xs rounded-lg font-semibold ${cls}`}>
       {stateLabel(state)}
     </Badge>
   );

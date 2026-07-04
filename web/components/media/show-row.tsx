@@ -27,7 +27,7 @@ export function ShowRow({
     >
       {hasChevron && (
         <span
-          className={`w-[18px] h-[18px] shrink-0 grid place-items-center text-muted-fg transition-transform ${expanded ? "rotate-90" : ""}`}
+          className={`w-5 h-5 shrink-0 grid place-items-center text-muted-fg transition-transform ${expanded ? "rotate-90" : ""}`}
         >
           <svg
             aria-hidden="true"

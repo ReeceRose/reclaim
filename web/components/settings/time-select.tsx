@@ -32,7 +32,7 @@ export function TimeSelect({
         value={String(h12)}
         onValueChange={(v) => update(Number(v), isPM)}
       >
-        <SelectTrigger className="w-[90px] rounded-[10px] text-sm">
+        <SelectTrigger className="w-24 rounded-xl text-sm">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -47,7 +47,7 @@ export function TimeSelect({
         value={isPM ? "PM" : "AM"}
         onValueChange={(v) => update(h12, v === "PM")}
       >
-        <SelectTrigger className="w-[72px] rounded-[10px] text-sm">
+        <SelectTrigger className="w-20 rounded-xl text-sm">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

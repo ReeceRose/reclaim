@@ -23,16 +23,16 @@ export function EmptyState({
     >
       {icon && (
         <div
-          className="w-12 h-12 rounded-[14px] border border-line grid place-items-center text-muted-dim"
+          className="w-12 h-12 rounded-2xl border border-line grid place-items-center text-muted-dim"
           style={{ background: "var(--surface-2)" }}
         >
           {icon}
         </div>
       )}
       <div>
-        <div className="text-[0.9rem] font-semibold text-text">{title}</div>
+        <div className="text-sm font-semibold text-text">{title}</div>
         {description && (
-          <div className="text-[0.78rem] text-muted-dim mt-1 max-w-[260px]">
+          <div className="text-xs text-muted-dim mt-1 max-w-3xs">
             {description}
           </div>
         )}

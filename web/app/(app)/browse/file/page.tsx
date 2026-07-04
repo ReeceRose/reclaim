@@ -184,7 +184,7 @@ function EditPosterDialog({
                   )}
                 >
                   {r.poster_url ? (
-                    <div className="relative w-full aspect-[2/3]">
+                    <div className="relative w-full aspect-2/3">
                       <Image
                         src={r.poster_url}
                         alt={r.title}
@@ -194,7 +194,7 @@ function EditPosterDialog({
                       />
                     </div>
                   ) : (
-                    <div className="w-full aspect-[2/3] bg-surface-3 flex items-center justify-center text-xs text-muted-dim p-1 text-center">
+                    <div className="w-full aspect-2/3 bg-surface-3 flex items-center justify-center text-xs text-muted-dim p-1 text-center">
                       {r.title}
                     </div>
                   )}
@@ -541,8 +541,8 @@ function FilePageContent() {
                 <Badge
                   className={`text-xs rounded-md font-semibold ${
                     isTV
-                      ? "text-sky border-[rgba(51,177,255,.32)] bg-[rgba(51,177,255,.1)]"
-                      : "text-violet border-[rgba(190,149,255,.3)] bg-[rgba(190,149,255,.1)]"
+                      ? "text-sky border-sky/32 bg-sky/10"
+                      : "text-violet border-violet/30 bg-violet/10"
                   }`}
                 >
                   {isTV ? "TV" : "Movie"}

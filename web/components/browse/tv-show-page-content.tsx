@@ -297,7 +297,7 @@ export function TvShowPageContent() {
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <Badge className="text-xs rounded-md text-sky border-[rgba(51,177,255,.32)] bg-[rgba(51,177,255,.1)]">
+                <Badge className="text-xs rounded-md text-sky border-sky/32 bg-sky/10">
                   TV
                 </Badge>
                 {metadata?.release_year && (

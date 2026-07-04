@@ -45,12 +45,12 @@ function ExpandableMetadata({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-[0.7rem] text-muted-dim hover:text-muted-fg transition-colors"
+        className="text-xs text-muted-dim hover:text-muted-fg transition-colors"
       >
         {open ? "▾ Hide details" : "▸ Show details"}
       </button>
       {open && (
-        <div className="mt-1 text-[0.72rem] font-mono text-muted-fg bg-surface-2 rounded-[6px] px-3 py-2 space-y-0.5">
+        <div className="mt-1 text-xs font-mono text-muted-fg bg-surface-2 rounded-md px-3 py-2 space-y-0.5">
           {Object.entries(vr).map(([k, v]) => (
             <div key={k} className="flex gap-2">
               <span className="text-muted-dim">{k}:</span>
@@ -74,18 +74,18 @@ function EventRow({
 }) {
   return (
     <div className="group flex gap-3 px-6 py-3.5 border-b border-line-soft last:border-0">
-      <div className="pt-[5px] shrink-0">
+      <div className="pt-1.5 shrink-0">
         <span
           className={`block w-2 h-2 rounded-full ${SEVERITY_DOT[event.severity] ?? "bg-muted-dim"}`}
         />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <p className="text-[0.85rem] leading-snug text-text wrap-break-word">
+          <p className="text-sm leading-snug text-text wrap-break-word">
             {event.message}
           </p>
           <div className="flex items-center gap-1 shrink-0">
-            <span className="text-[0.7rem] text-muted-dim whitespace-nowrap">
+            <span className="text-xs text-muted-dim whitespace-nowrap">
               {relativeTime(event.created_at)}
             </span>
             <button
@@ -93,7 +93,7 @@ function EventRow({
               onClick={() => onDelete(event.id)}
               disabled={deleting}
               aria-label="Dismiss event"
-              className="rounded-[6px] p-1 text-muted-dim opacity-0 max-sm:opacity-100 transition-opacity hover:bg-surface-2 hover:text-text group-hover:opacity-100 focus:opacity-100 disabled:opacity-40"
+              className="rounded-md p-1 text-muted-dim opacity-0 max-sm:opacity-100 transition-opacity hover:bg-surface-2 hover:text-text group-hover:opacity-100 focus:opacity-100 disabled:opacity-40"
             >
               <svg
                 aria-hidden="true"
@@ -125,8 +125,8 @@ function EventListSkeleton() {
         <div key={i} className="flex gap-3">
           <Skeleton className="w-2 h-2 rounded-full mt-1.5 shrink-0" />
           <div className="flex-1 space-y-1.5">
-            <Skeleton className="h-3.5 w-[80%]" />
-            <Skeleton className="h-3 w-[40%]" />
+            <Skeleton className="h-3.5 w-4/5" />
+            <Skeleton className="h-3 w-2/5" />
           </div>
         </div>
       ))}
@@ -156,11 +156,11 @@ function ClearAllDialog({
         className="max-w-sm border-line p-0 overflow-hidden"
         style={{ background: "var(--surface)" }}
       >
-        <DialogHeader className="px-6 pt-[22px] pb-4 border-b border-line">
-          <DialogTitle className="text-[1.1rem] font-bold">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-line">
+          <DialogTitle className="text-lg font-bold">
             Clear all events?
           </DialogTitle>
-          <DialogDescription className="text-[0.85rem] text-muted-fg mt-1">
+          <DialogDescription className="text-sm text-muted-fg mt-1">
             This removes every event from the list. New activity will still be
             logged going forward.
           </DialogDescription>
@@ -171,7 +171,7 @@ function ClearAllDialog({
             variant="outline"
             onClick={onClose}
             disabled={pending}
-            className="rounded-[11px]"
+            className="rounded-xl"
           >
             Cancel
           </Button>
@@ -179,7 +179,7 @@ function ClearAllDialog({
             onClick={onConfirm}
             disabled={pending}
             variant="destructive"
-            className="rounded-[11px]"
+            className="rounded-xl"
           >
             {pending ? "Clearing…" : "Clear all"}
           </Button>
@@ -251,7 +251,7 @@ export function NotificationPanel({ open, onOpenChange }: Props) {
                 size="sm"
                 onClick={() => setClearDialogOpen(true)}
                 disabled={clearMutation.isPending}
-                className="rounded-[8px] h-7 px-2.5 text-[0.78rem] text-muted-dim hover:text-text"
+                className="rounded-lg h-7 px-2.5 text-xs text-muted-dim hover:text-text"
               >
                 Clear all
               </Button>
@@ -274,7 +274,7 @@ export function NotificationPanel({ open, onOpenChange }: Props) {
                   <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
                   <path d="M13.73 21a2 2 0 01-3.46 0" />
                 </svg>
-                <p className="text-[0.85rem]">No events yet</p>
+                <p className="text-sm">No events yet</p>
               </div>
             ) : (
               events.map((event) => (

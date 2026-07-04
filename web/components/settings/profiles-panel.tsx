@@ -24,14 +24,14 @@ export function ProfilesPanel({
       style={{ background: "var(--surface)" }}
     >
       <div className="flex items-center mb-4">
-        <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold">
+        <div className="text-xs uppercase tracking-widest text-muted-fg font-bold">
           Transcode profiles
         </div>
         <Button
           variant="outline"
           size="sm"
           onClick={onNew}
-          className="ml-auto rounded-[11px]"
+          className="ml-auto rounded-xl"
         >
           + New profile
         </Button>
@@ -39,22 +39,22 @@ export function ProfilesPanel({
       {profiles.map((p) => (
         <div
           key={p.id}
-          className="flex flex-wrap items-center gap-x-3.5 gap-y-2 border rounded-[12px] px-4 py-[14px] mb-2.5 last:mb-0"
+          className="flex flex-wrap items-center gap-x-3.5 gap-y-2 border rounded-xl px-4 py-3.5 mb-2.5 last:mb-0"
           style={{
             borderColor: p.is_default ? "var(--brand-line)" : "var(--line)",
             background: p.is_default ? "var(--brand-soft)" : undefined,
           }}
         >
           <div className="flex-1 min-w-0">
-            <div className="font-semibold text-[0.95rem]">
+            <div className="font-semibold text-base">
               {p.name}
               {p.is_default && (
-                <span className="ml-2 text-[0.66rem] font-bold uppercase tracking-wider text-brand">
+                <span className="ml-2 text-xs font-bold uppercase tracking-wider text-brand">
                   Default
                 </span>
               )}
             </div>
-            <div className="text-[0.78rem] text-muted-fg font-mono mt-0.5 wrap-break-word">
+            <div className="text-xs text-muted-fg font-mono mt-0.5 wrap-break-word">
               libx265 · CRF {p.crf} · preset {p.preset}
               {p.extra_args && ` · ${p.extra_args}`}
             </div>
@@ -64,7 +64,7 @@ export function ProfilesPanel({
               variant="ghost"
               size="sm"
               onClick={() => onEdit(p)}
-              className="rounded-[11px]"
+              className="rounded-xl"
             >
               Edit
             </Button>
@@ -75,7 +75,7 @@ export function ProfilesPanel({
                   size="sm"
                   onClick={() => onSetDefault(p)}
                   disabled={isSettingDefault}
-                  className="rounded-[11px]"
+                  className="rounded-xl"
                 >
                   Set default
                 </Button>
@@ -83,7 +83,7 @@ export function ProfilesPanel({
                   variant="ghost"
                   size="sm"
                   onClick={() => onDelete(p)}
-                  className="rounded-[11px] text-red hover:bg-red-soft hover:text-red"
+                  className="rounded-xl text-red hover:bg-red-soft hover:text-red"
                 >
                   Delete
                 </Button>

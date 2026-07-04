@@ -34,7 +34,7 @@ export default function GlobalError({
           <button
             type="button"
             onClick={() => reset()}
-            className="inline-flex items-center justify-center h-10 px-5 rounded-[11px] text-sm font-semibold text-on-brand"
+            className="inline-flex items-center justify-center h-10 px-5 rounded-xl text-sm font-semibold text-on-brand"
             style={{
               background:
                 "linear-gradient(145deg, var(--brand), var(--brand-2))",

@@ -24,7 +24,7 @@ export function MobileHeader({
       <BrandLink size={28} />
       <div className="flex items-center gap-2 ml-auto">
         {!wsConnected && (
-          <span className="text-[0.65rem] font-semibold text-muted-fg">
+          <span className="text-xs font-semibold text-muted-fg">
             Reconnecting…
           </span>
         )}
@@ -57,8 +57,8 @@ export function MobileBottomNav({ pathname }: { pathname: string }) {
             key={item.path}
             href={item.path}
             className={[
-              "flex-1 flex flex-col items-center gap-[3px] px-[2px] py-[6px] rounded-[11px]",
-              "text-[0.64rem] font-semibold transition-[120ms] whitespace-nowrap overflow-hidden",
+              "flex-1 flex flex-col items-center gap-1 px-0.5 py-1.5 rounded-xl",
+              "text-xs font-semibold transition-all duration-100 whitespace-nowrap overflow-hidden",
               active ? "text-brand bg-brand-soft" : "text-muted-fg",
             ].join(" ")}
           >

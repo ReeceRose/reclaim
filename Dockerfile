@@ -24,26 +24,33 @@ COPY cmd/ cmd/
 COPY internal/ internal/
 COPY web/embed.go web/embed.go
 
+ARG VERSION=dev
+ARG COMMIT=unknown
+
 # ── Go build with frontend compiled inside Docker (default / release tags) ─────
 FROM go-base AS go-build
+ARG VERSION
+ARG COMMIT
 COPY --from=frontend-build /build/out web/out
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux \
     go build \
-      -ldflags="-s -w" \
+      -ldflags="-s -w -X reclaim/internal/version.Version=${VERSION} -X reclaim/internal/version.Commit=${COMMIT}" \
       -trimpath \
       -o /reclaim \
       ./cmd/reclaim
 
 # ── Go build with pre-built frontend (CI — web/out supplied as build context) ──
 FROM go-base AS go-build-prebuilt
+ARG VERSION
+ARG COMMIT
 COPY web/out web/out
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux \
     go build \
-      -ldflags="-s -w" \
+      -ldflags="-s -w -X reclaim/internal/version.Version=${VERSION} -X reclaim/internal/version.Commit=${COMMIT}" \
       -trimpath \
       -o /reclaim \
       ./cmd/reclaim

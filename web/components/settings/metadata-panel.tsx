@@ -14,23 +14,23 @@ export function MetadataPanel({
 }) {
   return (
     <div
-      className="border border-line rounded-(--radius) p-5 mt-[18px]"
+      className="border border-line rounded-(--radius) p-5 mt-5"
       style={{ background: "var(--surface)" }}
     >
-      <div className="text-[0.72rem] uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">
+      <div className="text-xs uppercase tracking-widest text-muted-fg font-bold mb-4">
         Metadata
       </div>
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <Label className="text-[0.8rem] font-semibold block mb-0.5">
+          <Label className="text-xs font-semibold block mb-0.5">
             TMDB API key
           </Label>
           {tmdbConfigured ? (
-            <p className="text-[0.78rem] text-green font-mono">
+            <p className="text-xs text-green font-mono">
               Configured · TMDB_API_KEY env var
             </p>
           ) : (
-            <p className="text-[0.78rem] text-muted-dim font-mono">
+            <p className="text-xs text-muted-dim font-mono">
               Not configured · set{" "}
               <span className="text-muted-fg">TMDB_API_KEY</span> env var
             </p>
@@ -41,7 +41,7 @@ export function MetadataPanel({
             variant="outline"
             onClick={onRefresh}
             disabled={isRefreshing}
-            className="rounded-[11px]"
+            className="rounded-xl"
           >
             {isRefreshing ? "Refreshing…" : "Refresh all metadata"}
           </Button>

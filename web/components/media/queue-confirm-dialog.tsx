@@ -69,36 +69,36 @@ export function QueueConfirmDialog({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        className="max-w-[540px] p-0 overflow-hidden border-line"
+        className="max-w-lg p-0 overflow-hidden border-line"
         style={{ background: "var(--surface)" }}
       >
-        <DialogHeader className="px-6 pt-[22px] pb-4 border-b border-line">
-          <DialogTitle className="text-[1.2rem] font-bold tracking-tight">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-line">
+          <DialogTitle className="text-xl font-bold tracking-tight">
             Confirm queue
           </DialogTitle>
-          <p className="text-[0.85rem] text-muted-fg mt-1">{subtitle}</p>
+          <p className="text-sm text-muted-fg mt-1">{subtitle}</p>
         </DialogHeader>
 
-        <div className="px-6 py-5 max-h-[300px] overflow-auto">
-          <div className="flex gap-6 mb-[18px] flex-wrap">
+        <div className="px-6 py-5 max-h-72 overflow-auto">
+          <div className="flex gap-6 mb-5 flex-wrap">
             <div>
-              <div className="text-[0.72rem] uppercase tracking-wider text-muted-fg">
+              <div className="text-xs uppercase tracking-wider text-muted-fg">
                 Files
               </div>
-              <div className="text-[1.55rem] font-bold tracking-tight mt-0.5">
+              <div className="text-2xl font-bold tracking-tight mt-0.5">
                 {formatInt(selectedFiles.length)}
               </div>
             </div>
             <div>
-              <div className="text-[0.72rem] uppercase tracking-wider text-muted-fg">
+              <div className="text-xs uppercase tracking-wider text-muted-fg">
                 Est. recoverable
               </div>
-              <div className="text-[1.55rem] font-bold tracking-tight mt-0.5 text-brand">
+              <div className="text-2xl font-bold tracking-tight mt-0.5 text-brand">
                 {formatBytes(totalSavings)}
               </div>
             </div>
             <div>
-              <div className="text-[0.72rem] uppercase tracking-wider text-muted-fg">
+              <div className="text-xs uppercase tracking-wider text-muted-fg">
                 Profile
               </div>
               {profiles.length > 1 ? (
@@ -119,18 +119,18 @@ export function QueueConfirmDialog({
                   </SelectContent>
                 </Select>
               ) : (
-                <div className="text-[1.1rem] font-bold tracking-tight mt-0.5">
+                <div className="text-lg font-bold tracking-tight mt-0.5">
                   {defaultProfile?.name ?? "—"}
                 </div>
               )}
             </div>
           </div>
 
-          <div className="text-[0.82rem]">
+          <div className="text-sm">
             {preview.map((f) => (
               <div
                 key={f.id}
-                className="flex justify-between gap-3 py-[7px] border-b border-line-soft last:border-b-0"
+                className="flex justify-between gap-3 py-2 border-b border-line-soft last:border-b-0"
               >
                 <span className="truncate text-muted-fg">
                   {baseName(f.path)}
@@ -141,7 +141,7 @@ export function QueueConfirmDialog({
               </div>
             ))}
             {showMoreCount && more > 0 && (
-              <div className="text-[0.78rem] text-muted-dim pt-2">
+              <div className="text-xs text-muted-dim pt-2">
                 …and {more} more
               </div>
             )}
@@ -149,7 +149,7 @@ export function QueueConfirmDialog({
 
           {showSafetyNote && (
             <div
-              className="flex items-start gap-[9px] text-[0.8rem] text-muted-fg mt-4 rounded-[11px] px-[13px] py-[11px] border"
+              className="flex items-start gap-2.5 text-xs text-muted-fg mt-4 rounded-xl px-3.5 py-3 border"
               style={{
                 background: "var(--green-soft)",
                 borderColor:
@@ -176,17 +176,13 @@ export function QueueConfirmDialog({
         </div>
 
         <DialogFooter className="px-6 py-4 border-t border-line flex justify-end gap-2">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            className="rounded-[11px]"
-          >
+          <Button variant="outline" onClick={onClose} className="rounded-xl">
             Cancel
           </Button>
           <Button
             onClick={() => void handleConfirm()}
             disabled={loading || selectedFiles.length === 0}
-            className="rounded-[11px]"
+            className="rounded-xl"
             style={{
               background:
                 "linear-gradient(145deg, var(--brand), var(--brand-2))",

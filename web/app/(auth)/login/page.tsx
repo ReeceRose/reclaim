@@ -41,13 +41,11 @@ export default function LoginPage() {
         e.preventDefault();
         void handleSubmit();
       }}
-      className="text-left rounded-2xl p-[22px] border border-line"
+      className="text-left rounded-2xl p-6 border border-line"
       style={{ background: "var(--surface)" }}
     >
       <div className="mb-4">
-        <Label className="block text-[0.8rem] font-semibold mb-1.5">
-          Username
-        </Label>
+        <Label className="block text-xs font-semibold mb-1.5">Username</Label>
         <Input
           value={username}
           onChange={(e) => setUsername(e.target.value)}
@@ -56,9 +54,7 @@ export default function LoginPage() {
         />
       </div>
       <div className="mb-4">
-        <Label className="block text-[0.8rem] font-semibold mb-1.5">
-          Password
-        </Label>
+        <Label className="block text-xs font-semibold mb-1.5">Password</Label>
         <Input
           type="password"
           value={password}
@@ -70,7 +66,7 @@ export default function LoginPage() {
       <Button
         type="submit"
         disabled={loading}
-        className="w-full h-10 rounded-[11px] text-sm font-semibold text-on-brand"
+        className="w-full h-10 rounded-xl text-sm font-semibold text-on-brand"
         style={{
           background: "linear-gradient(145deg, var(--brand), var(--brand-2))",
           boxShadow: "0 4px 14px var(--brand-soft)",

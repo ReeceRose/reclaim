@@ -51,7 +51,7 @@ function SheetContent({
       <DialogPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          "fixed inset-y-0 right-0 z-50 flex h-full w-[420px] max-w-full flex-col border-l border-line shadow-xl duration-300 outline-none",
+          "fixed inset-y-0 right-0 z-50 flex h-full w-96 max-w-full flex-col border-l border-line shadow-xl duration-300 outline-none",
           "data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right",
           "data-[state=open]:animate-in data-[state=open]:slide-in-from-right",
           className,
@@ -62,7 +62,7 @@ function SheetContent({
         {children}
         <DialogPrimitive.Close
           data-slot="sheet-close"
-          className="absolute top-4 right-4 rounded-[8px] p-1 opacity-60 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-brand"
+          className="absolute top-4 right-4 rounded-lg p-1 opacity-60 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-brand"
         >
           <XIcon className="w-4 h-4" />
           <span className="sr-only">Close</span>
@@ -92,7 +92,7 @@ function SheetTitle({
   return (
     <DialogPrimitive.Title
       data-slot="sheet-title"
-      className={cn("text-[1rem] font-semibold leading-none", className)}
+      className={cn("text-base font-semibold leading-none", className)}
       {...props}
     />
   );

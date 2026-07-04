@@ -35,7 +35,7 @@ export function SortHeaderCell({
       <span>{children}</span>
       <span
         aria-hidden
-        className="inline-block w-[0.75em] shrink-0 text-[0.65rem] leading-none"
+        className="inline-block w-[0.75em] shrink-0 text-xs leading-none"
       >
         {arrow ?? ""}
       </span>

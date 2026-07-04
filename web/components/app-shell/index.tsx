@@ -23,6 +23,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         encodeWindow={shell.encodeWindow}
         username={shell.username}
         initials={shell.initials}
+        version={shell.version}
         onOpenNotifications={() => setNotifOpen(true)}
         onLogout={shell.handleLogout}
       />

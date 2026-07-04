@@ -29,7 +29,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         style={{ background: "var(--bg)" }}
       >
         <div className="flex flex-col items-center gap-3">
-          <Skeleton className="w-8 h-8 rounded-[9px]" />
+          <Skeleton className="w-8 h-8 rounded-lg" />
           <Skeleton className="w-24 h-2 rounded" />
         </div>
       </div>

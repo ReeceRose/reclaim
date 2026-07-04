@@ -59,7 +59,7 @@ export function CandidatesFilterBar({
             fill="none"
             stroke="currentColor"
             strokeWidth="2"
-            className="w-[14px] h-[14px] absolute left-[11px] top-1/2 -translate-y-1/2 text-muted-dim pointer-events-none"
+            className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-dim pointer-events-none"
           >
             <circle cx="11" cy="11" r="8" />
             <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -69,7 +69,7 @@ export function CandidatesFilterBar({
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search by title or path…"
             aria-label="Search candidates"
-            className="rounded-[11px] pl-[34px] text-sm"
+            className="rounded-xl pl-9 text-sm"
           />
         </div>
       </div>
@@ -78,14 +78,14 @@ export function CandidatesFilterBar({
           value={sort}
           onValueChange={(v) => onSortChange(v as CandidateSortKey)}
         >
-          <SelectTrigger className="rounded-[11px] bg-surface text-sm h-auto py-[7px] gap-1 min-w-[185px]">
+          <SelectTrigger className="rounded-xl bg-surface text-sm h-auto py-2 gap-1 min-w-48">
             <svg
               aria-hidden="true"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
-              className="w-[13px] h-[13px] text-muted-dim shrink-0"
+              className="w-3.5 h-3.5 text-muted-dim shrink-0"
             >
               <path d="M3 8h18M6 12h12M10 16h4" />
             </svg>
@@ -106,21 +106,21 @@ export function CandidatesFilterBar({
           value={codec}
           options={codecOptions}
           onChange={onCodecChange}
-          className="min-w-[120px]"
+          className="min-w-32"
         />
         <FilterSelect
           label="Res"
           value={resolution}
           options={resolutionOptions}
           onChange={onResolutionChange}
-          className="min-w-[100px]"
+          className="min-w-24"
         />
         <FilterSelect
           label="Library"
           value={library}
           options={libraryOptions}
           onChange={onLibraryChange}
-          className="min-w-[130px]"
+          className="min-w-32"
         />
       </div>
     </div>

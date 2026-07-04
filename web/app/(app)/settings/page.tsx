@@ -12,7 +12,7 @@ export default function Page() {
         fallback={
           <>
             <div
-              className="flex items-center gap-4 px-4 py-[14px] border-b border-line sm:px-7 sm:py-[18px]"
+              className="flex items-center gap-4 px-4 py-3.5 border-b border-line sm:px-7 sm:py-5"
               style={{
                 background: "rgba(22,22,22,.82)",
                 backdropFilter: "blur(10px)",

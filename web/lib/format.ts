@@ -31,6 +31,13 @@ export function formatCoverage(files: number, candidates: number): string {
   return `${formatInt(files)} files · ${formatInt(candidates)} candidates · ${formatPct(candidates, files)}`;
 }
 
+/** formatVersion renders the build version + short commit, e.g. "v1.4.2 · a3f9c1d" or "dev · a3f9c1d". */
+export function formatVersion(version: string, commit: string): string {
+  const short = commit.slice(0, 7);
+  const label = version === "dev" ? "dev" : `v${version}`;
+  return short && short !== "unknown" ? `${label} · ${short}` : label;
+}
+
 /** relativeTime renders a unix-seconds timestamp as "18 min ago". */
 export function relativeTime(unixSeconds: number | null | undefined): string {
   if (!unixSeconds) return "never";

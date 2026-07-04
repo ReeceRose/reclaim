@@ -13,8 +13,8 @@ export function QueryErrorState({
   return (
     <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
       <div>
-        <div className="text-[0.9rem] font-semibold text-text">{title}</div>
-        <div className="text-[0.78rem] text-muted-dim mt-1 max-w-[320px]">
+        <div className="text-sm font-semibold text-text">{title}</div>
+        <div className="text-xs text-muted-dim mt-1 max-w-xs">
           {apiErrorMessage(error)}
         </div>
       </div>

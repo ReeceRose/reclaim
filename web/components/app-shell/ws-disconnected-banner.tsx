@@ -8,7 +8,7 @@ export function WsDisconnectedBanner({ visible }: { visible: boolean }) {
     >
       <div className="overflow-hidden">
         <div
-          className="flex items-center gap-2 px-5 py-[9px] text-[0.75rem] font-medium border-b border-line"
+          className="flex items-center gap-2 px-5 py-2.5 text-xs font-medium border-b border-line"
           style={{ background: "var(--surface-2)", color: "var(--muted-fg)" }}
         >
           <span

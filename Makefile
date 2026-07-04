@@ -28,11 +28,15 @@ dev: $(DEV_DIR)
 	cd web && NEXT_PUBLIC_WS_BASE=ws://localhost:8080 pnpm run dev & \
 	wait
 
+VERSION := $(shell git describe --tags --exact-match 2>/dev/null || echo dev)
+COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+LDFLAGS := -X reclaim/internal/version.Version=$(VERSION) -X reclaim/internal/version.Commit=$(COMMIT)
+
 ## build: compile binary to bin/reclaim (builds embedded frontend first)
 build:
 	mkdir -p bin
 	cd web && pnpm run build
-	go build -o bin/reclaim ./cmd/reclaim
+	go build -ldflags="$(LDFLAGS)" -o bin/reclaim ./cmd/reclaim
 
 ## test: run all tests
 test:

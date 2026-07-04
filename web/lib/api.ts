@@ -55,6 +55,8 @@ export interface Session {
   setup_complete: boolean;
   authenticated: boolean;
   username: string | null;
+  version: string;
+  commit: string;
 }
 
 export interface CodecStat {

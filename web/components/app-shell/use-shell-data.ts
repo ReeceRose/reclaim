@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useUnreadCount } from "@/components/notification-panel";
 import { useWS } from "@/hooks/use-ws";
 import { api, type ScanProgress } from "@/lib/api";
-import { formatInt, windowInfo } from "@/lib/format";
+import { formatInt, formatVersion, windowInfo } from "@/lib/format";
 
 export function useShellData() {
   useWS();
@@ -101,6 +101,9 @@ export function useShellData() {
     : null;
   const username = session?.username ?? "";
   const initials = username.slice(0, 2).toUpperCase() || "?";
+  const version = session
+    ? formatVersion(session.version, session.commit)
+    : null;
   const scanProgressDetail = scanProgress
     ? [
         `${formatInt(scanProgress.files_processed)} indexed`,
@@ -136,6 +139,7 @@ export function useShellData() {
     encodeWindow,
     username,
     initials,
+    version,
     handleLogout,
   };
 }

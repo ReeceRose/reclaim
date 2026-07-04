@@ -25,16 +25,16 @@ function DashboardSkeleton() {
   return (
     <div className="px-4 pt-5 pb-14 w-full sm:px-7 sm:pt-7">
       <div
-        className="rounded-[18px] border border-line px-5 py-6 mb-6 sm:px-7 sm:py-7"
+        className="rounded-2xl border border-line px-5 py-6 mb-6 sm:px-7 sm:py-7"
         style={{ background: "var(--surface)" }}
       >
         <div className="flex items-center justify-between mb-6">
           <Skeleton className="h-3 w-40" />
-          <Skeleton className="h-7 w-20 rounded-[10px]" />
+          <Skeleton className="h-7 w-20 rounded-xl" />
         </div>
         <Skeleton className="h-16 w-52 mb-3" />
         <Skeleton className="h-4 w-80 mb-7" />
-        <Skeleton className="h-8 w-full rounded-[11px] mb-3" />
+        <Skeleton className="h-8 w-full rounded-xl mb-3" />
         <div className="flex gap-6 mb-7">
           <Skeleton className="h-3 w-36" />
           <Skeleton className="h-3 w-36" />
@@ -57,8 +57,8 @@ function DashboardSkeleton() {
           <Skeleton className="h-3 w-32 mb-5" />
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className="flex items-center gap-3 mb-4">
-              <Skeleton className="h-5 w-14 rounded-[7px]" />
-              <Skeleton className="flex-1 h-[10px] rounded-[6px]" />
+              <Skeleton className="h-5 w-14 rounded-lg" />
+              <Skeleton className="flex-1 h-2.5 rounded-md" />
               <Skeleton className="h-4 w-24" />
             </div>
           ))}
@@ -71,7 +71,7 @@ function DashboardSkeleton() {
           {[0, 1, 2].map((i) => (
             <div key={i} className="flex items-center gap-3 mb-4">
               <Skeleton className="h-4 w-14" />
-              <Skeleton className="flex-1 h-[10px] rounded-[6px]" />
+              <Skeleton className="flex-1 h-2.5 rounded-md" />
               <Skeleton className="h-4 w-16" />
             </div>
           ))}
@@ -128,7 +128,7 @@ function DashboardContent() {
     return (
       <div className="px-4 pt-5 pb-14 w-full flex flex-col items-center justify-center min-h-[50vh] gap-4 text-center sm:px-7 sm:pt-7">
         <div
-          className="w-14 h-14 rounded-[16px] border border-line grid place-items-center text-muted-dim"
+          className="w-14 h-14 rounded-2xl border border-line grid place-items-center text-muted-dim"
           style={{ background: "var(--surface-2)" }}
         >
           <svg
@@ -143,10 +143,10 @@ function DashboardContent() {
           </svg>
         </div>
         <div>
-          <div className="text-[1rem] font-semibold text-text">
+          <div className="text-base font-semibold text-text">
             No files indexed yet
           </div>
-          <div className="text-[0.82rem] text-muted-dim mt-1 max-w-[280px]">
+          <div className="text-sm text-muted-dim mt-1 max-w-2xs">
             Trigger a scan to get started — Reclaim will walk your library and
             rank files by predicted HEVC savings.
           </div>
@@ -155,7 +155,7 @@ function DashboardContent() {
           variant="outline"
           onClick={() => scanMutation.mutate()}
           disabled={scanMutation.isPending || !!isScanning}
-          className="rounded-[10px] text-sm h-8 gap-1.5 mt-1"
+          className="rounded-xl text-sm h-8 gap-1.5 mt-1"
         >
           <svg
             aria-hidden="true"
@@ -177,7 +177,7 @@ function DashboardContent() {
   return (
     <div className="px-4 pt-5 pb-14 w-full sm:px-7 sm:pt-7">
       <div
-        className="rounded-[18px] border border-line px-5 py-6 mb-6 relative overflow-hidden sm:px-7 sm:py-7"
+        className="rounded-2xl border border-line px-5 py-6 mb-6 relative overflow-hidden sm:px-7 sm:py-7"
         style={{
           background:
             "radial-gradient(120% 150% at 100% 0%, var(--brand-soft), transparent 55%), var(--surface)",
@@ -192,7 +192,7 @@ function DashboardContent() {
         />
 
         <div className="flex items-center justify-between mb-5">
-          <div className="text-xs text-muted-fg uppercase tracking-[0.13em] font-bold">
+          <div className="text-xs text-muted-fg uppercase tracking-widest font-bold">
             Estimated recoverable
           </div>
           <Button
@@ -200,7 +200,7 @@ function DashboardContent() {
             size="sm"
             onClick={() => scanMutation.mutate()}
             disabled={scanMutation.isPending || !!isScanning}
-            className="rounded-[10px] text-xs h-7 gap-1.5"
+            className="rounded-xl text-xs h-7 gap-1.5"
           >
             <svg
               aria-hidden="true"
@@ -220,7 +220,7 @@ function DashboardContent() {
         <div className="flex items-end justify-between gap-6 flex-wrap">
           <div>
             <div
-              className="text-[2.8rem] sm:text-hero font-extrabold leading-none tracking-tight text-brand"
+              className="text-5xl sm:text-hero font-extrabold leading-none tracking-tight text-brand"
               style={{ textShadow: "0 4px 26px var(--brand-soft)" }}
             >
               {formatBytes(recoverable, 1).replace(" ", "")}
@@ -231,7 +231,7 @@ function DashboardContent() {
                 {formatInt(candidateCount)} candidates
               </b>{" "}
               · {formatInt(hevcCount)} already HEVC
-              <Badge className="ml-2 text-[0.66rem] font-bold tracking-widest text-brand bg-brand-soft border-brand-line rounded-[6px] uppercase">
+              <Badge className="ml-2 text-xs font-bold tracking-widest text-brand bg-brand-soft border-brand-line rounded-md uppercase">
                 estimate
               </Badge>
             </div>
@@ -240,14 +240,14 @@ function DashboardContent() {
             <div className="text-xs text-muted-fg uppercase tracking-wider">
               Library total
             </div>
-            <div className="text-[1.45rem] font-bold tracking-tight mt-0.5">
+            <div className="text-2xl font-bold tracking-tight mt-0.5">
               {formatBytes(total)}
             </div>
           </div>
         </div>
 
         <div className="mt-6">
-          <div className="h-8 rounded-[11px] bg-surface-2 flex overflow-hidden shadow-[inset_0_0_0_1px_var(--line)]">
+          <div className="h-8 rounded-xl bg-surface-2 flex overflow-hidden shadow-[inset_0_0_0_1px_var(--line)]">
             <div
               className="h-full transition-[width_1.2s_cubic-bezier(.34,1.4,.5,1)]"
               style={{
@@ -270,17 +270,17 @@ function DashboardContent() {
             />
           </div>
           <div className="flex gap-5 mt-3 text-xs text-muted-fg flex-wrap">
-            <span className="flex items-center gap-[7px]">
-              <span className="w-[10px] h-[10px] rounded-[4px] bg-brand inline-block" />
+            <span className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-sm bg-brand inline-block" />
               Reclaimable · {formatBytes(recoverable)} · {reclaimPct}%
             </span>
-            <span className="flex items-center gap-[7px]">
-              <span className="w-[10px] h-[10px] rounded-[4px] bg-surface-3 inline-block" />
+            <span className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-sm bg-surface-3 inline-block" />
               After encode · {formatBytes(kept)} · {keptPct}%
             </span>
-            <span className="flex items-center gap-[7px]">
+            <span className="flex items-center gap-2">
               <span
-                className="w-[10px] h-[10px] rounded-[4px] inline-block"
+                className="w-2.5 h-2.5 rounded-sm inline-block"
                 style={{
                   background:
                     "color-mix(in srgb, var(--green) 45%, transparent)",
@@ -330,7 +330,7 @@ function DashboardContent() {
           className="border border-line rounded-lg p-5"
           style={{ background: "var(--surface)" }}
         >
-          <div className="text-xs uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">
+          <div className="text-xs uppercase tracking-widest text-muted-fg font-bold mb-4">
             Codec breakdown
           </div>
           {stats.by_codec.map((c) => (
@@ -338,9 +338,9 @@ function DashboardContent() {
               key={c.codec}
               className="flex items-center gap-3 mb-3.5 last:mb-0 text-sm"
             >
-              <div className="min-w-[78px] shrink-0 font-semibold flex items-center gap-1.5 flex-wrap">
+              <div className="min-w-20 shrink-0 font-semibold flex items-center gap-1.5 flex-wrap">
                 <Badge
-                  className={`font-mono text-xs rounded-[7px] font-semibold ${CODEC_COLORS[c.codec.toLowerCase()] ?? "text-slate"}`}
+                  className={`font-mono text-xs rounded-lg font-semibold ${CODEC_COLORS[c.codec.toLowerCase()] ?? "text-slate"}`}
                   style={{
                     borderColor: `color-mix(in srgb, ${codecCSSColor(c.codec)} 30%, transparent)`,
                     background: `color-mix(in srgb, ${codecCSSColor(c.codec)} 10%, transparent)`,
@@ -349,16 +349,16 @@ function DashboardContent() {
                   {c.codec}
                 </Badge>
               </div>
-              <div className="flex-1 h-[10px] bg-surface-2 rounded-[6px] overflow-hidden">
+              <div className="flex-1 h-2.5 bg-surface-2 rounded-md overflow-hidden">
                 <div
-                  className="h-full rounded-[6px]"
+                  className="h-full rounded-md"
                   style={{
                     width: `${Math.round((c.file_count / maxCodecFiles) * 100)}%`,
                     background: codecCSSColor(c.codec),
                   }}
                 />
               </div>
-              <div className="w-[112px] sm:w-[148px] shrink-0 text-right text-muted-fg text-xs tnum">
+              <div className="w-28 sm:w-36 shrink-0 text-right text-muted-fg text-xs tnum">
                 {formatInt(c.file_count)}
                 <span className="hidden sm:inline">
                   {" "}
@@ -377,7 +377,7 @@ function DashboardContent() {
           className="border border-line rounded-lg p-5"
           style={{ background: "var(--surface)" }}
         >
-          <div className="text-xs uppercase tracking-[0.11em] text-muted-fg font-bold mb-4">
+          <div className="text-xs uppercase tracking-widest text-muted-fg font-bold mb-4">
             Resolution
           </div>
           {stats.by_resolution.map((r) => (
@@ -385,18 +385,18 @@ function DashboardContent() {
               key={r.band}
               className="flex items-center gap-3 mb-3.5 last:mb-0 text-sm"
             >
-              <div className="w-[64px] sm:w-[78px] shrink-0 font-semibold">
+              <div className="w-16 sm:w-20 shrink-0 font-semibold">
                 {resolutionBucketLabel(r.band)}
               </div>
-              <div className="flex-1 h-[10px] bg-surface-2 rounded-[6px] overflow-hidden">
+              <div className="flex-1 h-2.5 bg-surface-2 rounded-md overflow-hidden">
                 <div
-                  className="h-full rounded-[6px] bg-sky"
+                  className="h-full rounded-md bg-sky"
                   style={{
                     width: `${Math.round((r.file_count / maxResFiles) * 100)}%`,
                   }}
                 />
               </div>
-              <div className="w-[92px] sm:w-[104px] shrink-0 text-right text-muted-fg text-xs tnum">
+              <div className="w-24 sm:w-28 shrink-0 text-right text-muted-fg text-xs tnum">
                 {formatInt(r.file_count)} (
                 {formatPct(r.file_count, stats.total_files)})
               </div>

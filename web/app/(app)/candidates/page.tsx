@@ -234,9 +234,9 @@ function CandidatesPage() {
         {profiles[0] && (
           <Badge
             variant="outline"
-            className="sm:ml-auto self-start text-[0.82rem] font-semibold px-[13px] py-[7px] rounded-[10px] border-line bg-surface gap-1.5"
+            className="sm:ml-auto self-start text-sm font-semibold px-3.5 py-2 rounded-xl border-line bg-surface gap-1.5"
           >
-            <span className="font-mono text-[0.8rem]">Profile</span>
+            <span className="font-mono text-xs">Profile</span>
             {profiles.find((p) => p.is_default)?.name ?? profiles[0].name}
           </Badge>
         )}

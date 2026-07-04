@@ -39,13 +39,13 @@ export function DeleteProfileDialog({
         style={{ background: "var(--surface)" }}
         showCloseButton={false}
       >
-        <DialogHeader className="px-6 pt-[22px] pb-4 border-b border-line">
-          <DialogTitle className="text-[1.1rem] font-bold tracking-tight">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-line">
+          <DialogTitle className="text-lg font-bold tracking-tight">
             Delete profile
           </DialogTitle>
         </DialogHeader>
         <div className="px-6 py-5">
-          <p className="text-[0.85rem] text-muted-fg">
+          <p className="text-sm text-muted-fg">
             Delete{" "}
             <span className="font-semibold text-text">
               &ldquo;{profile?.name}&rdquo;
@@ -54,11 +54,7 @@ export function DeleteProfileDialog({
           </p>
         </div>
         <DialogFooter className="px-6 py-4 border-t border-line flex justify-end gap-2">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            className="rounded-[11px]"
-          >
+          <Button variant="outline" onClick={onClose} className="rounded-xl">
             Cancel
           </Button>
           <Button
@@ -66,7 +62,7 @@ export function DeleteProfileDialog({
               onConfirm();
               onClose();
             }}
-            className="rounded-[11px] bg-red hover:bg-red/90 text-white border-0"
+            className="rounded-xl bg-red hover:bg-red/90 text-white border-0"
           >
             Delete
           </Button>
@@ -126,16 +122,14 @@ export function ProfileDialog({
         className="max-w-md border-line p-0 overflow-hidden"
         style={{ background: "var(--surface)" }}
       >
-        <DialogHeader className="px-6 pt-[22px] pb-4 border-b border-line">
-          <DialogTitle className="text-[1.1rem] font-bold">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b border-line">
+          <DialogTitle className="text-lg font-bold">
             {initial?.id ? "Edit profile" : "New profile"}
           </DialogTitle>
         </DialogHeader>
         <div className="px-6 py-5 space-y-4">
           <div>
-            <Label className="text-[0.8rem] font-semibold mb-1.5 block">
-              Name
-            </Label>
+            <Label className="text-xs font-semibold mb-1.5 block">Name</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -219,23 +213,19 @@ export function ProfileDialog({
               value={extra}
               onChange={(e) => setExtra(e.target.value)}
             />
-            <p className="text-[0.75rem] text-muted-dim mt-1">
+            <p className="text-xs text-muted-dim mt-1">
               Audio/subtitle passthrough etc.
             </p>
           </div>
         </div>
         <DialogFooter className="px-6 py-4 border-t border-line flex justify-end gap-2">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            className="rounded-[11px]"
-          >
+          <Button variant="outline" onClick={onClose} className="rounded-xl">
             Cancel
           </Button>
           <Button
             onClick={() => void handleSave()}
             disabled={loading || !name}
-            className="rounded-[11px]"
+            className="rounded-xl"
             style={{
               background:
                 "linear-gradient(145deg, var(--brand), var(--brand-2))",

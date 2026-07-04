@@ -118,7 +118,7 @@ export function SettingsContent() {
   return (
     <>
       <div
-        className="flex items-center gap-4 px-4 py-[14px] border-b border-line sm:px-7 sm:py-[18px]"
+        className="flex items-center gap-4 px-4 py-3.5 border-b border-line sm:px-7 sm:py-5"
         style={{
           background: "rgba(22,22,22,.82)",
           backdropFilter: "blur(10px)",
@@ -126,14 +126,14 @@ export function SettingsContent() {
       >
         <div>
           <div className="text-title font-bold tracking-tight">Settings</div>
-          <div className="text-[0.82rem] text-muted-fg mt-px">
+          <div className="text-sm text-muted-fg mt-px">
             Changes apply live — no restart
           </div>
         </div>
       </div>
 
-      <div className="px-4 py-[22px] w-full pb-14 sm:px-7 sm:py-[26px]">
-        <div className="grid grid-cols-2 gap-[18px] mb-[18px] max-sm:grid-cols-1">
+      <div className="px-4 py-6 w-full pb-14 sm:px-7 sm:py-7">
+        <div className="grid grid-cols-2 gap-5 mb-5 max-sm:grid-cols-1">
           <EncodingPanel
             windowStart={windowStart}
             windowEnd={windowEnd}

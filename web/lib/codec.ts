@@ -27,11 +27,11 @@ export function codecCSSColor(codec: string): string {
 }
 
 export const CODEC_BORDER: Record<string, string> = {
-  h264: "border-[rgba(241,194,27,.3)] bg-[rgba(241,194,27,.1)]",
+  h264: "border-gold/30 bg-gold/10",
   hevc: "border-green-soft bg-green-soft",
   h265: "border-green-soft bg-green-soft",
-  mpeg2: "border-[rgba(255,126,182,.3)] bg-[rgba(255,126,182,.1)]",
-  mpeg2video: "border-[rgba(255,126,182,.3)] bg-[rgba(255,126,182,.1)]",
-  vc1: "border-[rgba(190,149,255,.3)] bg-[rgba(190,149,255,.1)]",
-  av1: "border-[rgba(51,177,255,.32)] bg-[rgba(51,177,255,.1)]",
+  mpeg2: "border-rose/30 bg-rose/10",
+  mpeg2video: "border-rose/30 bg-rose/10",
+  vc1: "border-violet/30 bg-violet/10",
+  av1: "border-sky/32 bg-sky/10",
 };

@@ -34,7 +34,7 @@ export default function ErrorPage({
       <button
         type="button"
         onClick={() => reset()}
-        className="inline-flex items-center justify-center h-10 px-5 rounded-[11px] text-sm font-semibold text-on-brand"
+        className="inline-flex items-center justify-center h-10 px-5 rounded-xl text-sm font-semibold text-on-brand"
         style={{
           background: "linear-gradient(145deg, var(--brand), var(--brand-2))",
           boxShadow: "0 4px 14px var(--brand-soft)",
@@ -44,7 +44,7 @@ export default function ErrorPage({
       </button>
       <Link
         href="/"
-        className="inline-flex items-center justify-center h-10 px-5 rounded-[11px] text-sm font-semibold border border-line text-text hover:bg-surface-2 transition-colors"
+        className="inline-flex items-center justify-center h-10 px-5 rounded-xl text-sm font-semibold border border-line text-text hover:bg-surface-2 transition-colors"
       >
         Back to overview
       </Link>

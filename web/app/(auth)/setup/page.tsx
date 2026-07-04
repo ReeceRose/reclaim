@@ -39,14 +39,14 @@ export default function SetupPage() {
         e.preventDefault();
         void handleSubmit();
       }}
-      className="text-left rounded-2xl p-[22px] border border-line"
+      className="text-left rounded-2xl p-6 border border-line"
       style={{ background: "var(--surface)" }}
     >
-      <span className="inline-block mb-4 px-2 py-0.5 rounded text-[0.7rem] font-bold uppercase tracking-widest text-brand bg-brand-soft border border-brand-line">
+      <span className="inline-block mb-4 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-widest text-brand bg-brand-soft border border-brand-line">
         First-run setup
       </span>
       <div className="mb-4">
-        <Label className="block text-[0.8rem] font-semibold mb-1.5">
+        <Label className="block text-xs font-semibold mb-1.5">
           Create a username
         </Label>
         <Input
@@ -57,7 +57,7 @@ export default function SetupPage() {
         />
       </div>
       <div className="mb-4">
-        <Label className="block text-[0.8rem] font-semibold mb-1.5">
+        <Label className="block text-xs font-semibold mb-1.5">
           Create a password
         </Label>
         <Input
@@ -71,7 +71,7 @@ export default function SetupPage() {
       <Button
         type="submit"
         disabled={loading}
-        className="w-full h-10 rounded-[11px] text-sm font-semibold text-on-brand"
+        className="w-full h-10 rounded-xl text-sm font-semibold text-on-brand"
         style={{
           background: "linear-gradient(145deg, var(--brand), var(--brand-2))",
           boxShadow: "0 4px 14px var(--brand-soft)",
@@ -79,7 +79,7 @@ export default function SetupPage() {
       >
         {loading ? "Setting up…" : "Complete setup"}
       </Button>
-      <p className="text-[0.76rem] text-muted-dim mt-4">
+      <p className="text-xs text-muted-dim mt-4">
         Stored bcrypt-hashed in the database. No password lives in your compose
         file.
       </p>

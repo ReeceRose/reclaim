@@ -10,6 +10,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"reclaim/internal/store"
+	"reclaim/internal/version"
 )
 
 const minPasswordLen = 8
@@ -85,6 +86,8 @@ func (s *Server) handleSession(c *echo.Context) error {
 		"setup_complete": s.store.Settings.IsSetupComplete(),
 		"authenticated":  false,
 		"username":       nil,
+		"version":        version.Version,
+		"commit":         version.Commit,
 	}
 	if s.disableAuth {
 		resp["authenticated"] = true

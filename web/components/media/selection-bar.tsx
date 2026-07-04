@@ -20,7 +20,7 @@ export function QueueSelectionBar({
 }) {
   return (
     <div
-      className="mx-3 mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[13px] px-4 py-[13px] border border-brand-line sticky bottom-3 sm:mx-7 sm:px-[18px]"
+      className="mx-3 mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl px-4 py-3.5 border border-brand-line sticky bottom-3 sm:mx-7 sm:px-5"
       style={{
         background: "var(--surface-2)",
         boxShadow: "0 10px 30px rgba(0,0,0,.35)",
@@ -29,7 +29,7 @@ export function QueueSelectionBar({
       <div className="font-bold">
         <b className="text-brand">{formatInt(count)}</b> selected
       </div>
-      <div className="text-muted-fg text-[0.85rem] hidden sm:block">
+      <div className="text-muted-fg text-sm hidden sm:block">
         ≈{" "}
         <span className="text-brand font-semibold">
           {formatBytes(totalSavings)}
@@ -40,13 +40,13 @@ export function QueueSelectionBar({
         <Button
           variant="ghost"
           onClick={onClear}
-          className="rounded-[11px] text-sm"
+          className="rounded-xl text-sm"
         >
           Clear
         </Button>
         <Button
           onClick={onQueue}
-          className="rounded-[11px] text-sm"
+          className="rounded-xl text-sm"
           style={{
             background: "linear-gradient(145deg, var(--brand), var(--brand-2))",
             boxShadow: "0 4px 14px var(--brand-soft)",

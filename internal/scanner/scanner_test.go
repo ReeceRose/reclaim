@@ -295,6 +295,93 @@ func TestScanFullForceRescan(t *testing.T) {
 	}
 }
 
+// TestRescanFiles verifies that re-probing a set of explicit IDs picks up
+// on-disk changes (a size change here, standing in for a re-encode outside
+// Reclaim) without requiring a full library scan.
+func TestRescanFiles(t *testing.T) {
+	root := t.TempDir()
+	sc, st := newTestScanner(t, root, root)
+	ctx := context.Background()
+
+	pathA := filepath.Join(root, "a.mkv")
+	pathB := filepath.Join(root, "b.mkv")
+	writeFile(t, pathA)
+	writeFile(t, pathB)
+
+	if _, err := sc.Scan(ctx, "initial", false); err != nil {
+		t.Fatalf("initial scan: %v", err)
+	}
+
+	fileA, err := st.Media.GetByPath(ctx, pathA)
+	if err != nil {
+		t.Fatalf("get by path: %v", err)
+	}
+	fileB, err := st.Media.GetByPath(ctx, pathB)
+	if err != nil {
+		t.Fatalf("get by path: %v", err)
+	}
+
+	// Mutate only A on disk; B is untouched and should round-trip unchanged.
+	if err := os.WriteFile(pathA, []byte("changed content, different size"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := sc.RescanFiles(ctx, []int64{fileA.ID, fileB.ID})
+	if err != nil {
+		t.Fatalf("rescan files: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("len(results) = %d, want 2", len(results))
+	}
+
+	updatedA, err := st.Media.GetByID(ctx, fileA.ID)
+	if err != nil {
+		t.Fatalf("get by id: %v", err)
+	}
+	if updatedA.SizeBytes == fileA.SizeBytes {
+		t.Errorf("rescanned file A size unchanged: %d", updatedA.SizeBytes)
+	}
+	if updatedA.LastProbedAt == nil {
+		t.Error("rescanned file A LastProbedAt not set")
+	}
+}
+
+// TestRescanFilesMarksMissing verifies that rescanning a file whose path has
+// vanished from disk marks it missing rather than erroring the whole batch.
+func TestRescanFilesMarksMissing(t *testing.T) {
+	root := t.TempDir()
+	sc, st := newTestScanner(t, root, root)
+	ctx := context.Background()
+
+	path := filepath.Join(root, "a.mkv")
+	writeFile(t, path)
+
+	if _, err := sc.Scan(ctx, "initial", false); err != nil {
+		t.Fatalf("initial scan: %v", err)
+	}
+
+	file, err := st.Media.GetByPath(ctx, path)
+	if err != nil {
+		t.Fatalf("get by path: %v", err)
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := sc.RescanFiles(ctx, []int64{file.ID}); err != nil {
+		t.Fatalf("rescan files: %v", err)
+	}
+
+	updated, err := st.Media.GetByID(ctx, file.ID)
+	if err != nil {
+		t.Fatalf("get by id: %v", err)
+	}
+	if updated.Status != "missing" {
+		t.Errorf("status = %q, want missing", updated.Status)
+	}
+}
+
 // TestProbeConcurrencyCap proves the scanner-wide semaphore bounds concurrent
 // probes to PROBE_CONCURRENCY across *all* entry points: a walk fills the cap,
 // then a watcher probe for a fresh file must queue on the same semaphore rather

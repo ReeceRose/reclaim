@@ -1,12 +1,19 @@
 "use client";
 
-import { useInfiniteQuery } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useIsMutating,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useMemo } from "react";
+import { toast } from "sonner";
 import { BROWSE_ROUTES, EPISODES_PER_PAGE } from "@/app/(app)/browse/browse";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, type LibrarySeasonGroup } from "@/lib/api";
 import { formatBytes, formatInt } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { TvEpisodeRow } from "./tv-episode-row";
 
 export function TvSeasonSection({
@@ -16,6 +23,8 @@ export function TvSeasonSection({
   seriesTitle: string;
   seasonData: LibrarySeasonGroup;
 }) {
+  const queryClient = useQueryClient();
+
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useInfiniteQuery({
       queryKey: ["browse", "episodes", seriesTitle, seasonData.season],
@@ -32,6 +41,30 @@ export function TvSeasonSection({
         return loaded < seasonData.file_count ? loaded : undefined;
       },
     });
+
+  const rescanMutationKey = [
+    "rescan-files",
+    seriesTitle,
+    seasonData.season,
+  ] as const;
+  const rescanMutation = useMutation({
+    mutationKey: rescanMutationKey,
+    mutationFn: () => api.rescanFiles(seasonData.episode_ids ?? []),
+    onSuccess: () => {
+      toast.success(`Season ${seasonData.season} rescanned`);
+      void queryClient.invalidateQueries({
+        queryKey: ["browse", "episodes", seriesTitle, seasonData.season],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["browse", "seasons", seriesTitle],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["browse", "show", seriesTitle],
+      });
+    },
+    onError: () => toast.error("Rescan failed"),
+  });
+  const isRescanning = useIsMutating({ mutationKey: rescanMutationKey }) > 0;
 
   const episodes = useMemo(
     () => data?.pages.flatMap((p) => p.episodes) ?? [],
@@ -57,6 +90,27 @@ export function TvSeasonSection({
             </span>
           </>
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => rescanMutation.mutate()}
+          disabled={isRescanning || (seasonData.episode_ids?.length ?? 0) === 0}
+          className="h-6 text-xs text-muted-fg hover:text-text gap-1.5 -my-1"
+          title="Re-probe every episode in this season with ffprobe"
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className={cn("w-3.5 h-3.5", isRescanning && "animate-spin")}
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          {isRescanning ? "Rescanning…" : "Rescan season"}
+        </Button>
       </div>
 
       <div className="bg-surface border border-line rounded-b-xl overflow-hidden">

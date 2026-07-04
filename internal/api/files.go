@@ -182,12 +182,13 @@ func (s *Server) handleGroupedFileSeasons(c *echo.Context) error {
 		return serverError(c, err)
 	}
 	type seasonDTO struct {
-		Season                int   `json:"season"`
-		FileCount             int   `json:"file_count"`
-		EligibleCount         int   `json:"eligible_count"`
-		MissingCount          int   `json:"missing_count"`
-		TotalBytes            int64 `json:"total_bytes"`
-		PredictedSavingsBytes int64 `json:"predicted_savings_bytes"`
+		Season                int     `json:"season"`
+		FileCount             int     `json:"file_count"`
+		EligibleCount         int     `json:"eligible_count"`
+		MissingCount          int     `json:"missing_count"`
+		TotalBytes            int64   `json:"total_bytes"`
+		PredictedSavingsBytes int64   `json:"predicted_savings_bytes"`
+		EpisodeIDs            []int64 `json:"episode_ids"`
 	}
 	out := make([]seasonDTO, 0, len(seasons))
 	for _, s := range seasons {
@@ -197,6 +198,7 @@ func (s *Server) handleGroupedFileSeasons(c *echo.Context) error {
 			EligibleCount:         s.EligibleCount,
 			MissingCount:          s.MissingCount,
 			TotalBytes:            s.TotalBytes,
+			EpisodeIDs:            s.EpisodeIDs,
 			PredictedSavingsBytes: s.PredictedSavingsBytes,
 		})
 	}

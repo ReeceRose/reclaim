@@ -242,7 +242,7 @@ Season breakdown for one TV series.
   "seasons": [
     { "season": 1, "file_count": 6, "eligible_count": 4, "missing_count": 0,
       "total_bytes": 25000000000, "predicted_savings_bytes": 7000000000,
-      "episode_ids": [1, 2, 3, 4, 5, 6], "eligible_ids": [1, 3, 5, 6] }
+      "episode_ids": [1, 2, 3, 4, 5, 6] }
   ]
 }
 ```
@@ -274,6 +274,16 @@ Triggers an incremental (diff) rescan in the background. `202 Accepted`.
 Force re-probe of every file + stats recompute. `202 Accepted` (`"kind": "full"`).
 
 Both broadcast `scan_started`, throttled `scan_progress`, and `scan_completed` (or `scan_failed`) over the WebSocket. The startup and scheduled scans use the same lifecycle events; clients that connect mid-scan receive a retained `scan_started` on WebSocket registration.
+
+### `POST /api/files/rescan`
+Re-probes a caller-specified set of files (a single file, a season's episodes, or a whole show's episodes) and returns their refreshed rows. Unlike `/api/scan` this is synchronous — the request blocks until every ID has been re-probed — and it doesn't walk the filesystem tree, so it's cheap to call for a handful of files. A file whose path has vanished from disk is marked `missing` rather than causing an error. Bounded to 2000 IDs per request.
+
+**Body:** `{ "ids": number[] }`
+```json
+{ "items": [ /* file objects, see GET /api/files/:id */ ] }
+```
+- `200` → items (IDs that no longer resolve to a row are silently dropped)
+- `400` → `ids` empty or over the batch limit
 
 ---
 

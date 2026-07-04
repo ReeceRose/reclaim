@@ -1,9 +1,15 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useIsMutating,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { toast } from "sonner";
 import { BROWSE_ROUTES, LIBRARY_TYPE } from "@/app/(app)/browse/browse";
 import { EncodeHealthBar } from "@/components/media/encode-health-bar";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +58,29 @@ export function TvShowPageContent() {
   });
 
   const isLoading = showLoading || (Boolean(showData) && seasonsLoading);
+
+  const allEpisodeIds =
+    seasonsData?.seasons.flatMap((s) => s.episode_ids) ?? [];
+
+  const rescanMutationKey = ["rescan-files", title] as const;
+  const rescanMutation = useMutation({
+    mutationKey: rescanMutationKey,
+    mutationFn: () => api.rescanFiles(allEpisodeIds),
+    onSuccess: () => {
+      toast.success(`${showData?.title ?? "Show"} rescanned`);
+      void queryClient.invalidateQueries({
+        queryKey: ["browse", "show", title],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["browse", "seasons", title],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["browse", "episodes", title],
+      });
+    },
+    onError: () => toast.error("Rescan failed"),
+  });
+  const isRescanning = useIsMutating({ mutationKey: rescanMutationKey }) > 0;
 
   const posterPath = showData?.poster_path ?? metadata?.poster_path;
   const backdropPath = showData?.backdrop_path ?? metadata?.backdrop_path;
@@ -194,9 +223,31 @@ export function TvShowPageContent() {
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => rescanMutation.mutate()}
+                disabled={isRescanning || allEpisodeIds.length === 0}
+                className="h-7 text-xs text-muted-fg hover:text-text gap-1.5"
+                title="Re-probe every episode in this show with ffprobe"
+              >
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className={cn("w-3.5 h-3.5", isRescanning && "animate-spin")}
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.3-4.3" />
+                </svg>
+                {isRescanning ? "Rescanning…" : "Rescan"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => void handleRefresh()}
                 disabled={refreshing}
                 className="h-7 text-xs text-muted-fg hover:text-text gap-1.5"
+                title="Re-fetch poster, title, and year from TMDB"
               >
                 <svg
                   aria-hidden="true"
@@ -209,7 +260,7 @@ export function TvShowPageContent() {
                   <path d="M1 4v6h6M23 20v-6h-6" />
                   <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" />
                 </svg>
-                {refreshing ? "Refreshing…" : "Refresh"}
+                {refreshing ? "Refreshing…" : "Refresh metadata"}
               </Button>
               <Button
                 variant="ghost"

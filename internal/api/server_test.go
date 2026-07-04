@@ -20,11 +20,32 @@ import (
 
 // fakeScanner satisfies ScanTrigger without touching the filesystem.
 type fakeScanner struct {
-	calls      int32
-	scanMu     sync.Mutex
-	scanning   bool
-	hub        *Hub
-	blockUntil chan struct{} // optional: holds scan open until closed (tests)
+	calls       int32
+	rescanCalls int32
+	scanMu      sync.Mutex
+	scanning    bool
+	hub         *Hub
+	store       *store.Store
+	blockUntil  chan struct{} // optional: holds scan open until closed (tests)
+}
+
+// RescanFiles re-probes nothing (no filesystem in these tests) but returns the
+// current DB rows for the requested IDs, mirroring the real scanner's
+// "re-fetch after probing" return shape closely enough for handler tests.
+func (f *fakeScanner) RescanFiles(ctx context.Context, ids []int64) ([]store.MediaFile, error) {
+	atomic.AddInt32(&f.rescanCalls, 1)
+	if f.store == nil {
+		return nil, nil
+	}
+	results := make([]store.MediaFile, 0, len(ids))
+	for _, id := range ids {
+		mf, err := f.store.Media.GetByID(ctx, id)
+		if err != nil {
+			continue
+		}
+		results = append(results, *mf)
+	}
+	return results, nil
 }
 
 func (f *fakeScanner) StartScan(ctx context.Context, trigger string, force bool) error {
@@ -85,7 +106,7 @@ func newTestServer(t *testing.T, disableAuth bool) (*Server, http.Handler, *stor
 	}
 	t.Cleanup(func() { st.Close() })
 
-	fs := &fakeScanner{}
+	fs := &fakeScanner{store: st}
 	srv := New(Deps{
 		Store:       st,
 		Scanner:     fs,
@@ -462,4 +483,57 @@ func TestScanConflictWhenInProgress(t *testing.T) {
 		t.Fatalf("second scan: want 409, got %d (%s)", w.Code, w.Body.String())
 	}
 	close(fs.blockUntil)
+}
+
+func TestRescanFilesReturnsUpdatedRows(t *testing.T) {
+	_, h, st, fs := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+	ctx := context.Background()
+
+	id1, err := st.Media.Insert(ctx, &store.MediaFile{
+		Path: "/media/movies/a.mkv", LibraryType: "movies",
+		SizeBytes: 1000, Status: "active",
+	})
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	id2, err := st.Media.Insert(ctx, &store.MediaFile{
+		Path: "/media/movies/b.mkv", LibraryType: "movies",
+		SizeBytes: 2000, Status: "active",
+	})
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	w := doReq(h, http.MethodPost, "/api/files/rescan", map[string]any{
+		"ids": []int64{id1, id2},
+	}, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("rescan: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	if atomic.LoadInt32(&fs.rescanCalls) != 1 {
+		t.Errorf("rescanCalls = %d, want 1", fs.rescanCalls)
+	}
+
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if len(body.Items) != 2 {
+		t.Fatalf("len(items) = %d, want 2", len(body.Items))
+	}
+}
+
+func TestRescanFilesRejectsEmptyIDs(t *testing.T) {
+	_, h, st, _ := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+
+	w := doReq(h, http.MethodPost, "/api/files/rescan", map[string]any{
+		"ids": []int64{},
+	}, cookie)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("empty ids: want 400, got %d (%s)", w.Code, w.Body.String())
+	}
 }

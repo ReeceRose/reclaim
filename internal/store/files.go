@@ -450,6 +450,10 @@ type TVSeasonRow struct {
 	MissingCount          int
 	TotalBytes            int64
 	PredictedSavingsBytes int64
+	// EpisodeIDs is every file ID in the season (any status), used by bulk
+	// actions like "rescan this season" that need explicit IDs rather than
+	// a filesystem walk.
+	EpisodeIDs []int64
 }
 
 // TVShowSeasons returns per-season summaries for a single TV series.
@@ -473,6 +477,7 @@ func (m *Media) TVShowSeasons(ctx context.Context, seriesTitle string) ([]TVSeas
 	}
 	defer rows.Close()
 
+	bySeason := make(map[int]*TVSeasonRow)
 	var out []TVSeasonRow
 	for rows.Next() {
 		var r TVSeasonRow
@@ -481,7 +486,37 @@ func (m *Media) TVShowSeasons(ctx context.Context, seriesTitle string) ([]TVSeas
 		}
 		out = append(out, r)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		bySeason[out[i].Season] = &out[i]
+	}
+
+	idRows, err := m.r.QueryContext(ctx, `
+		SELECT id, season_number FROM media_files
+		WHERE library_type = 'tv' AND series_title = ? AND season_number IS NOT NULL
+		ORDER BY season_number, id`, seriesTitle)
+	if err != nil {
+		return nil, err
+	}
+	defer idRows.Close()
+
+	for idRows.Next() {
+		var id int64
+		var season int
+		if err := idRows.Scan(&id, &season); err != nil {
+			return nil, err
+		}
+		if r, ok := bySeason[season]; ok {
+			r.EpisodeIDs = append(r.EpisodeIDs, id)
+		}
+	}
+	if err := idRows.Err(); err != nil {
+		return nil, err
+	}
+
+	return out, nil
 }
 
 // CountTVSeries returns the total number of distinct TV series matching the search.

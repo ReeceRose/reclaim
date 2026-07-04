@@ -143,3 +143,61 @@ func TestFiles_filtersUnknownBuckets(t *testing.T) {
 		t.Fatalf("unknown resolution: got %+v, want %d and %d", byResolution, noCodecID, noHeightID)
 	}
 }
+
+// TestTVShowSeasons_EpisodeIDs verifies each season row carries the IDs of
+// every episode file in that season, grouped correctly and excluding other
+// shows/seasons. Consumers (bulk rescan) rely on this to target the right
+// files without a separate lookup.
+func TestTVShowSeasons_EpisodeIDs(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	insertEpisode := func(path, title string, season int) int64 {
+		t.Helper()
+		id, err := s.Media.Insert(ctx, &MediaFile{
+			Path:         path,
+			LibraryType:  "tv",
+			SizeBytes:    1000,
+			Status:       "active",
+			SeriesTitle:  &title,
+			SeasonNumber: &season,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+
+	title := "Breaking Bad"
+	s1e1 := insertEpisode("/tv/Breaking Bad/S01E01.mkv", title, 1)
+	s1e2 := insertEpisode("/tv/Breaking Bad/S01E02.mkv", title, 1)
+	s2e1 := insertEpisode("/tv/Breaking Bad/S02E01.mkv", title, 2)
+	// Different show — must not leak into Breaking Bad's seasons.
+	otherTitle := "The Wire"
+	insertEpisode("/tv/The Wire/S01E01.mkv", otherTitle, 1)
+
+	seasons, err := s.Media.TVShowSeasons(ctx, title)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seasons) != 2 {
+		t.Fatalf("len(seasons) = %d, want 2", len(seasons))
+	}
+
+	byNum := map[int]TVSeasonRow{}
+	for _, sn := range seasons {
+		byNum[sn.Season] = sn
+	}
+
+	gotS1 := map[int64]bool{}
+	for _, id := range byNum[1].EpisodeIDs {
+		gotS1[id] = true
+	}
+	if len(byNum[1].EpisodeIDs) != 2 || !gotS1[s1e1] || !gotS1[s1e2] {
+		t.Fatalf("season 1 episode ids = %v, want [%d %d]", byNum[1].EpisodeIDs, s1e1, s1e2)
+	}
+
+	if len(byNum[2].EpisodeIDs) != 1 || byNum[2].EpisodeIDs[0] != s2e1 {
+		t.Fatalf("season 2 episode ids = %v, want [%d]", byNum[2].EpisodeIDs, s2e1)
+	}
+}

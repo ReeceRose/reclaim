@@ -661,6 +661,76 @@ func (s *Scanner) probeAndStore(
 	return fp, existing.ID, false
 }
 
+// RescanFiles re-probes an explicit set of existing rows by ID — used for
+// user-triggered rescans of a single file, a season, or a whole show from the
+// UI (as opposed to the path-driven walk in Scan). Work fans out across the
+// same probe gate as regular scans, so a large batch (e.g. a long-running
+// show) doesn't exceed the configured ffprobe concurrency. IDs that no longer
+// resolve to a row are silently skipped; the returned slice preserves no
+// particular order.
+func (s *Scanner) RescanFiles(ctx context.Context, ids []int64) ([]store.MediaFile, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	tasks := make(chan int64, len(ids))
+	for _, id := range ids {
+		tasks <- id
+	}
+	close(tasks)
+
+	results := make([]store.MediaFile, 0, len(ids))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for range min(s.probe.capacity(), len(ids)) {
+		wg.Go(func() {
+			for id := range tasks {
+				f := s.rescanOne(ctx, id)
+				if f != nil {
+					mu.Lock()
+					results = append(results, *f)
+					mu.Unlock()
+				}
+			}
+		})
+	}
+	wg.Wait()
+	return results, nil
+}
+
+// rescanOne re-probes a single existing row by ID. A file that has vanished
+// from disk is marked missing (or recorded as moved, via checkVanishedFile)
+// rather than treated as an error.
+func (s *Scanner) rescanOne(ctx context.Context, id int64) *store.MediaFile {
+	existing, err := s.store.Media.GetByID(ctx, id)
+	if err != nil {
+		return nil
+	}
+
+	info, statErr := os.Stat(existing.Path)
+	if statErr != nil {
+		s.checkVanishedFile(ctx, existing.Path)
+	} else {
+		rec := &store.FileSummary{
+			ID:          existing.ID,
+			SizeBytes:   existing.SizeBytes,
+			Mtime:       existing.Mtime,
+			Fingerprint: existing.Fingerprint,
+		}
+		lt := s.libraryTypeFor(existing.Path)
+		if lt == "" {
+			lt = existing.LibraryType
+		}
+		s.probeAndStore(ctx, existing.Path, lt, info.Size(), info.ModTime().Unix(), rec)
+	}
+
+	updated, err := s.store.Media.GetByID(ctx, id)
+	if err != nil {
+		return nil
+	}
+	return updated
+}
+
 // Start launches the fsnotify watcher and scheduled rescan loops. Blocks until
 // ctx is cancelled.
 func (s *Scanner) Start(ctx context.Context) {

@@ -456,6 +456,8 @@ export const api = {
 
   // Scanning
   scan: () => request<{ started: boolean; kind: string }>("POST", "/api/scan"),
+  rescanFiles: (ids: number[]) =>
+    request<{ items: MediaFile[] }>("POST", "/api/files/rescan", { ids }),
 
   // Profiles
   profiles: () => request<{ items: Profile[] }>("GET", "/api/profiles"),

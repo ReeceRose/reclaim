@@ -187,6 +187,53 @@ func (s *Server) handleFileDetail(c *echo.Context) error {
 	return c.JSON(http.StatusOK, dto)
 }
 
+// maxRescanBatch bounds a single POST /api/files/rescan request — a rescan is
+// synchronous (the caller waits for ffprobe on every ID), so this keeps a
+// mistaken "rescan everything" request from tying up an HTTP request for
+// minutes.
+const maxRescanBatch = 2000
+
+type rescanFilesRequest struct {
+	IDs []int64 `json:"ids"`
+}
+
+// handleRescanFiles re-probes an explicit set of file IDs (a single file, a
+// season's episodes, or a whole show's episodes) and returns the refreshed
+// rows. Unlike POST /api/scan this is synchronous: the caller supplied the
+// exact set of files to re-probe, so there's no tree walk to background.
+func (s *Server) handleRescanFiles(c *echo.Context) error {
+	if s.scanner == nil {
+		return c.JSON(http.StatusServiceUnavailable, errorBody("scanner unavailable"))
+	}
+	var req rescanFilesRequest
+	if err := c.Bind(&req); err != nil {
+		return badRequest(c, "invalid JSON body")
+	}
+	if len(req.IDs) == 0 {
+		return badRequest(c, "ids must not be empty")
+	}
+	if len(req.IDs) > maxRescanBatch {
+		return badRequest(c, "too many ids in one rescan request")
+	}
+
+	ctx := c.Request().Context()
+	files, err := s.scanner.RescanFiles(ctx, req.IDs)
+	if err != nil {
+		return serverError(c, err)
+	}
+
+	states, err := s.store.Media.CandidateStates(ctx, files)
+	if err != nil {
+		return serverError(c, err)
+	}
+
+	items := make([]mediaFileDTO, 0, len(files))
+	for i := range files {
+		items = append(items, toMediaFileDTOWithState(&files[i], string(states[files[i].ID])))
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
 func (s *Server) handleScan(c *echo.Context) error {
 	return s.triggerScan(c, false)
 }

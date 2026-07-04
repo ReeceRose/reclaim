@@ -1,6 +1,11 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useIsMutating,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Suspense, useState } from "react";
@@ -297,6 +302,21 @@ function FilePageContent() {
     onError: () => toast.error("Force failed"),
   });
 
+  const rescanMutationKey = ["rescan-files", id] as const;
+  const rescanMutation = useMutation({
+    mutationKey: rescanMutationKey,
+    // biome-ignore lint/style/noNonNullAssertion: mutation is only triggered from UI gated on a valid id
+    mutationFn: () => api.rescanFiles([id!]),
+    onSuccess: () => {
+      toast.success("File rescanned");
+      void queryClient.invalidateQueries({ queryKey: ["file", id] });
+      void queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      void queryClient.invalidateQueries({ queryKey: ["files"] });
+    },
+    onError: () => toast.error("Rescan failed"),
+  });
+  const isRescanning = useIsMutating({ mutationKey: rescanMutationKey }) > 0;
+
   if (!id || Number.isNaN(id)) {
     return (
       <div className="flex flex-col items-center justify-center h-full py-32 text-center">
@@ -444,9 +464,31 @@ function FilePageContent() {
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => rescanMutation.mutate()}
+                disabled={isRescanning}
+                className="h-7 text-xs text-muted-fg hover:text-text gap-1.5"
+                title="Re-probe this file with ffprobe"
+              >
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className={cn("w-3.5 h-3.5", isRescanning && "animate-spin")}
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.3-4.3" />
+                </svg>
+                {isRescanning ? "Rescanning…" : "Rescan"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => void handleRefresh()}
                 disabled={refreshing}
                 className="h-7 text-xs text-muted-fg hover:text-text gap-1.5"
+                title="Re-fetch poster, title, and year from TMDB"
               >
                 <svg
                   aria-hidden="true"
@@ -459,7 +501,7 @@ function FilePageContent() {
                   <path d="M1 4v6h6M23 20v-6h-6" />
                   <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" />
                 </svg>
-                {refreshing ? "Refreshing…" : "Refresh"}
+                {refreshing ? "Refreshing…" : "Refresh metadata"}
               </Button>
               <Button
                 variant="ghost"

@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Reclaim is a self-hosted media codec audit and re-encode tool. It scans Plex/NAS libraries via `ffprobe`, ranks files by predicted HEVC savings, and lets the user manually queue re-encodes that run through `ffmpeg` in a configurable overnight window. The Go binary serves both the REST API and the embedded Next.js static frontend as a single container with no external runtime dependencies.
 
+## Testing UI changes
+
+Never run e2e/browser automation yourself (Playwright, chromium-cli, or similar) to verify a change — don't launch a headless browser, click through the app, or take screenshots as a substitute for real verification. Rely on `pnpm run lint`, `npx tsc --noEmit`, `pnpm run build`, and `go test`/`go build` instead, and ask the user to check the UI in their own browser when visual/interactive confirmation is needed.
+
 ## Commands
 
 ### Go backend

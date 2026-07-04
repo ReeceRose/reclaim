@@ -20,6 +20,10 @@ import (
 // so handlers are testable without a real fsnotify-backed scanner.
 type ScanTrigger interface {
 	StartScan(ctx context.Context, trigger string, force bool) error
+	// RescanFiles re-probes a specific set of existing rows by ID, bounded by
+	// the scanner's probe concurrency gate. Used for user-triggered rescans
+	// of a single file, a season, or a whole show.
+	RescanFiles(ctx context.Context, ids []int64) ([]store.MediaFile, error)
 }
 
 // JobCanceller is the slice of the worker the API drives to cancel a running
@@ -159,6 +163,7 @@ func (s *Server) Handler() http.Handler {
 	// Scanning.
 	api.POST("/scan", s.handleScan)
 	api.POST("/scan/full", s.handleFullScan)
+	api.POST("/files/rescan", s.handleRescanFiles)
 
 	// Profiles.
 	api.GET("/profiles", s.handleListProfiles)

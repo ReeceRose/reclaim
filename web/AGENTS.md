@@ -26,3 +26,7 @@ Always use `<Suspense>` + `<Skeleton>` for data loading — never plain text ("L
 - Design skeleton fallbacks to match the real layout's structure and approximate dimensions (cards, rows, bars) so there's no layout shift on load.
 - For sub-components that fetch independently (e.g. a grouped list view), wrap them in their own `<Suspense>` with a local skeleton rather than relying on the parent's boundary.
 - For virtualised/infinite lists that can't easily use `useSuspenseInfiniteQuery`, gate on `data === undefined` (pre-first-fetch) and render skeleton rows in place of the virtual scroller.
+
+# web/out/.gitkeep
+
+Never delete or stage the deletion of `web/out/.gitkeep`. `web/out/*` is gitignored except this file (see root `.gitignore`), which keeps the directory present in git so `go:embed all:out` compiles before a frontend build has ever run. `pnpm run build` clears `web/out/` before regenerating the static export and does not recreate this file — if you run a build, check `git status` for a deletion of `web/out/.gitkeep` before committing or staging broadly, and restore it if gone.

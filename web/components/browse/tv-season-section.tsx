@@ -116,10 +116,12 @@ export function TvSeasonSection({
       <div className="bg-surface border border-line rounded-b-xl overflow-hidden">
         <div className="flex items-center gap-3 px-4 py-2 border-b border-line text-xs uppercase tracking-wider text-muted-dim font-bold">
           <span className="flex-1">File</span>
-          <span>Codec</span>
-          <span className="hidden sm:inline w-12 text-right">Res</span>
-          <span className="hidden md:inline w-16 text-right">Size</span>
-          <span className="w-20 text-right">Savings</span>
+          <span className="w-16 shrink-0">Codec</span>
+          <span className="hidden sm:inline w-12 shrink-0 text-right">Res</span>
+          <span className="hidden md:inline w-16 shrink-0 text-right">
+            Size
+          </span>
+          <span className="w-20 shrink-0 text-right">Savings</span>
         </div>
 
         {isLoading ? (

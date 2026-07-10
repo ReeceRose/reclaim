@@ -873,6 +873,15 @@ func (s *Scanner) probeSingleFile(ctx context.Context, path string) {
 // checkVanishedFile handles a file that no longer exists on disk: if another
 // active row has the same fingerprint the file was renamed; otherwise missing.
 func (s *Scanner) checkVanishedFile(ctx context.Context, path string) {
+	if _, err := os.Stat(path); err == nil {
+		// A create/rename event on the same path (e.g. the worker's
+		// atomic swap) can supersede this remove event by the time the
+		// debounce timer fires. The file is back — refresh it instead
+		// of marking it missing.
+		s.probeSingleFile(ctx, path)
+		return
+	}
+
 	f, err := s.store.Media.GetByPath(ctx, path)
 	if err != nil {
 		return // not in DB

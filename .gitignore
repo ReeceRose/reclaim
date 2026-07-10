@@ -17,3 +17,5 @@ web/*.tsbuildinfo
 
 # OS
 .DS_Store
+
+.pnpm-store

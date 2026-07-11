@@ -101,6 +101,18 @@ func TestAuth_disableAuth_alwaysPasses(t *testing.T) {
 	}
 }
 
+func TestIssueSession_setsMaxAge(t *testing.T) {
+	w := httptest.NewRecorder()
+	IssueSession(w, "admin", testSecret, false)
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("want 1 cookie, got %d", len(cookies))
+	}
+	if cookies[0].MaxAge != int(sessionTTL.Seconds()) {
+		t.Fatalf("want Max-Age %d, got %d", int(sessionTTL.Seconds()), cookies[0].MaxAge)
+	}
+}
+
 func TestAuth_unprotectedRoutes_alwaysPass(t *testing.T) {
 	store := &fakeStore{setupDone: false, secret: testSecret}
 	for _, path := range []string{"/healthz", "/api/setup", "/api/login", "/api/logout"} {

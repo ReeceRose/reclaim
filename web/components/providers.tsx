@@ -9,11 +9,14 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { ApiError } from "@/lib/api";
+import { ApiError, type Session } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/query-errors";
 
 function handleQueryAuthError(qc: QueryClient, error: unknown) {
   if (error instanceof ApiError && error.status === 401) {
+    qc.setQueryData<Session>(["session"], (old) =>
+      old ? { ...old, authenticated: false, username: null } : old,
+    );
     qc.invalidateQueries({ queryKey: ["session"] });
     return true;
   }

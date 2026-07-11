@@ -1,7 +1,7 @@
 -include .env
 export
 
-.PHONY: dev build test test-race clean help migrate-new migrate-up migrate-status
+.PHONY: dev build test test-race lint lint-go lint-web lint-landing clean help migrate-new migrate-up migrate-status
 
 GOOSE := go run github.com/pressly/goose/v3/cmd/goose@v3.26.0
 MIGRATIONS_DIR := internal/store/migrations
@@ -45,6 +45,19 @@ test:
 ## test-race: race detector on concurrency-sensitive packages (P9 CI gate)
 test-race:
 	go test -race ./internal/scanner/... ./internal/worker/... ./internal/jobs/... ./internal/api/... ./internal/store/...
+
+## lint: lint + type-check web/, landing/, and go vet the backend (parallel)
+lint:
+	$(MAKE) -j3 lint-go lint-web lint-landing
+
+lint-go:
+	go vet ./...
+
+lint-web:
+	cd web && pnpm run lint && pnpm run type-check
+
+lint-landing:
+	cd landing && pnpm run lint && pnpm run type-check
 
 ## clean: remove build output and dev dirs
 clean:

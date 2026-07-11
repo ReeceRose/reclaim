@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"time"
 )
 
 // AuthStore is implemented by the settings repo. Tested here against a fake.
@@ -17,6 +18,11 @@ type AuthStore interface {
 }
 
 const sessionCookieName = "reclaim_session"
+
+// sessionTTL is the cookie Max-Age. The signed value carries no expiry, so this
+// only controls browser retention — without it the cookie is session-scoped and
+// mobile browsers evict it unpredictably.
+const sessionTTL = 30 * 24 * time.Hour
 
 // AuthMiddleware gates all routes except /healthz, /api/setup, /api/login, /api/logout.
 // Behavior depends on setup state and DISABLE_AUTH.
@@ -92,6 +98,7 @@ func IssueSession(w http.ResponseWriter, username string, secret []byte, secure 
 		Name:     sessionCookieName,
 		Value:    value,
 		Path:     "/",
+		MaxAge:   int(sessionTTL.Seconds()),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Secure:   secure,

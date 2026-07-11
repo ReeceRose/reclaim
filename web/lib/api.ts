@@ -13,6 +13,15 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * True when a request failed before reaching the server (DNS failure, dropped
+ * VPN, offline) — fetch rejects these with a TypeError rather than resolving
+ * to a Response.
+ */
+export function isNetworkError(error: unknown): boolean {
+  return error instanceof TypeError;
+}
+
 async function request<T>(
   method: string,
   path: string,

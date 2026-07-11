@@ -21,8 +21,8 @@ Reclaim uses a first-run setup + login-cookie model (no credentials in env).
 | `DISABLE_AUTH=true` | The gate is bypassed entirely; every route is open. |
 
 The cookie is set by `POST /api/setup` and `POST /api/login`. It is `HttpOnly`,
-`SameSite=Lax`, and `Secure` only when the request is HTTPS (`X-Forwarded-Proto: https`
-or a TLS connection).
+`SameSite=Lax`, has a 30-day `Max-Age`, and is `Secure` only when the request is
+HTTPS (`X-Forwarded-Proto: https` or a TLS connection).
 
 ### Unprotected routes
 `GET /healthz`, `POST /api/setup`, `POST /api/login`, `POST /api/logout`, `GET /api/session`.

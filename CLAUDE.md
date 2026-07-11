@@ -8,7 +8,7 @@ Reclaim is a self-hosted media codec audit and re-encode tool. It scans Plex/NAS
 
 ## Testing UI changes
 
-Never run e2e/browser automation yourself (Playwright, chromium-cli, or similar) to verify a change — don't launch a headless browser, click through the app, or take screenshots as a substitute for real verification. Rely on `pnpm run lint`, `npx tsc --noEmit`, `pnpm run build`, and `go test`/`go build` instead, and ask the user to check the UI in their own browser when visual/interactive confirmation is needed.
+Never run e2e/browser automation yourself (Playwright, chromium-cli, or similar) to verify a change — don't launch a headless browser, click through the app, or take screenshots as a substitute for real verification. Rely on `make lint`, `pnpm run build`, and `go test`/`go build` instead, and ask the user to check the UI in their own browser when visual/interactive confirmation is needed.
 
 ## Commands
 
@@ -19,6 +19,7 @@ make dev          # run locally against .dev/ dirs (sets all env vars, DISABLE_A
 make build        # compile to bin/reclaim
 make test         # go test ./...
 make test-race    # race detector on scanner/worker/jobs (CI gate)
+make lint         # go vet + web/landing lint + type-check
 make clean        # remove bin/ and .dev/
 
 # Single package test
@@ -39,7 +40,10 @@ pnpm install      # or pnpm install --frozen-lockfile in CI
 pnpm run dev      # Next.js dev server on :3000, proxies /api/* to :8080
 pnpm run build    # static export to web/out/ (used by embed.go)
 pnpm run lint
+pnpm run type-check
 ```
+
+Or from the repo root: `make lint` runs both web/ and landing/ lint + type-check alongside `go vet`.
 
 ### Landing page (landing/)
 

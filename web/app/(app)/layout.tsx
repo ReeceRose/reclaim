@@ -4,23 +4,33 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { AppShell } from "@/components/app-shell";
+import { ConnectionLostScreen } from "@/components/connection-lost";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
-  const { data: session, isLoading } = useQuery({
+  const {
+    data: session,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["session"],
     queryFn: api.session,
     retry: false,
   });
 
   useEffect(() => {
-    if (isLoading) return;
-    if (!session?.setup_complete) router.replace("/setup");
-    else if (!session?.authenticated) router.replace("/login");
-  }, [session, isLoading, router]);
+    if (!session) return;
+    if (!session.setup_complete) router.replace("/setup");
+    else if (!session.authenticated) router.replace("/login");
+  }, [session, router]);
+
+  if (isError && !session) {
+    return <ConnectionLostScreen onRetry={() => refetch()} />;
+  }
 
   if (isLoading || !session?.authenticated) {
     return (

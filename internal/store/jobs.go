@@ -65,15 +65,26 @@ func (j *Jobs) GetByID(ctx context.Context, id int64) (*TranscodeJob, error) {
 
 // JobListQuery pages the combined queue + history list.
 type JobListQuery struct {
-	Status string
-	Limit  int
-	Offset int
+	// Statuses, when non-empty, restricts results to jobs whose status is
+	// any of these values (SQL IN).
+	Statuses []string
+	// OrderBy selects sort order: "" (default) orders oldest-first by
+	// queued_at, matching queue position order; "recent" orders newest-first
+	// by completion time (falling back to queued_at for jobs never started),
+	// for the history view.
+	OrderBy string
+	Limit   int
+	Offset  int
+	// NoLimit skips the LIMIT/OFFSET clause entirely, returning every
+	// matching row. Used for aggregate computations over the full queue
+	// rather than a single page.
+	NoLimit bool
 }
 
 const defaultJobLimit = 50
 const maxJobLimit = 200
 
-// ListWithPath returns one page of jobs, newest first, with SourcePath joined in.
+// ListWithPath returns one page of jobs, with SourcePath joined in.
 func (j *Jobs) ListWithPath(ctx context.Context, q JobListQuery) ([]TranscodeJob, error) {
 	limit := q.Limit
 	if limit <= 0 {
@@ -85,12 +96,21 @@ func (j *Jobs) ListWithPath(ctx context.Context, q JobListQuery) ([]TranscodeJob
 
 	query := jobWithPathQ + " WHERE j.dismissed_at IS NULL"
 	var args []any
-	if q.Status != "" {
-		query += " AND j.status = ?"
-		args = append(args, q.Status)
+	if len(q.Statuses) > 0 {
+		query += " AND j.status IN (" + placeholders(len(q.Statuses)) + ")"
+		for _, s := range q.Statuses {
+			args = append(args, s)
+		}
 	}
-	query += " ORDER BY j.queued_at DESC, j.id DESC LIMIT ? OFFSET ?"
-	args = append(args, limit, q.Offset)
+	if q.OrderBy == "recent" {
+		query += " ORDER BY COALESCE(j.completed_at, j.queued_at) DESC, j.id DESC"
+	} else {
+		query += " ORDER BY j.queued_at ASC, j.id ASC"
+	}
+	if !q.NoLimit {
+		query += " LIMIT ? OFFSET ?"
+		args = append(args, limit, q.Offset)
+	}
 
 	rows, err := j.r.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -109,13 +129,19 @@ func (j *Jobs) ListWithPath(ctx context.Context, q JobListQuery) ([]TranscodeJob
 	return out, rows.Err()
 }
 
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
+}
+
 // CountJobs returns how many non-dismissed jobs match an optional status filter.
-func (j *Jobs) CountJobs(ctx context.Context, status string) (int64, error) {
+func (j *Jobs) CountJobs(ctx context.Context, statuses []string) (int64, error) {
 	query := `SELECT COUNT(*) FROM transcode_jobs WHERE dismissed_at IS NULL`
 	var args []any
-	if status != "" {
-		query += " AND status = ?"
-		args = append(args, status)
+	if len(statuses) > 0 {
+		query += " AND status IN (" + placeholders(len(statuses)) + ")"
+		for _, s := range statuses {
+			args = append(args, s)
+		}
 	}
 	var n int64
 	if err := j.r.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {

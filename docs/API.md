@@ -361,9 +361,11 @@ Skip reasons: `file not found`, `file is not active`, `file is already HEVC`,
 - `400` → empty `file_ids`, unknown `profile_id`, or no default profile when omitted.
 
 ### `GET /api/jobs`
-Combined queue + history, newest first.
-**Query:** `status` (optional filter, e.g. `queued`, `running`, `completed`, `failed`, `cancelled`),
-`limit` (default 50, max 200), `offset`.
+One page of jobs, optionally filtered by status.
+**Query:**
+- `status` — optional, comma-separated (e.g. `queued`, `completed,failed`). Omit for all statuses.
+- `order` — `queue` (default): oldest-queued-first, matching `queue_position` order. `recent`: newest-completed-first (falls back to `queued_at` for jobs never started) — use for history views.
+- `limit` (default 50, max 200), `offset`.
 
 **Response**
 ```json
@@ -394,10 +396,14 @@ Combined queue + history, newest first.
 }
 ```
 
-`total_count`, `queue_total_estimated_seconds`, and `queued_count` are included
-on the first page only (`offset=0`). `queue_total_estimated_seconds` sums
+`total_count` is included on the first page only (`offset=0`) and reflects the
+requested `status` filter. `queue_total_estimated_seconds` and `queued_count`
+are also first-page-only, but are always computed over the **entire**
+queued+running set regardless of the requested `status`/page — they sum
 per-job estimates for all queued jobs plus remaining time for any running job
-(estimated total minus elapsed since `started_at`). Omitted when zero.
+(estimated total minus elapsed since `started_at`) — so they stay accurate
+once the queue list itself is paginated. Both are included only when the
+request's `status` includes (or omits) `queued`, and omitted when zero.
 
 ### `POST /api/jobs/:id/cancel`
 Cancels a `queued`/`running`/`verifying` job. The worker kills the ffmpeg process

@@ -3,8 +3,10 @@ package api
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v5"
@@ -119,8 +121,32 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 	})
 }
 
-// handleListJobs returns the combined queue + history, optionally filtered by
-// status, with a 1-based queue position attached to queued jobs.
+// parseStatusFilter splits a comma-separated status query param (e.g.
+// "completed,failed") into its parts, dropping blanks.
+func parseStatusFilter(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// includesStatus reports whether statuses contains target, or is unfiltered
+// (which matches everything).
+func includesStatus(statuses []string, target string) bool {
+	return len(statuses) == 0 || slices.Contains(statuses, target)
+}
+
+// handleListJobs returns one page of jobs, optionally filtered by status,
+// with a 1-based queue position attached to queued jobs. Pass
+// `order=recent` to sort by completion time (for history views) instead of
+// the default oldest-queued-first order (for queue views).
 func (s *Server) handleListJobs(c *echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -129,11 +155,17 @@ func (s *Server) handleListJobs(c *echo.Context) error {
 		return err
 	}
 
-	statusFilter := c.QueryParam("status")
+	statuses := parseStatusFilter(c.QueryParam("status"))
+	orderBy := ""
+	if c.QueryParam("order") == "recent" {
+		orderBy = "recent"
+	}
+
 	jobs, err := s.store.Jobs.ListWithPath(ctx, store.JobListQuery{
-		Status: statusFilter,
-		Limit:  limit,
-		Offset: offset,
+		Statuses: statuses,
+		OrderBy:  orderBy,
+		Limit:    limit,
+		Offset:   offset,
 	})
 	if err != nil {
 		return serverError(c, err)
@@ -150,43 +182,56 @@ func (s *Server) handleListJobs(c *echo.Context) error {
 	}
 
 	out := make([]jobDTO, 0, len(jobs))
-	var queueTotalEstimated int64
-	var queuedCount int64
 	for i := range jobs {
-		dto := toJobDTO(&jobs[i], positions[jobs[i].ID], lookup)
-		out = append(out, dto)
-
-		switch jobs[i].Status {
-		case string(ijobs.StatusQueued):
-			queuedCount++
-			if dto.EstimatedDurationSeconds != nil {
-				queueTotalEstimated += *dto.EstimatedDurationSeconds
-			}
-		case string(ijobs.StatusRunning):
-			if dto.EstimatedDurationSeconds != nil {
-				remaining := *dto.EstimatedDurationSeconds
-				if jobs[i].StartedAt != nil {
-					elapsed := time.Now().Unix() - *jobs[i].StartedAt
-					remaining -= elapsed
-					if remaining < 0 {
-						remaining = 0
-					}
-				}
-				queueTotalEstimated += remaining
-			}
-		}
+		out = append(out, toJobDTO(&jobs[i], positions[jobs[i].ID], lookup))
 	}
 
 	resp := map[string]any{"items": out}
 	if offset == 0 {
-		if total, err := s.store.Jobs.CountJobs(ctx, statusFilter); err == nil {
+		if total, err := s.store.Jobs.CountJobs(ctx, statuses); err == nil {
 			resp["total_count"] = total
 		}
-		if queueTotalEstimated > 0 {
-			resp["queue_total_estimated_seconds"] = queueTotalEstimated
-		}
-		if queuedCount > 0 {
-			resp["queued_count"] = queuedCount
+
+		// queue_total_estimated_seconds/queued_count summarize the *entire*
+		// queue, independent of this request's page, so they stay accurate
+		// once the queue list itself is paginated.
+		if includesStatus(statuses, string(ijobs.StatusQueued)) {
+			queueJobs, err := s.store.Jobs.ListWithPath(ctx, store.JobListQuery{
+				Statuses: []string{string(ijobs.StatusQueued), string(ijobs.StatusRunning)},
+				NoLimit:  true,
+			})
+			if err == nil {
+				var queueTotalEstimated int64
+				var queuedCount int64
+				for i := range queueJobs {
+					dto := toJobDTO(&queueJobs[i], positions[queueJobs[i].ID], lookup)
+					switch queueJobs[i].Status {
+					case string(ijobs.StatusQueued):
+						queuedCount++
+						if dto.EstimatedDurationSeconds != nil {
+							queueTotalEstimated += *dto.EstimatedDurationSeconds
+						}
+					case string(ijobs.StatusRunning):
+						if dto.EstimatedDurationSeconds != nil {
+							remaining := *dto.EstimatedDurationSeconds
+							if queueJobs[i].StartedAt != nil {
+								elapsed := time.Now().Unix() - *queueJobs[i].StartedAt
+								remaining -= elapsed
+								if remaining < 0 {
+									remaining = 0
+								}
+							}
+							queueTotalEstimated += remaining
+						}
+					}
+				}
+				if queueTotalEstimated > 0 {
+					resp["queue_total_estimated_seconds"] = queueTotalEstimated
+				}
+				if queuedCount > 0 {
+					resp["queued_count"] = queuedCount
+				}
+			}
 		}
 	}
 	return c.JSON(http.StatusOK, resp)

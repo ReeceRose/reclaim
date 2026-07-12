@@ -484,8 +484,12 @@ export const api = {
       file_ids: fileIds,
       profile_id: profileId ?? null,
     }),
-  jobs: (params?: { status?: string; limit?: number; offset?: number }) =>
-    request<JobsListResult>("GET", `/api/jobs${buildQuery(params ?? {})}`),
+  jobs: (params?: {
+    status?: string;
+    order?: "queue" | "recent";
+    limit?: number;
+    offset?: number;
+  }) => request<JobsListResult>("GET", `/api/jobs${buildQuery(params ?? {})}`),
   cancelJob: (id: number) =>
     request<{ job_id: number; status: string }>(
       "POST",

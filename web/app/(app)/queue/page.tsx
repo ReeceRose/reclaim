@@ -237,7 +237,7 @@ function LoadMoreSentinel({
 }
 
 function QueueContent() {
-  useNow();
+  const now = useNow();
   const qc = useQueryClient();
 
   const { data: runningData } = useSuspenseQuery({
@@ -373,6 +373,7 @@ function QueueContent() {
   const win = windowInfo(
     settingsData.encode_window_start,
     settingsData.encode_window_end,
+    now,
   );
 
   return (

@@ -9,7 +9,7 @@ import { formatInt, formatVersion, windowInfo } from "@/lib/format";
 
 export function useShellData() {
   useWS();
-  useNow();
+  const now = useNow();
 
   const { data: isScanning } = useQuery<boolean>({
     queryKey: ["scanning"],
@@ -99,7 +99,7 @@ export function useShellData() {
   };
 
   const encodeWindow = settings
-    ? windowInfo(settings.encode_window_start, settings.encode_window_end)
+    ? windowInfo(settings.encode_window_start, settings.encode_window_end, now)
     : null;
   const username = session?.username ?? "";
   const initials = username.slice(0, 2).toUpperCase() || "?";

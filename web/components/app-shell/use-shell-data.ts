@@ -2,12 +2,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useUnreadCount } from "@/components/notification-panel";
+import { useNow } from "@/hooks/use-now";
 import { useWS } from "@/hooks/use-ws";
 import { api, type ScanProgress } from "@/lib/api";
 import { formatInt, formatVersion, windowInfo } from "@/lib/format";
 
 export function useShellData() {
   useWS();
+  useNow();
 
   const { data: isScanning } = useQuery<boolean>({
     queryKey: ["scanning"],

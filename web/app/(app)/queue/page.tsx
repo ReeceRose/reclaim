@@ -21,6 +21,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useNow } from "@/hooks/use-now";
 import {
   api,
   type Job,
@@ -226,6 +227,7 @@ function LoadMoreSentinel({
 }
 
 function QueueContent() {
+  useNow();
   const qc = useQueryClient();
 
   const { data: runningData } = useSuspenseQuery({

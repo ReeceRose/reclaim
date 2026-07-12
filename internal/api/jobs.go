@@ -12,6 +12,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	ijobs "reclaim/internal/jobs"
+	"reclaim/internal/media"
 	"reclaim/internal/store"
 )
 
@@ -65,6 +66,11 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 	skipped := make([]skippedItem, 0)
 	now := time.Now().Unix()
 
+	rateLookup, err := s.store.Jobs.LearnedEncodeRates(ctx)
+	if err != nil {
+		return serverError(c, err)
+	}
+
 	for _, fid := range dedupeIDs(req.FileIDs) {
 		f, err := s.store.Media.GetByID(ctx, fid)
 		if errors.Is(err, store.ErrNotFound) {
@@ -91,15 +97,24 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 			continue
 		}
 
+		predictedSavings := f.PredictedSavingsBytes
+		rate, _, _ := media.ResolveEncodeRate(profile.ID, profile.Preset, profile.CRF, rateLookup)
+		var initialEstimate *int64
+		if est := media.PredictedEncodeSeconds(rate, f.DurationSeconds, f.Width, f.Height); est > 0 {
+			initialEstimate = &est
+		}
+
 		jobID, err := s.store.Jobs.Create(ctx, &store.TranscodeJob{
-			MediaFileID:       fid,
-			ProfileID:         profile.ID,
-			Status:            string(ijobs.StatusQueued),
-			QueuedAt:          now,
-			OriginalSizeBytes: f.SizeBytes,
-			EncodePreset:      &profile.Preset,
-			EncodeCRF:         &profile.CRF,
-			EncodeExtraArgs:   profile.ExtraArgs,
+			MediaFileID:                     fid,
+			ProfileID:                       profile.ID,
+			Status:                          string(ijobs.StatusQueued),
+			QueuedAt:                        now,
+			OriginalSizeBytes:               f.SizeBytes,
+			EncodePreset:                    &profile.Preset,
+			EncodeCRF:                       &profile.CRF,
+			EncodeExtraArgs:                 profile.ExtraArgs,
+			PredictedSavingsBytes:           &predictedSavings,
+			InitialEstimatedDurationSeconds: initialEstimate,
 		})
 		if err != nil {
 			return serverError(c, err)

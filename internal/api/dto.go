@@ -128,35 +128,41 @@ type jobDTO struct {
 	EncodePreset    *string `json:"encode_preset"`
 	EncodeCRF       *int    `json:"encode_crf"`
 	EncodeExtraArgs *string `json:"encode_extra_args"`
-	// EstimatedDurationSeconds is populated for queued/running jobs.
+	// EstimatedDurationSeconds is a live, continuously-refreshed prediction for
+	// queued/running jobs, or the frozen queue-time snapshot for completed jobs.
 	EstimatedDurationSeconds *int64 `json:"estimated_duration_seconds,omitempty"`
 	// EncodeDurationSeconds is actual wall-clock time for completed jobs.
 	EncodeDurationSeconds *int64 `json:"encode_duration_seconds,omitempty"`
 	EstimateSource        string `json:"estimate_source,omitempty"`
 	EstimateSampleCount   *int   `json:"estimate_sample_count,omitempty"`
+	// PredictedSavingsBytes is the queue-time prediction of bytes reclaimed,
+	// snapshotted so history can compare it against the actual outcome even
+	// after the source file has since become HEVC.
+	PredictedSavingsBytes *int64 `json:"predicted_savings_bytes,omitempty"`
 }
 
 func toJobDTO(j *store.TranscodeJob, position int, lookup *media.EncodeRateLookup) jobDTO {
 	dto := jobDTO{
-		ID:                 j.ID,
-		MediaFileID:        j.MediaFileID,
-		ProfileID:          j.ProfileID,
-		Status:             j.Status,
-		QueuedAt:           j.QueuedAt,
-		StartedAt:          j.StartedAt,
-		CompletedAt:        j.CompletedAt,
-		OriginalSizeBytes:  j.OriginalSizeBytes,
-		OutputSizeBytes:    j.OutputSizeBytes,
-		ProgressPercent:    j.ProgressPercent,
-		OutputPath:         j.OutputPath,
-		ErrorMessage:       j.ErrorMessage,
-		VerificationResult: j.VerificationResult,
-		SourcePath:         j.SourcePath,
-		QueuePosition:      position,
-		Forced:             j.Forced,
-		EncodePreset:       j.EncodePreset,
-		EncodeCRF:          j.EncodeCRF,
-		EncodeExtraArgs:    j.EncodeExtraArgs,
+		ID:                    j.ID,
+		MediaFileID:           j.MediaFileID,
+		ProfileID:             j.ProfileID,
+		Status:                j.Status,
+		QueuedAt:              j.QueuedAt,
+		StartedAt:             j.StartedAt,
+		CompletedAt:           j.CompletedAt,
+		OriginalSizeBytes:     j.OriginalSizeBytes,
+		OutputSizeBytes:       j.OutputSizeBytes,
+		ProgressPercent:       j.ProgressPercent,
+		OutputPath:            j.OutputPath,
+		ErrorMessage:          j.ErrorMessage,
+		VerificationResult:    j.VerificationResult,
+		SourcePath:            j.SourcePath,
+		QueuePosition:         position,
+		Forced:                j.Forced,
+		EncodePreset:          j.EncodePreset,
+		EncodeCRF:             j.EncodeCRF,
+		EncodeExtraArgs:       j.EncodeExtraArgs,
+		PredictedSavingsBytes: j.PredictedSavingsBytes,
 	}
 
 	preset := ""
@@ -183,6 +189,7 @@ func toJobDTO(j *store.TranscodeJob, position int, lookup *media.EncodeRateLooku
 			elapsed := *j.CompletedAt - *j.StartedAt
 			dto.EncodeDurationSeconds = &elapsed
 		}
+		dto.EstimatedDurationSeconds = j.InitialEstimatedDurationSeconds
 	}
 
 	return dto

@@ -30,6 +30,11 @@ type TranscodeJob struct {
 	EncodePreset    *string
 	EncodeCRF       *int
 	EncodeExtraArgs *string
+	// PredictedSavingsBytes and InitialEstimatedDurationSeconds snapshot the
+	// pre-encode predictions at queue time, so history can show how far off
+	// the estimate was after the codec/size have since changed.
+	PredictedSavingsBytes           *int64
+	InitialEstimatedDurationSeconds *int64
 	// SourcePath is the original media file path, populated only by the
 	// path-joining list query (ListAllWithPath). It is nil elsewhere because
 	// the file row may have been deleted after the job ran.
@@ -48,10 +53,12 @@ func (j *Jobs) Create(ctx context.Context, job *TranscodeJob) (int64, error) {
 	res, err := j.w.ExecContext(ctx, `
 		INSERT INTO transcode_jobs (
 			media_file_id, profile_id, status, queued_at, original_size_bytes,
-			encode_preset, encode_crf, encode_extra_args
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			encode_preset, encode_crf, encode_extra_args,
+			predicted_savings_bytes, initial_estimated_duration_seconds
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.MediaFileID, job.ProfileID, job.Status, job.QueuedAt, job.OriginalSizeBytes,
 		job.EncodePreset, job.EncodeCRF, job.EncodeExtraArgs,
+		job.PredictedSavingsBytes, job.InitialEstimatedDurationSeconds,
 	)
 	if err != nil {
 		return 0, err
@@ -558,7 +565,8 @@ const jobQ = `
 	SELECT id, media_file_id, profile_id, status, queued_at, started_at, completed_at,
 		original_size_bytes, output_size_bytes, progress_percent, output_path,
 		error_message, verification_result, forced,
-		encode_preset, encode_crf, encode_extra_args
+		encode_preset, encode_crf, encode_extra_args,
+		predicted_savings_bytes, initial_estimated_duration_seconds
 	FROM transcode_jobs`
 
 func scanJob(s rowScanner) (*TranscodeJob, error) {
@@ -568,6 +576,7 @@ func scanJob(s rowScanner) (*TranscodeJob, error) {
 		&j.StartedAt, &j.CompletedAt, &j.OriginalSizeBytes, &j.OutputSizeBytes,
 		&j.ProgressPercent, &j.OutputPath, &j.ErrorMessage, &j.VerificationResult,
 		&j.Forced, &j.EncodePreset, &j.EncodeCRF, &j.EncodeExtraArgs,
+		&j.PredictedSavingsBytes, &j.InitialEstimatedDurationSeconds,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -586,6 +595,7 @@ const jobWithPathQ = `
 		j.original_size_bytes, j.output_size_bytes, j.progress_percent, j.output_path,
 		j.error_message, j.verification_result, j.forced,
 		j.encode_preset, j.encode_crf, j.encode_extra_args,
+		j.predicted_savings_bytes, j.initial_estimated_duration_seconds,
 		m.path, m.duration_seconds, m.width, m.height
 	FROM transcode_jobs j
 	LEFT JOIN media_files m ON m.id = j.media_file_id`
@@ -796,6 +806,7 @@ func scanJobWithPath(s rowScanner) (*TranscodeJob, error) {
 		&j.StartedAt, &j.CompletedAt, &j.OriginalSizeBytes, &j.OutputSizeBytes,
 		&j.ProgressPercent, &j.OutputPath, &j.ErrorMessage, &j.VerificationResult,
 		&j.Forced, &j.EncodePreset, &j.EncodeCRF, &j.EncodeExtraArgs,
+		&j.PredictedSavingsBytes, &j.InitialEstimatedDurationSeconds,
 		&j.SourcePath, &j.DurationSeconds, &j.Width, &j.Height,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

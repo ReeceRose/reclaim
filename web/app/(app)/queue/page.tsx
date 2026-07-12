@@ -53,6 +53,16 @@ function encodeSettingsLabel(job: Job): string {
   return `libx265 · CRF ${crf} · preset ${preset}`;
 }
 
+function formatSignedBytes(diffBytes: number): string {
+  const sign = diffBytes > 0 ? "+" : diffBytes < 0 ? "-" : "";
+  return `${sign}${formatBytes(Math.abs(diffBytes))}`;
+}
+
+function formatSignedDuration(diffSeconds: number): string {
+  const sign = diffSeconds > 0 ? "+" : diffSeconds < 0 ? "-" : "";
+  return `${sign}${formatDurationCompact(Math.abs(diffSeconds))}`;
+}
+
 function estimateTooltip(job: Job, profileName?: string): string | undefined {
   if (job.estimate_source === "learned_profile") return undefined;
   const preset = job.encode_preset ?? "medium";
@@ -559,6 +569,18 @@ function QueueContent() {
                     job.original_size_bytes -
                     (job.output_size_bytes ?? job.original_size_bytes);
                   const failed = job.status === "failed";
+                  const predictedSavings = job.predicted_savings_bytes;
+                  const savingsDiff =
+                    !failed && predictedSavings != null
+                      ? saved - predictedSavings
+                      : null;
+                  const durationDiff =
+                    !failed &&
+                    job.encode_duration_seconds != null &&
+                    job.estimated_duration_seconds != null
+                      ? job.encode_duration_seconds -
+                        job.estimated_duration_seconds
+                      : null;
                   return (
                     <div
                       key={job.id}
@@ -587,12 +609,57 @@ function QueueContent() {
                               -{formatBytes(saved)}
                             </span>
                           )}
+                          {!failed && predictedSavings != null && (
+                            <span className="text-xs text-muted-dim font-mono">
+                              predicted -{formatBytes(predictedSavings)}
+                              {savingsDiff != null &&
+                                Math.abs(savingsDiff) > 0 && (
+                                  <>
+                                    {" · "}
+                                    <span
+                                      className={
+                                        savingsDiff >= 0
+                                          ? "text-green"
+                                          : "text-red"
+                                      }
+                                    >
+                                      {formatSignedBytes(savingsDiff)}
+                                    </span>
+                                  </>
+                                )}
+                            </span>
+                          )}
                         </div>
                         <VerifyChecks json={job.verification_result} />
                         {!failed && job.encode_duration_seconds != null && (
                           <div className="text-xs text-muted-dim mt-1">
                             took{" "}
                             {formatDurationCompact(job.encode_duration_seconds)}
+                            {job.estimated_duration_seconds != null && (
+                              <>
+                                {" "}
+                                (predicted ~
+                                {formatDurationCompact(
+                                  job.estimated_duration_seconds,
+                                )}
+                                {durationDiff != null &&
+                                  Math.abs(durationDiff) > 0 && (
+                                    <>
+                                      {" · "}
+                                      <span
+                                        className={
+                                          durationDiff <= 0
+                                            ? "text-green"
+                                            : "text-red"
+                                        }
+                                      >
+                                        {formatSignedDuration(durationDiff)}
+                                      </span>
+                                    </>
+                                  )}
+                                )
+                              </>
+                            )}
                             {job.encode_preset && (
                               <>
                                 {" "}

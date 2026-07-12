@@ -255,6 +255,7 @@ export interface Job {
   encode_duration_seconds?: number | null;
   estimate_source?: string;
   estimate_sample_count?: number | null;
+  predicted_savings_bytes?: number | null;
 }
 
 export interface JobsListResult {

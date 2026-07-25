@@ -11,6 +11,10 @@ const nextConfig: NextConfig = {
   // from the Go static handler.
   trailingSlash: true,
 
+  experimental: {
+    useTypeScriptCli: true
+  },
+
   // Dev-only: proxy API + WS to the Go backend so the browser talks to a single
   // origin (cookies "just work", no CORS). Rewrites are ignored by `output:
   // 'export'`, so production is unaffected — there the Go binary serves both.

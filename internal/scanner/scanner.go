@@ -452,48 +452,53 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 		return nil, ctx.Err()
 	}
 
-	// Rename detection: vanished paths.
-	// All inserts are done; GetByFingerprintOtherThan will find the new row if
-	// the file was renamed.
+	// Vanished paths: a rename (same bytes elsewhere), a container swap (same
+	// name, new bytes), or a genuine delete. All inserts are done by now, so
+	// both lookups can see rows added during this scan.
+	//
+	// Unlike the counters above, this one is written only here, sequentially.
+	superseded := 0
 	for path, rec := range known {
 		if _, seen := seenPaths[path]; seen {
 			continue
 		}
 
-		// Without a fingerprint we can't distinguish a rename from a delete.
-		if rec.Fingerprint == "" {
-			if merr := s.store.Media.MarkMissing(ctx, rec.ID); merr != nil {
-				slog.Error("scanner: mark missing (no fingerprint)", "path", path, "err", merr)
-				atomic.AddInt64(&errs, 1)
-			} else {
-				atomic.AddInt64(&removed, 1)
+		// Without a fingerprint we can't tell a rename from a delete, so those
+		// rows skip straight to the path-based check below.
+		if rec.Fingerprint != "" {
+			ni, wasInserted := newlyInserted[rec.Fingerprint]
+			if wasInserted {
+				if merr := s.store.Media.RecordMove(ctx, rec.ID, ni.id, ni.path); merr != nil {
+					slog.Error("scanner: record move", "from", path, "to", ni.path, "err", merr)
+					atomic.AddInt64(&errs, 1)
+				} else {
+					atomic.AddInt64(&moved, 1)
+				}
+				emitProgress(false)
+				continue
 			}
-			emitProgress(false)
-			continue
+
+			// Fall back to DB lookup in case the new path was already present from a
+			// previous scan (e.g. watcher probed it before this diff ran).
+			newFile, ferr := s.store.Media.GetByFingerprintOtherThan(ctx, rec.Fingerprint, rec.ID)
+			if ferr == nil {
+				if merr := s.store.Media.RecordMove(ctx, rec.ID, newFile.ID, newFile.Path); merr != nil {
+					slog.Error("scanner: record move (db lookup)", "from", path, "to", newFile.Path, "err", merr)
+					atomic.AddInt64(&errs, 1)
+				} else {
+					atomic.AddInt64(&moved, 1)
+				}
+				emitProgress(false)
+				continue
+			}
 		}
 
-		ni, wasInserted := newlyInserted[rec.Fingerprint]
-		if wasInserted {
-			if merr := s.store.Media.RecordMove(ctx, rec.ID, ni.id, ni.path); merr != nil {
-				slog.Error("scanner: record move", "from", path, "to", ni.path, "err", merr)
-				atomic.AddInt64(&errs, 1)
-			} else {
-				atomic.AddInt64(&moved, 1)
-			}
-			emitProgress(false)
-			continue
-		}
-
-		// Fall back to DB lookup in case the new path was already present from a
-		// previous scan (e.g. watcher probed it before this diff ran).
-		newFile, ferr := s.store.Media.GetByFingerprintOtherThan(ctx, rec.Fingerprint, rec.ID)
-		if ferr == nil {
-			if merr := s.store.Media.RecordMove(ctx, rec.ID, newFile.ID, newFile.Path); merr != nil {
-				slog.Error("scanner: record move (db lookup)", "from", path, "to", newFile.Path, "err", merr)
-				atomic.AddInt64(&errs, 1)
-			} else {
-				atomic.AddInt64(&moved, 1)
-			}
+		// Same name, different container: an out-of-band re-encode replaced the
+		// file instead of moving it, so the fingerprint checks above could never
+		// match. Counted as a move — the file is reconciled, not lost.
+		if newFile := s.supersede(ctx, path, rec.ID); newFile != nil {
+			superseded++
+			atomic.AddInt64(&moved, 1)
 			emitProgress(false)
 			continue
 		}
@@ -555,6 +560,18 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 		slog.Error("scanner: scan event", "err", err)
 	} else if s.hub != nil {
 		s.hub.Broadcast("event_created", scanEventBroadcast(eventID, severity, scanMsg, scanMeta))
+	}
+
+	// One event for the whole batch: a library first indexed after an external
+	// transcode pass can supersede hundreds of rows, and that many entries would
+	// bury everything else in the activity feed.
+	if superseded > 0 {
+		msg := fmt.Sprintf("Superseded %d file(s) replaced in a different container", superseded)
+		s.emitSupersededEvent(ctx, msg, scanJsonMeta(map[string]any{
+			"scan_run_id": runID,
+			"superseded":  superseded,
+			"trigger":     "scan",
+		}))
 	}
 
 	// Cleanup runs after the scan event so the two read in order in the activity
@@ -909,16 +926,26 @@ func (s *Scanner) checkVanishedFile(ctx context.Context, path string) {
 	if f.Status != store.MediaStatusActive {
 		return
 	}
-	if f.Fingerprint == "" {
-		_ = s.store.Media.MarkMissing(ctx, f.ID)
-		return
+	if f.Fingerprint != "" {
+		newFile, err := s.store.Media.GetByFingerprintOtherThan(ctx, f.Fingerprint, f.ID)
+		if err == nil {
+			if merr := s.store.Media.RecordMove(ctx, f.ID, newFile.ID, newFile.Path); merr != nil {
+				slog.Error("scanner: watcher record move", "from", path, "to", newFile.Path, "err", merr)
+			}
+			return
+		}
 	}
 
-	newFile, err := s.store.Media.GetByFingerprintOtherThan(ctx, f.Fingerprint, f.ID)
-	if err == nil {
-		if merr := s.store.Media.RecordMove(ctx, f.ID, newFile.ID, newFile.Path); merr != nil {
-			slog.Error("scanner: watcher record move", "from", path, "to", newFile.Path, "err", merr)
-		}
+	// Same name, different container — see the matching branch in Scan.
+	if newFile := s.supersede(ctx, path, f.ID); newFile != nil {
+		s.emitSupersededEvent(ctx,
+			fmt.Sprintf("Superseded %s, replaced by %s", filepath.Base(path), filepath.Base(newFile.Path)),
+			scanJsonMeta(map[string]any{
+				"superseded": 1,
+				"from":       path,
+				"to":         newFile.Path,
+				"trigger":    "watcher",
+			}))
 		return
 	}
 
@@ -1012,6 +1039,45 @@ func scanEventMessage(run *store.ScanRun) string {
 	return msg
 }
 
+// supersede folds a vanished row into a surviving file with the same name but a
+// different extension — an out-of-band re-encode that changed container. It
+// returns the surviving row, or nil when there is no unambiguous match and the
+// caller should fall back to marking the file missing.
+//
+// Failures are logged rather than counted as scan errors: like pruneMissing,
+// this is best-effort reconciliation on top of an otherwise healthy scan, and
+// the fallback (missing) is always safe.
+func (s *Scanner) supersede(ctx context.Context, path string, oldID int64) *store.MediaFile {
+	newFile, err := s.store.Media.FindSuperseder(ctx, path, oldID)
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			slog.Error("scanner: find superseder", "path", path, "err", err)
+		}
+		return nil
+	}
+	if err := s.store.Media.Supersede(ctx, oldID, newFile.ID); err != nil {
+		if !errors.Is(err, store.ErrJobInFlight) {
+			slog.Error("scanner: supersede", "from", path, "to", newFile.Path, "err", err)
+		}
+		return nil
+	}
+	slog.Info("scanner: superseded file", "from", path, "to", newFile.Path)
+	return newFile
+}
+
+// emitSupersededEvent logs a supersede batch to the audit feed and pushes it to
+// connected clients.
+func (s *Scanner) emitSupersededEvent(ctx context.Context, msg, meta string) {
+	eventID, err := s.store.Events.Insert(ctx, store.EventFileSuperseded, store.SeverityInfo, msg, meta)
+	if err != nil {
+		slog.Error("scanner: supersede event", "err", err)
+		return
+	}
+	if s.hub != nil {
+		s.hub.Broadcast("event_created", eventBroadcast(eventID, store.EventFileSuperseded, store.SeverityInfo, msg, meta))
+	}
+}
+
 // pruneMissing hard-deletes rows that have been soft-deleted for longer than the
 // configured retention. A retention of zero (the default) disables it entirely,
 // so rows are kept forever unless the operator opts in. Failures are logged
@@ -1047,16 +1113,16 @@ func (s *Scanner) pruneMissing(ctx context.Context) {
 		return
 	}
 	if s.hub != nil {
-		s.hub.Broadcast("event_created", pruneEventBroadcast(eventID, msg, meta))
+		s.hub.Broadcast("event_created", eventBroadcast(eventID, store.EventMissingPruned, store.SeverityInfo, msg, meta))
 	}
 }
 
-// pruneEventBroadcast builds the WS payload for an event_created prune event.
-func pruneEventBroadcast(id int64, message, meta string) map[string]any {
+// eventBroadcast builds the WS payload for an event_created push.
+func eventBroadcast(id int64, eventType, severity, message, meta string) map[string]any {
 	m := map[string]any{
 		"id":         id,
-		"type":       store.EventMissingPruned,
-		"severity":   store.SeverityInfo,
+		"type":       eventType,
+		"severity":   severity,
 		"message":    message,
 		"created_at": time.Now().Unix(),
 		"metadata":   nil,

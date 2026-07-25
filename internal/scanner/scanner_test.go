@@ -247,6 +247,109 @@ func TestScanPrunesMissingAfterRetention(t *testing.T) {
 	}
 }
 
+// TestScanSupersedesContainerChange verifies the path-based fallback: an
+// out-of-band re-encode that also changed container leaves the old row nowhere
+// to match on fingerprint (the bytes differ), so the vanished row is folded into
+// the same-stem survivor instead of lingering as a missing duplicate.
+func TestScanSupersedesContainerChange(t *testing.T) {
+	root := t.TempDir()
+	sc, st := newTestScanner(t, root, root)
+	ctx := context.Background()
+
+	src := filepath.Join(root, "Show", "S01E01.mkv")
+	dst := filepath.Join(root, "Show", "S01E01.mp4")
+	writeFile(t, src)
+
+	if _, err := sc.Scan(ctx, "initial", false); err != nil {
+		t.Fatalf("initial scan: %v", err)
+	}
+
+	// A re-encode, not a rename: same name, new container, different bytes.
+	if err := os.Remove(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("re-encoded, much smaller"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	run, err := sc.Scan(ctx, "after-reencode", false)
+	if err != nil {
+		t.Fatalf("scan after re-encode: %v", err)
+	}
+	if run.FilesRemoved != 0 {
+		t.Errorf("FilesRemoved = %d, want 0 (the file was replaced, not lost)", run.FilesRemoved)
+	}
+	if run.FilesMoved != 1 {
+		t.Errorf("FilesMoved = %d, want 1", run.FilesMoved)
+	}
+
+	if _, err := st.Media.GetByPath(ctx, src); err == nil {
+		t.Error("superseded .mkv row still in DB")
+	}
+	survivor, err := st.Media.GetByPath(ctx, dst)
+	if err != nil {
+		t.Fatalf("get replacement row: %v", err)
+	}
+	if survivor.Status != "active" {
+		t.Errorf("replacement status = %q, want active", survivor.Status)
+	}
+
+	overview, err := st.Media.MissingOverview(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.Count != 0 {
+		t.Errorf("missing rows = %d, want 0 (no phantom duplicate)", overview.Count)
+	}
+
+	events, err := st.Events.List(ctx, store.EventFilter{Limit: 20, Type: store.EventFileSuperseded})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("file_superseded events = %d, want 1", len(events))
+	}
+}
+
+// TestScanKeepsMissingWhenStemDiffers guards the narrowness of the rule: a
+// replacement that is not the same file by name must still read as missing
+// rather than being silently folded into an unrelated row.
+func TestScanKeepsMissingWhenStemDiffers(t *testing.T) {
+	root := t.TempDir()
+	sc, st := newTestScanner(t, root, root)
+	ctx := context.Background()
+
+	src := filepath.Join(root, "Show", "S01E01.mkv")
+	other := filepath.Join(root, "Show", "S01E01.1080p.mp4")
+	writeFile(t, src)
+
+	if _, err := sc.Scan(ctx, "initial", false); err != nil {
+		t.Fatalf("initial scan: %v", err)
+	}
+	if err := os.Remove(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(other, []byte("a different release"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	run, err := sc.Scan(ctx, "after-swap", false)
+	if err != nil {
+		t.Fatalf("scan after swap: %v", err)
+	}
+	if run.FilesRemoved != 1 {
+		t.Errorf("FilesRemoved = %d, want 1", run.FilesRemoved)
+	}
+
+	gone, err := st.Media.GetByPath(ctx, src)
+	if err != nil {
+		t.Fatalf("original row should still exist as missing: %v", err)
+	}
+	if gone.Status != "missing" {
+		t.Errorf("original status = %q, want missing", gone.Status)
+	}
+}
+
 // TestScanRenameFile verifies that a renamed file is recorded as a move with
 // job history preserved (old row updated, duplicate deleted).
 func TestScanRenameFile(t *testing.T) {

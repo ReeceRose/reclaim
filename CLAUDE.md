@@ -138,6 +138,8 @@ The worker encodes to a `.reclaim-tmp.<ext>` temp file, verifies it with ffprobe
 
 A file that vanishes from disk is soft-deleted: `status='missing'`, `missing_since` stamped (migration `00012`), and its `library_stats` contribution removed. The stamp is set with `COALESCE` so repeat marks don't restart the clock, and cleared when the file returns (re-probe, rename match, or post-encode swap).
 
+Before a vanished file is marked missing, the scanner tries two reconciliations. First fingerprint matching (`GetByFingerprintOtherThan`) — identical bytes at a new path means a rename, handled by `RecordMove` (old row kept, path rewritten). Then, since a re-encode changes the bytes and so can never match a fingerprint, `FindSuperseder`/`Supersede`: a surviving active row in the same directory with the same name up to the final extension (`S07E01.mkv` → `S07E01.mp4`, an out-of-band transcode that changed container) absorbs the old row. Unlike a move, the *new* row survives — it holds the correct probe data — inheriting the old row's `transcode_jobs` while the old row is hard-deleted. The match requires exactly one same-stem candidate (`Movie.mkv` never claims `Movie.2160p.mkv`) and is refused while the old row has a live job. Scans emit one aggregated `file_superseded` event; the watcher emits one per file.
+
 `MISSING_RETENTION` (default `0` = never) drives the post-scan cleanup in `scanner.pruneMissing`: rows past the cutoff are hard-deleted along with their `transcode_jobs` history, skipping files with a `queued`/`running`/`verifying` job. `POST /api/settings/prune-missing` does the same ignoring the cutoff. Both write a `missing_pruned` event. Stats need no adjustment — the contribution left when the row went missing.
 
 ### Live settings

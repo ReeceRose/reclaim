@@ -463,7 +463,7 @@ Newest first. Keyset-paginated via `after_id`.
 
 **Query params:** `limit` (default 50, max 200), `after_id`, `severity` (`info`/`warn`/`error`),
 `type` (e.g. `job_completed`, `job_failed`, `job_cancelled`, `scan_completed`, `orphan_restored`,
-`missing_pruned`).
+`missing_pruned`, `file_superseded`).
 
 ```json
 {

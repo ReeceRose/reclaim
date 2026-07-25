@@ -7,4 +7,5 @@ var (
 	ErrSetupAlreadyComplete = errors.New("setup already complete")
 	ErrSetupNotComplete     = errors.New("setup not complete")
 	ErrIllegalTransition    = errors.New("illegal job state transition")
+	ErrJobInFlight          = errors.New("file has an in-flight job")
 )

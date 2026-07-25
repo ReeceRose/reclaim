@@ -14,6 +14,7 @@ const (
 	EventScanCompleted  = "scan_completed"
 	EventOrphanRestored = "orphan_restored"
 	EventMissingPruned  = "missing_pruned"
+	EventFileSuperseded = "file_superseded"
 )
 
 // Event severity constants.

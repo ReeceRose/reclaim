@@ -394,7 +394,8 @@ export interface AppEvent {
     | "job_cancelled"
     | "scan_completed"
     | "orphan_restored"
-    | "missing_pruned";
+    | "missing_pruned"
+    | "file_superseded";
   severity: "info" | "warn" | "error";
   message: string;
   metadata: Record<string, unknown> | null;

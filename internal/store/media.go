@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"reclaim/internal/media"
@@ -311,6 +313,113 @@ func (m *Media) GetByFingerprintOtherThan(ctx context.Context, fp string, exclud
 	return scanMedia(m.r.QueryRowContext(ctx,
 		mediaQ+" WHERE fingerprint = ? AND status = 'active' AND id != ?", fp, excludeID,
 	))
+}
+
+// FindSuperseder returns the active row that replaced a vanished file whose
+// content changed as well as its path — an out-of-band re-encode that also
+// changed container (`S07E01.mkv` → `S07E01.mp4`). Fingerprint matching cannot
+// see these: the bytes differ by definition, so the name is the only signal
+// left.
+//
+// The match is deliberately narrow — same directory, same name up to the final
+// extension, and exactly one candidate. An ambiguous stem (several surviving
+// siblings) returns ErrNotFound rather than a guess, and so does a stem that
+// only matches by prefix (`Movie.mkv` must not claim `Movie.2160p.mkv`).
+func (m *Media) FindSuperseder(ctx context.Context, oldPath string, excludeID int64) (*MediaFile, error) {
+	dir, base := filepath.Dir(oldPath), filepath.Base(oldPath)
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	if stem == "" || stem == base {
+		return nil, ErrNotFound
+	}
+
+	// LIKE narrows to the same directory and stem prefix using the path index;
+	// the exact stem equality is enforced in Go below.
+	rows, err := m.r.QueryContext(ctx,
+		mediaQ+` WHERE id != ? AND status = 'active' AND path LIKE ? ESCAPE '\'`,
+		excludeID, likePrefix(filepath.Join(dir, stem)+"."),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var match *MediaFile
+	for rows.Next() {
+		f, err := scanMedia(rows)
+		if err != nil {
+			return nil, err
+		}
+		if filepath.Dir(f.Path) != dir {
+			continue
+		}
+		b := filepath.Base(f.Path)
+		if !strings.EqualFold(strings.TrimSuffix(b, filepath.Ext(b)), stem) {
+			continue
+		}
+		if match != nil {
+			return nil, ErrNotFound
+		}
+		match = f
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if match == nil {
+		return nil, ErrNotFound
+	}
+	return match, nil
+}
+
+// Supersede folds a vanished row into the row that replaced it: newID keeps its
+// own probe data (it is a different encode, so oldID's codec and size are wrong
+// for it), inherits oldID's job history, and oldID is hard-deleted.
+//
+// This is not RecordMove. A move keeps the old row and rewrites its path
+// because the bytes are identical; here the bytes changed, so the surviving row
+// has to be the freshly probed one.
+//
+// library_stats: applyContribution is a no-op on an inactive row, so a row
+// already marked missing (which left the totals then) is unaffected, while one
+// still active is discounted here before it goes.
+//
+// Returns ErrJobInFlight when oldID still has a queued, running, or verifying
+// job — the worker may be mid-swap on a file that only looks absent.
+func (m *Media) Supersede(ctx context.Context, oldID, newID int64) error {
+	tx, err := m.w.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var live int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM transcode_jobs
+		WHERE media_file_id = ? AND status IN ('queued', 'running', 'verifying')`,
+		oldID,
+	).Scan(&live); err != nil {
+		return err
+	}
+	if live > 0 {
+		return ErrJobInFlight
+	}
+
+	old, err := loadStatRow(ctx, tx, oldID)
+	if err != nil {
+		return err
+	}
+	if err := applyContribution(ctx, tx, old, -1); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE transcode_jobs SET media_file_id = ? WHERE media_file_id = ?", newID, oldID,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM media_files WHERE id = ?", oldID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // RecordMove updates keepID's path to newPath and deletes mergeID in a single

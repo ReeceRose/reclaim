@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
   trailingSlash: true,
 
   experimental: {
-    useTypeScriptCli: true
+    useTypeScriptCli: true,
   },
 
   // Dev-only: proxy API + WS to the Go backend so the browser talks to a single

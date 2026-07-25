@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
 
   experimental: {
-    useTypeScriptCli: true
+    useTypeScriptCli: true,
   }
 };
 

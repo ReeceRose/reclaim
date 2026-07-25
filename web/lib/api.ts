@@ -506,18 +506,6 @@ export const api = {
       "GET",
       `/api/candidates/grouped${buildQuery(filters)}`,
     ),
-  groupedSeasonEpisodes: (
-    filters: CandidateFilters & {
-      series: string;
-      season: number;
-      limit?: number;
-      offset?: number;
-    },
-  ) =>
-    request<GroupedSeasonEpisodes>(
-      "GET",
-      `/api/candidates/grouped/episodes${buildQuery(filters)}`,
-    ),
   file: (id: number) => request<MediaFile>("GET", `/api/files/${id}`),
 
   // Scanning

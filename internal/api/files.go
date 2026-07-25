@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -302,15 +301,12 @@ func (s *Server) handleGroupedFileEpisodes(c *echo.Context) error {
 		return err
 	}
 
-	prefix := filepath.Join(s.tvPath, series)
-	if s.tvPath != "" && !strings.HasSuffix(prefix, string(filepath.Separator)) {
-		prefix += string(filepath.Separator)
-	}
-	files, err := s.store.Media.FilesUnderPathPrefix(c.Request().Context(), store.PathPrefixQuery{
-		Filter: filter,
-		Prefix: prefix,
-		Limit:  limit,
-		Offset: offset,
+	files, err := s.store.Media.FilesInSeason(c.Request().Context(), store.SeasonQuery{
+		Filter:      filter,
+		SeriesTitle: series,
+		Season:      season,
+		Limit:       limit,
+		Offset:      offset,
 	})
 	if err != nil {
 		return badRequest(c, err.Error())
@@ -320,24 +316,21 @@ func (s *Server) handleGroupedFileEpisodes(c *echo.Context) error {
 		return serverError(c, err)
 	}
 
-	resp := map[string]any{"episodes": s.buildLibrarySeasonEpisodes(files, states, series, season)}
+	resp := map[string]any{"episodes": s.buildLibrarySeasonEpisodes(files, states, season)}
 	if offset == 0 {
-		if total, err := s.store.Media.CountFilesUnderPathPrefix(c.Request().Context(), filter, prefix); err == nil {
+		if total, err := s.store.Media.CountFilesInSeason(c.Request().Context(), filter, series, season); err == nil {
 			resp["total_count"] = total
 		}
 	}
 	return c.JSON(http.StatusOK, resp)
 }
 
-func (s *Server) buildLibrarySeasonEpisodes(files []store.MediaFile, states map[int64]store.CandidateState, seriesTitle string, season int) []episodeDTO {
+func (s *Server) buildLibrarySeasonEpisodes(files []store.MediaFile, states map[int64]store.CandidateState, season int) []episodeDTO {
 	threshold := s.live.OversizeThreshold()
 	eps := make([]episodeDTO, 0)
 	for i := range files {
 		f := &files[i]
-		title, sn, episode := media.ParseTVInfo(f.Path, s.tvPath)
-		if title != seriesTitle || sn != season {
-			continue
-		}
+		_, _, episode := media.ParseTVInfo(f.Path, s.tvPath)
 		ep := episodeDTO{mediaFileDTO: toMediaFileDTOWithState(f, string(states[f.ID]), threshold), Season: season}
 		if episode >= 0 {
 			e := episode

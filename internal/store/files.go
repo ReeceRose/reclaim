@@ -239,16 +239,25 @@ func (m *Media) AllFiles(ctx context.Context, filter FileFilter) ([]MediaFile, e
 	return out, rows.Err()
 }
 
-// PathPrefixQuery pages Library rows whose path starts with prefix.
-type PathPrefixQuery struct {
-	Filter FileFilter
-	Prefix string
-	Limit  int
-	Offset int
+// seasonWhere scopes a query to one season using the indexed series_title /
+// season_number columns rather than a path prefix, so paging happens inside the
+// season instead of across the whole show.
+func seasonWhere(seriesTitle string, season int) ([]string, []any) {
+	return []string{"library_type = 'tv'", "series_title = ?", "season_number = ?"},
+		[]any{seriesTitle, season}
 }
 
-// FilesUnderPathPrefix returns one page of Library rows under prefix.
-func (m *Media) FilesUnderPathPrefix(ctx context.Context, q PathPrefixQuery) ([]MediaFile, error) {
+// SeasonQuery pages Library rows for one season of one TV series.
+type SeasonQuery struct {
+	Filter      FileFilter
+	SeriesTitle string
+	Season      int
+	Limit       int
+	Offset      int
+}
+
+// FilesInSeason returns one page of Library rows for a single season.
+func (m *Media) FilesInSeason(ctx context.Context, q SeasonQuery) ([]MediaFile, error) {
 	limit := q.Limit
 	if limit <= 0 {
 		limit = defaultFileLimit
@@ -257,8 +266,7 @@ func (m *Media) FilesUnderPathPrefix(ctx context.Context, q PathPrefixQuery) ([]
 		limit = maxFileLimit
 	}
 
-	where := []string{"path LIKE ? ESCAPE '\\'"}
-	args := []any{likePrefix(q.Prefix)}
+	where, args := seasonWhere(q.SeriesTitle, q.Season)
 	var err error
 	where, args, err = appendFileFilter(where, args, q.Filter)
 	if err != nil {
@@ -286,10 +294,9 @@ func (m *Media) FilesUnderPathPrefix(ctx context.Context, q PathPrefixQuery) ([]
 	return out, rows.Err()
 }
 
-// CountFilesUnderPathPrefix returns how many Library rows match prefix + filter.
-func (m *Media) CountFilesUnderPathPrefix(ctx context.Context, filter FileFilter, prefix string) (int64, error) {
-	where := []string{"path LIKE ? ESCAPE '\\'"}
-	args := []any{likePrefix(prefix)}
+// CountFilesInSeason returns how many Library rows match the season + filter.
+func (m *Media) CountFilesInSeason(ctx context.Context, filter FileFilter, seriesTitle string, season int) (int64, error) {
+	where, args := seasonWhere(seriesTitle, season)
 	var err error
 	where, args, err = appendFileFilter(where, args, filter)
 	if err != nil {

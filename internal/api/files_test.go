@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -74,6 +75,51 @@ func TestHandleFilesIncludesHEVCMissingAndCandidateState(t *testing.T) {
 	}
 	if body.Items[2].CandidateState != string(store.CandidateStateMissing) {
 		t.Fatalf("third state = %q", body.Items[2].CandidateState)
+	}
+}
+
+// A later season must page independently of the earlier ones — paging across the
+// whole show returned an empty list for every season past the first page.
+func TestHandleGroupedFileEpisodesPagesWithinSeason(t *testing.T) {
+	_, h, st, _ := newTestServer(t, true)
+
+	h264 := "h264"
+	title := "Harbor Lights"
+	for season := 1; season <= 3; season++ {
+		for ep := 1; ep <= 4; ep++ {
+			s, e := season, ep
+			insertAPIMedia(t, st, &store.MediaFile{
+				Path:         fmt.Sprintf("/media/tv/Harbor Lights/Season %02d/Harbor.Lights.S%02dE%02d.mkv", s, s, e),
+				LibraryType:  store.LibraryTypeTV,
+				VideoCodec:   &h264,
+				SeriesTitle:  &title,
+				SeasonNumber: &s,
+			})
+		}
+	}
+
+	w := doReq(h, http.MethodGet, "/api/files/grouped/episodes?series=Harbor+Lights&season=3&limit=4", nil, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("grouped episodes: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+
+	var body struct {
+		Episodes   []episodeDTO `json:"episodes"`
+		TotalCount int          `json:"total_count"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Episodes) != 4 || body.TotalCount != 4 {
+		t.Fatalf("want 4 episodes of season 3, got total=%d episodes=%d", body.TotalCount, len(body.Episodes))
+	}
+	for i, ep := range body.Episodes {
+		if ep.Season != 3 {
+			t.Fatalf("episode %d in season %d, want 3", i, ep.Season)
+		}
+		if ep.Episode == nil || *ep.Episode != i+1 {
+			t.Fatalf("episode %d parsed as %v", i, ep.Episode)
+		}
 	}
 }
 

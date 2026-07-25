@@ -36,9 +36,11 @@ export function TvSeasonSection({
           offset: pageParam,
         }),
       initialPageParam: 0,
-      getNextPageParam: (_lastPage, allPages) => {
-        const loaded = allPages.flatMap((p) => p.episodes).length;
-        return loaded < seasonData.file_count ? loaded : undefined;
+      getNextPageParam: (lastPage, allPages) => {
+        if (lastPage.episodes.length < EPISODES_PER_PAGE) return undefined;
+        const loaded = allPages.reduce((n, p) => n + p.episodes.length, 0);
+        const total = allPages[0]?.total_count ?? seasonData.file_count;
+        return loaded < total ? loaded : undefined;
       },
     });
 

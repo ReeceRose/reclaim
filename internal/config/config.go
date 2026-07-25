@@ -18,6 +18,7 @@ type Config struct {
 	ScanAnchor        string
 	ProbeConcurrency  int
 	OversizeThreshold float64
+	MissingRetention  time.Duration // 0 = never prune missing rows
 	DisableAuth       bool
 	ResetAuth         bool
 }
@@ -37,6 +38,7 @@ func Load() (*Config, error) {
 	c.ScanAnchor = parseHHMMString("SCAN_ANCHOR", "00:00", &errs)
 	c.ProbeConcurrency = parseInt("PROBE_CONCURRENCY", "4", &errs)
 	c.OversizeThreshold = parseFloat("OVERSIZE_THRESHOLD", "2.0", &errs)
+	c.MissingRetention = parseRetention("MISSING_RETENTION", "0", &errs)
 
 	c.TMDBKey = os.Getenv("TMDB_API_KEY")
 
@@ -90,6 +92,20 @@ func parseDuration(key, def string, errs *[]error) time.Duration {
 	d, err := time.ParseDuration(v)
 	if err != nil {
 		*errs = append(*errs, fmt.Errorf("%s must be a valid duration (got %q)", key, v))
+	}
+	return d
+}
+
+// parseRetention parses a Go duration where "0" means the feature is off.
+func parseRetention(key, def string, errs *[]error) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		v = def
+	}
+	d, err := ParseRetentionValue(v)
+	if err != nil {
+		*errs = append(*errs, fmt.Errorf("%s %w", key, err))
+		return 0
 	}
 	return d
 }

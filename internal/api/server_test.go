@@ -448,6 +448,99 @@ func TestSettingsLiveUpdate(t *testing.T) {
 	}
 }
 
+func TestSettingsMissingRetention(t *testing.T) {
+	srv, h, st, _ := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+
+	w := doReq(h, http.MethodGet, "/api/settings", nil, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("get settings: want 200, got %d", w.Code)
+	}
+	if got := decodeBody(t, w)["missing_retention"]; got != "0" {
+		t.Errorf("default missing_retention = %v, want \"0\" (off)", got)
+	}
+
+	w = doReq(h, http.MethodPut, "/api/settings", map[string]any{
+		"missing_retention": "720h",
+	}, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("put retention: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	if srv.live.MissingRetention() != 720*time.Hour {
+		t.Errorf("retention not applied: %v", srv.live.MissingRetention())
+	}
+	if got := decodeBody(t, w)["missing_retention"]; got != "720h0m0s" {
+		t.Errorf("missing_retention echoed = %v", got)
+	}
+
+	w = doReq(h, http.MethodPut, "/api/settings", map[string]any{
+		"missing_retention": "forever",
+	}, cookie)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("bad retention: want 400, got %d", w.Code)
+	}
+}
+
+func TestPruneMissingEndpoint(t *testing.T) {
+	_, h, st, _ := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+	ctx := context.Background()
+
+	codec := "h264"
+	gone, err := st.Media.Insert(ctx, &store.MediaFile{
+		Path: "/media/movies/gone.mkv", LibraryType: "movies", SizeBytes: 4000,
+		Mtime: 1, Fingerprint: "fpgone", VideoCodec: &codec, Status: store.MediaStatusActive,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Media.Insert(ctx, &store.MediaFile{
+		Path: "/media/movies/here.mkv", LibraryType: "movies", SizeBytes: 4000,
+		Mtime: 1, Fingerprint: "fphere", VideoCodec: &codec, Status: store.MediaStatusActive,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Media.MarkMissing(ctx, gone); err != nil {
+		t.Fatal(err)
+	}
+
+	w := doReq(h, http.MethodGet, "/api/settings", nil, cookie)
+	summary, ok := decodeBody(t, w)["missing_files"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing_files absent from settings body: %s", w.Body.String())
+	}
+	if summary["count"] != float64(1) {
+		t.Errorf("missing count = %v, want 1", summary["count"])
+	}
+
+	w = doReq(h, http.MethodPost, "/api/settings/prune-missing", nil, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("prune: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	body := decodeBody(t, w)
+	if body["deleted"] != float64(1) {
+		t.Errorf("deleted = %v, want 1", body["deleted"])
+	}
+	if remaining, ok := body["missing_files"].(map[string]any); !ok || remaining["count"] != float64(0) {
+		t.Errorf("missing_files after prune = %v, want count 0", body["missing_files"])
+	}
+
+	if _, err := st.Media.GetByID(ctx, gone); err == nil {
+		t.Error("purged row still present")
+	}
+	if _, err := st.Media.GetByPath(ctx, "/media/movies/here.mkv"); err != nil {
+		t.Errorf("active row should be untouched: %v", err)
+	}
+
+	events, err := st.Events.List(ctx, store.EventFilter{Limit: 10, Type: store.EventMissingPruned})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Errorf("missing_pruned events = %d, want 1", len(events))
+	}
+}
+
 func TestSettingsRejectsBadValue(t *testing.T) {
 	_, h, st, _ := newTestServer(t, false)
 	cookie := completeSetup(t, st)

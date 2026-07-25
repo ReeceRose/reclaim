@@ -1,8 +1,11 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -93,6 +96,35 @@ func toEventDTO(e *store.Event) map[string]any {
 		}
 	}
 	return m
+}
+
+// recordPruneEvent logs a missing-file cleanup to the audit trail and pushes it
+// to connected clients. A failure to record is logged, not returned: the rows
+// are already gone, so failing the request would be misleading.
+func (s *Server) recordPruneEvent(ctx context.Context, deleted int64, trigger string) {
+	msg := fmt.Sprintf("Removed %s from the library (%s)", pluralFiles(deleted), trigger)
+	meta, _ := json.Marshal(map[string]any{"deleted": deleted, "trigger": trigger})
+
+	eventID, err := s.store.Events.Insert(ctx, store.EventMissingPruned, store.SeverityInfo, msg, string(meta))
+	if err != nil {
+		slog.Error("api: missing prune event", "err", err)
+		return
+	}
+	s.hub.Broadcast("event_created", map[string]any{
+		"id":         eventID,
+		"type":       store.EventMissingPruned,
+		"severity":   store.SeverityInfo,
+		"message":    msg,
+		"created_at": time.Now().Unix(),
+		"metadata":   map[string]any{"deleted": deleted, "trigger": trigger},
+	})
+}
+
+func pluralFiles(n int64) string {
+	if n == 1 {
+		return "1 missing file"
+	}
+	return fmt.Sprintf("%d missing files", n)
 }
 
 // apiEventPayload builds the event_created WS broadcast payload from an API

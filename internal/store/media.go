@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"reclaim/internal/media"
 )
@@ -111,6 +112,7 @@ func (m *Media) UpdateProbe(ctx context.Context, f *MediaFile) error {
 			duration_seconds = ?, bitrate_kbps = ?, audio_codec = ?, audio_channels = ?,
 			container_format = ?, is_already_hevc = ?, predicted_savings_bytes = ?,
 			oversize_ratio = ?, last_probed_at = ?, probe_error = ?, status = ?,
+			missing_since = CASE WHEN ? = 'missing' THEN COALESCE(missing_since, ?) END,
 			series_title = ?, season_number = ?
 		WHERE id = ?`,
 		f.SizeBytes, f.Mtime, f.Fingerprint,
@@ -118,6 +120,7 @@ func (m *Media) UpdateProbe(ctx context.Context, f *MediaFile) error {
 		f.DurationSeconds, f.BitrateKbps, f.AudioCodec, f.AudioChannels,
 		f.ContainerFormat, btoi(f.IsAlreadyHEVC), f.PredictedSavingsBytes,
 		f.OversizeRatio, f.LastProbedAt, f.ProbeError, f.Status,
+		f.Status, time.Now().Unix(),
 		f.SeriesTitle, f.SeasonNumber, f.ID,
 	); err != nil {
 		return err
@@ -148,12 +151,105 @@ func (m *Media) MarkMissing(ctx context.Context, id int64) error {
 		}
 	}
 
+	// COALESCE keeps the original disappearance time: repeated marks (a watcher
+	// event followed by a scan diff) must not restart the retention clock.
 	if _, err := tx.ExecContext(ctx,
-		"UPDATE media_files SET status = 'missing' WHERE id = ?", id,
+		"UPDATE media_files SET status = 'missing', missing_since = COALESCE(missing_since, ?) WHERE id = ?",
+		time.Now().Unix(), id,
 	); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// MissingSummary describes the pool of missing rows a prune would consider.
+type MissingSummary struct {
+	Count       int   `json:"count"`
+	OldestSince int64 `json:"oldest_since"`
+	SizeBytes   int64 `json:"size_bytes"`
+}
+
+// MissingOverview counts rows currently soft-deleted, along with the oldest
+// disappearance time and their combined last-known size. Powers the Settings
+// panel's "N missing rows" line and the purge confirmation.
+func (m *Media) MissingOverview(ctx context.Context) (*MissingSummary, error) {
+	var out MissingSummary
+	var oldest, size sql.NullInt64
+	err := m.r.QueryRowContext(ctx, `
+		SELECT COUNT(*), MIN(missing_since), SUM(size_bytes)
+		FROM media_files WHERE status = 'missing'`,
+	).Scan(&out.Count, &oldest, &size)
+	if err != nil {
+		return nil, err
+	}
+	out.OldestSince = oldest.Int64
+	out.SizeBytes = size.Int64
+	return &out, nil
+}
+
+// PruneMissing hard-deletes media rows that have been missing since at or
+// before cutoff, along with their transcode_jobs history (the FK has no
+// cascade, and the estimator's queries inner-join media_files anyway, so those
+// job rows are already dead weight once the file row is gone). Rows with a
+// live job — queued, running, or verifying — are left alone: the worker may
+// still be mid-swap on a file that only looks absent.
+//
+// library_stats needs no adjustment: MarkMissing already removed each row's
+// contribution when it went missing.
+//
+// Passing cutoff <= 0 deletes every missing row, which is what the manual
+// purge does.
+func (m *Media) PruneMissing(ctx context.Context, cutoff int64) (int64, error) {
+	tx, err := m.w.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	// Self-heal rows that are missing but carry no timestamp (a DB written before
+	// the column existed, or one where the migration's backfill never ran). They
+	// start their retention clock now rather than reading as infinitely old,
+	// which would delete them on the very first prune.
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE media_files SET missing_since = ? WHERE status = 'missing' AND missing_since IS NULL",
+		time.Now().Unix(),
+	); err != nil {
+		return 0, err
+	}
+
+	where := `
+		status = 'missing'
+		  AND NOT EXISTS (
+		      SELECT 1 FROM transcode_jobs j
+		      WHERE j.media_file_id = media_files.id
+		        AND j.status IN ('queued', 'running', 'verifying')
+		  )`
+	var args []any
+	if cutoff > 0 {
+		where += " AND missing_since <= ?"
+		args = append(args, cutoff)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM transcode_jobs
+		WHERE media_file_id IN (SELECT id FROM media_files WHERE`+where+`)`,
+		args...,
+	); err != nil {
+		return 0, err
+	}
+
+	res, err := tx.ExecContext(ctx, `DELETE FROM media_files WHERE`+where, args...)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // FileSummary is the minimal record the scanner loads at the start of each diff
@@ -260,7 +356,7 @@ func (m *Media) RecordMove(ctx context.Context, keepID, mergeID int64, newPath s
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		"UPDATE media_files SET path = ?, status = 'active' WHERE id = ?",
+		"UPDATE media_files SET path = ?, status = 'active', missing_since = NULL WHERE id = ?",
 		newPath, keepID,
 	); err != nil {
 		return err
@@ -315,7 +411,8 @@ func (m *Media) ReplaceWithEncodedTx(ctx context.Context, tx *sql.Tx, id, newSiz
 		UPDATE media_files SET
 			size_bytes = ?, fingerprint = ?, video_codec = 'hevc',
 			is_already_hevc = 1, predicted_savings_bytes = 0, oversize_ratio = ?,
-			mtime = ?, last_probed_at = ?, probe_error = NULL, status = ?
+			mtime = ?, last_probed_at = ?, probe_error = NULL, status = ?,
+			missing_since = NULL
 		WHERE id = ?`,
 		newSize, newFingerprint, oversize, now, now, MediaStatusActive, id,
 	); err != nil {

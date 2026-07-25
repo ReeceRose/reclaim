@@ -13,6 +13,7 @@ const (
 	EventJobCancelled   = "job_cancelled"
 	EventScanCompleted  = "scan_completed"
 	EventOrphanRestored = "orphan_restored"
+	EventMissingPruned  = "missing_pruned"
 )
 
 // Event severity constants.

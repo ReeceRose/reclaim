@@ -193,6 +193,60 @@ func TestScanDeleteFile(t *testing.T) {
 	}
 }
 
+// TestScanPrunesMissingAfterRetention verifies the post-scan cleanup hook.
+// Retention defaults to zero (off), so a soft-deleted row must survive until an
+// operator opts in; once it does, an aged-out row is hard-deleted and the
+// removal is written to the activity log. Cutoff boundaries themselves are
+// covered by the store's prune tests.
+func TestScanPrunesMissingAfterRetention(t *testing.T) {
+	root := t.TempDir()
+	sc, st := newTestScanner(t, root, root)
+	ctx := context.Background()
+
+	path := filepath.Join(root, "movie.mkv")
+	writeFile(t, path)
+
+	if _, err := sc.Scan(ctx, "initial", false); err != nil {
+		t.Fatalf("initial scan: %v", err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sc.Scan(ctx, "after-delete", false); err != nil {
+		t.Fatalf("scan after delete: %v", err)
+	}
+
+	// Retention off: the row survives as soft-deleted.
+	if _, err := st.Media.GetByPath(ctx, path); err != nil {
+		t.Fatalf("row should survive with retention off: %v", err)
+	}
+	overview, err := st.Media.MissingOverview(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overview.Count != 1 {
+		t.Fatalf("missing rows with retention off = %d, want 1", overview.Count)
+	}
+
+	// Opt in with a retention short enough that the row is already past it.
+	sc.missingRetentionFn = func() time.Duration { return time.Nanosecond }
+
+	if _, err := sc.Scan(ctx, "after-retention", false); err != nil {
+		t.Fatalf("scan with retention: %v", err)
+	}
+	if _, err := st.Media.GetByPath(ctx, path); err == nil {
+		t.Error("aged-out row should have been pruned")
+	}
+
+	events, err := st.Events.List(ctx, store.EventFilter{Limit: 20, Type: store.EventMissingPruned})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("missing_pruned events = %d, want 1", len(events))
+	}
+}
+
 // TestScanRenameFile verifies that a renamed file is recorded as a move with
 // job history preserved (old row updated, duplicate deleted).
 func TestScanRenameFile(t *testing.T) {
@@ -664,7 +718,7 @@ func TestLiveProbeConcurrency(t *testing.T) {
 	}
 
 	high := capHigh
-	if err := live.Update(nil, nil, nil, nil, &high, nil); err != nil {
+	if err := live.Update(nil, nil, nil, nil, &high, nil, nil); err != nil {
 		t.Fatalf("live update: %v", err)
 	}
 	close(release)

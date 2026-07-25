@@ -188,6 +188,7 @@ func (s *Server) Handler() http.Handler {
 	api.GET("/settings", s.handleGetSettings)
 	api.PUT("/settings", s.handlePutSettings)
 	api.PUT("/settings/credentials", s.handleChangeCredentials)
+	api.POST("/settings/prune-missing", s.handlePruneMissing)
 
 	// Metadata (TMDB).
 	api.GET("/metadata", s.handleMetadataGet)

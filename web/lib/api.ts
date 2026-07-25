@@ -297,6 +297,12 @@ export interface JobsListResult {
   queued_count?: number;
 }
 
+export interface MissingFilesSummary {
+  count: number;
+  oldest_since: number;
+  size_bytes: number;
+}
+
 export interface Settings {
   encode_window_start: string;
   encode_window_end: string;
@@ -304,9 +310,16 @@ export interface Settings {
   scan_anchor: string;
   probe_concurrency: number;
   oversize_threshold: number;
+  missing_retention: string;
   movies_path: string;
   tv_path: string;
   tmdb_configured?: boolean;
+  missing_files?: MissingFilesSummary;
+}
+
+export interface PruneMissingResult {
+  deleted: number;
+  missing_files: MissingFilesSummary;
 }
 
 export interface MetadataSearchResult {
@@ -380,7 +393,8 @@ export interface AppEvent {
     | "job_failed"
     | "job_cancelled"
     | "scan_completed"
-    | "orphan_restored";
+    | "orphan_restored"
+    | "missing_pruned";
   severity: "info" | "warn" | "error";
   message: string;
   metadata: Record<string, unknown> | null;
@@ -569,9 +583,12 @@ export const api = {
         | "scan_anchor"
         | "probe_concurrency"
         | "oversize_threshold"
+        | "missing_retention"
       >
     >,
   ) => request<Settings>("PUT", "/api/settings", s),
+  pruneMissing: () =>
+    request<PruneMissingResult>("POST", "/api/settings/prune-missing"),
 
   // Metadata
   getMetadata: (key: string) =>

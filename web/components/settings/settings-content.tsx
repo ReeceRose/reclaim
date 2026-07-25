@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { api, type Profile } from "@/lib/api";
 import { AccountPanel } from "./account-panel";
 import { EncodingPanel } from "./encoding-panel";
+import { LibraryPanel, RETENTION_OPTIONS } from "./library-panel";
 import { MetadataPanel } from "./metadata-panel";
 import { DeleteProfileDialog, ProfileDialog } from "./profile-dialog";
 import { ProfilesPanel } from "./profiles-panel";
@@ -45,6 +46,9 @@ export function SettingsContent() {
   const [oversizeThreshold, setOversizeThreshold] = useState(
     settings.oversize_threshold,
   );
+  const [missingRetention, setMissingRetention] = useState(
+    settings.missing_retention ?? "0",
+  );
 
   const [credPassword, setCredPassword] = useState("");
   const [credConfirm, setCredConfirm] = useState("");
@@ -64,6 +68,46 @@ export function SettingsContent() {
       qc.invalidateQueries({ queryKey: ["settings"] });
     },
     onError: () => toast.error("Failed to save settings"),
+  });
+
+  const retentionMutation = useMutation({
+    mutationFn: (value: string) =>
+      api.updateSettings({ missing_retention: value }),
+    onMutate: (value: string) => {
+      const previous = missingRetention;
+      setMissingRetention(value);
+      return previous;
+    },
+    onSuccess: (_data, value) => {
+      toast.success(
+        value === "0"
+          ? "Missing files will be kept indefinitely"
+          : `Missing files will be removed after ${RETENTION_OPTIONS.find((o) => o.value === value)?.label ?? value}`,
+      );
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+    onError: (_err, _value, previous) => {
+      setMissingRetention(previous ?? "0");
+      toast.error("Failed to save retention period");
+    },
+  });
+
+  const pruneMutation = useMutation({
+    mutationFn: () => api.pruneMissing(),
+    onSuccess: (result) => {
+      toast.success(
+        result.deleted === 1
+          ? "Removed 1 missing file"
+          : `Removed ${result.deleted} missing files`,
+      );
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      qc.invalidateQueries({ queryKey: ["stats"] });
+      qc.invalidateQueries({ queryKey: ["files"] });
+      qc.invalidateQueries({ queryKey: ["library"] });
+      qc.invalidateQueries({ queryKey: ["browse"] });
+      qc.invalidateQueries({ queryKey: ["events"] });
+    },
+    onError: () => toast.error("Failed to remove missing files"),
   });
 
   const credMutation = useMutation({
@@ -174,6 +218,14 @@ export function SettingsContent() {
           onSetDefault={(p) => defaultProfileMutation.mutate(p)}
           onDelete={setDeleteProfile}
           isSettingDefault={defaultProfileMutation.isPending}
+        />
+
+        <LibraryPanel
+          retention={missingRetention}
+          onRetentionChange={(v) => retentionMutation.mutate(v)}
+          missing={settings.missing_files}
+          onPurge={() => pruneMutation.mutate()}
+          isPurging={pruneMutation.isPending}
         />
 
         <MetadataPanel

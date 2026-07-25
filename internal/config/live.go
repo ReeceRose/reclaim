@@ -20,6 +20,7 @@ type Live struct {
 	scanAnchor        string
 	probeConcurrency  int
 	oversizeThreshold float64
+	missingRetention  time.Duration
 }
 
 // NewLive seeds a Live holder from the immutable boot Config.
@@ -31,6 +32,7 @@ func NewLive(c *Config) *Live {
 		scanAnchor:        c.ScanAnchor,
 		probeConcurrency:  c.ProbeConcurrency,
 		oversizeThreshold: c.OversizeThreshold,
+		missingRetention:  c.MissingRetention,
 	}
 }
 
@@ -72,18 +74,27 @@ func (l *Live) OversizeThreshold() float64 {
 	return l.oversizeThreshold
 }
 
+// MissingRetention is how long a file may stay soft-deleted ("missing") before
+// the post-scan cleanup hard-deletes its row. Zero means never prune.
+func (l *Live) MissingRetention() time.Duration {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.missingRetention
+}
+
 // Update applies validated settings. Any field left nil is unchanged. It
 // validates the whole set before mutating, so a bad value never leaves the
 // holder half-updated.
-func (l *Live) Update(encodeStart, encodeEnd, scanInterval, scanAnchor *string, probeConcurrency *int, oversizeThreshold *float64) error {
+func (l *Live) Update(encodeStart, encodeEnd, scanInterval, scanAnchor *string, probeConcurrency *int, oversizeThreshold *float64, missingRetention *string) error {
 	var (
-		start  = l.EncodeWindowStart()
-		end    = l.EncodeWindowEnd()
-		intvl  = l.ScanInterval()
-		anchor = l.ScanAnchor()
-		conc   = l.ProbeConcurrency()
-		thresh = l.OversizeThreshold()
-		err    error
+		start     = l.EncodeWindowStart()
+		end       = l.EncodeWindowEnd()
+		intvl     = l.ScanInterval()
+		anchor    = l.ScanAnchor()
+		conc      = l.ProbeConcurrency()
+		thresh    = l.OversizeThreshold()
+		retention = l.MissingRetention()
+		err       error
 	)
 
 	if encodeStart != nil {
@@ -122,6 +133,11 @@ func (l *Live) Update(encodeStart, encodeEnd, scanInterval, scanAnchor *string, 
 		}
 		thresh = *oversizeThreshold
 	}
+	if missingRetention != nil {
+		if retention, err = ParseRetentionValue(*missingRetention); err != nil {
+			return fmt.Errorf("missing_retention: %w", err)
+		}
+	}
 
 	l.mu.Lock()
 	l.encodeWindowStart = start
@@ -130,8 +146,26 @@ func (l *Live) Update(encodeStart, encodeEnd, scanInterval, scanAnchor *string, 
 	l.scanAnchor = anchor
 	l.probeConcurrency = conc
 	l.oversizeThreshold = thresh
+	l.missingRetention = retention
 	l.mu.Unlock()
 	return nil
+}
+
+// ParseRetentionValue parses a retention duration from the API, where "0" and
+// "" both mean "never prune". Shared with env parsing so a value accepted at
+// boot is accepted at runtime.
+func ParseRetentionValue(v string) (time.Duration, error) {
+	if v == "" || v == "0" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return 0, fmt.Errorf("must be 0 or a duration like \"720h\" (got %q)", v)
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("must not be negative (got %q)", v)
+	}
+	return d, nil
 }
 
 // FormatHHMM renders a since-midnight duration back to "HH:MM" for the API.

@@ -462,7 +462,8 @@ Persistent audit log (also pushed live over WebSocket as `event_created`).
 Newest first. Keyset-paginated via `after_id`.
 
 **Query params:** `limit` (default 50, max 200), `after_id`, `severity` (`info`/`warn`/`error`),
-`type` (e.g. `job_completed`, `job_failed`, `job_cancelled`, `scan_completed`, `orphan_restored`).
+`type` (e.g. `job_completed`, `job_failed`, `job_cancelled`, `scan_completed`, `orphan_restored`,
+`missing_pruned`).
 
 ```json
 {
@@ -497,23 +498,39 @@ re-seeds from env.
   "scan_anchor": "00:00",
   "probe_concurrency": 4,
   "oversize_threshold": 2.0,
+  "missing_retention": "720h0m0s",
   "movies_path": "/media/movies",
   "tv_path": "/media/tv",
-  "tmdb_configured": true
+  "tmdb_configured": true,
+  "missing_files": { "count": 34, "oldest_since": 1690000000, "size_bytes": 187000000000 }
 }
 ```
 
 `tmdb_configured` is `true` when a TMDB API key is present (set via `TMDB_API_KEY` env var).
 `oversize_threshold` (> 1) is the bitrate multiple at or above which a file is flagged oversized.
+`missing_retention` is how long a file that vanished from disk is kept as a `missing` row before
+the post-scan cleanup deletes it; `"0"` means never prune (the default, from `MISSING_RETENTION`).
+`missing_files` summarizes the rows currently soft-deleted — `oldest_since` is a Unix timestamp,
+and both it and `size_bytes` are `0` when `count` is `0`.
 
 ### `PUT /api/settings`
 Any subset of the mutable fields. Validated as a set before applying.
 ```json
 { "encode_window_start": "01:00", "encode_window_end": "07:00",
-  "scan_interval": "12h", "probe_concurrency": 8, "oversize_threshold": 2.5 }
+  "scan_interval": "12h", "probe_concurrency": 8, "oversize_threshold": 2.5,
+  "missing_retention": "720h" }
 ```
 - `200` → the full settings object (same shape as GET)
-- `400` → invalid value (e.g. `encode_window_start: "99:99"`, non-positive interval/concurrency, `oversize_threshold ≤ 1`)
+- `400` → invalid value (e.g. `encode_window_start: "99:99"`, non-positive interval/concurrency, `oversize_threshold ≤ 1`, unparseable/negative `missing_retention`)
+
+### `POST /api/settings/prune-missing`
+Immediately hard-deletes every `missing` media row and its job history, ignoring
+`missing_retention`. Files on disk are never touched. Rows whose file has a `queued`,
+`running`, or `verifying` job are skipped, so `deleted` can be lower than the `count`
+reported by `GET /api/settings`. Writes a `missing_pruned` event when anything was removed.
+```json
+{ "deleted": 34, "missing_files": { "count": 0, "oldest_since": 0, "size_bytes": 0 } }
+```
 
 ---
 

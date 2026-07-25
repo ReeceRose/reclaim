@@ -91,6 +91,10 @@ type Scanner struct {
 	scanIntervalFn func() time.Duration
 	scanAnchorFn   func() string
 
+	// missingRetentionFn returns how long a soft-deleted row is kept before the
+	// post-scan cleanup hard-deletes it. Zero disables the cleanup.
+	missingRetentionFn func() time.Duration
+
 	// probe bounds concurrent ffprobe subprocesses across every probe entry point
 	// (walk, fsnotify watcher, scheduled/manual scans). Capacity comes from the
 	// live config when wired via WithLiveConfig. The limit exists to spare the
@@ -148,16 +152,18 @@ type liveScanConfig interface {
 	ScanInterval() time.Duration
 	ScanAnchor() string
 	ProbeConcurrency() int
+	MissingRetention() time.Duration
 }
 
-// WithLiveConfig backs the scheduled-rescan interval, anchor, and probe
-// concurrency with the live config so PUT /api/settings takes effect without
-// a restart.
+// WithLiveConfig backs the scheduled-rescan interval, anchor, probe concurrency,
+// and missing-file retention with the live config so PUT /api/settings takes
+// effect without a restart.
 func WithLiveConfig(live liveScanConfig) Option {
 	return func(s *Scanner) {
 		s.scanIntervalFn = live.ScanInterval
 		s.scanAnchorFn = live.ScanAnchor
 		s.probe.capFn = live.ProbeConcurrency
+		s.missingRetentionFn = live.MissingRetention
 	}
 }
 
@@ -186,6 +192,7 @@ func New(st *store.Store, cfg *config.Config, opts ...Option) (*Scanner, error) 
 		return nil, err
 	}
 	bootProbeConcurrency := cfg.ProbeConcurrency
+	bootMissingRetention := cfg.MissingRetention
 	s := &Scanner{
 		store: st,
 		roots: map[string]string{
@@ -210,6 +217,9 @@ func New(st *store.Store, cfg *config.Config, opts ...Option) (*Scanner, error) 
 	}
 	if s.scanAnchorFn == nil {
 		s.scanAnchorFn = func() string { return s.scanAnchor }
+	}
+	if s.missingRetentionFn == nil {
+		s.missingRetentionFn = func() time.Duration { return bootMissingRetention }
 	}
 	return s, nil
 }
@@ -546,6 +556,11 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 	} else if s.hub != nil {
 		s.hub.Broadcast("event_created", scanEventBroadcast(eventID, severity, scanMsg, scanMeta))
 	}
+
+	// Cleanup runs after the scan event so the two read in order in the activity
+	// feed, and only once the diff has had its chance to resurrect rows — a file
+	// that reappeared on this pass is active again and no longer a candidate.
+	s.pruneMissing(ctx)
 
 	slog.Info("scan complete",
 		"trigger", trigger,
@@ -995,6 +1010,64 @@ func scanEventMessage(run *store.ScanRun) string {
 		msg += fmt.Sprintf(", %d errors", run.Errors)
 	}
 	return msg
+}
+
+// pruneMissing hard-deletes rows that have been soft-deleted for longer than the
+// configured retention. A retention of zero (the default) disables it entirely,
+// so rows are kept forever unless the operator opts in. Failures are logged
+// rather than surfaced: a scan that indexed fine should not report as failed
+// because the optional cleanup didn't run.
+func (s *Scanner) pruneMissing(ctx context.Context) {
+	retention := s.missingRetentionFn()
+	if retention <= 0 {
+		return
+	}
+
+	cutoff := time.Now().Add(-retention).Unix()
+	deleted, err := s.store.Media.PruneMissing(ctx, cutoff)
+	if err != nil {
+		slog.Error("scanner: prune missing files", "err", err)
+		return
+	}
+	if deleted == 0 {
+		return
+	}
+
+	slog.Info("scanner: pruned missing files", "count", deleted, "retention", retention.String())
+
+	msg := fmt.Sprintf("Removed %d missing file(s) not seen for %s", deleted, retention.String())
+	meta := scanJsonMeta(map[string]any{
+		"deleted":   deleted,
+		"retention": retention.String(),
+		"trigger":   "retention",
+	})
+	eventID, err := s.store.Events.Insert(ctx, store.EventMissingPruned, store.SeverityInfo, msg, meta)
+	if err != nil {
+		slog.Error("scanner: prune event", "err", err)
+		return
+	}
+	if s.hub != nil {
+		s.hub.Broadcast("event_created", pruneEventBroadcast(eventID, msg, meta))
+	}
+}
+
+// pruneEventBroadcast builds the WS payload for an event_created prune event.
+func pruneEventBroadcast(id int64, message, meta string) map[string]any {
+	m := map[string]any{
+		"id":         id,
+		"type":       store.EventMissingPruned,
+		"severity":   store.SeverityInfo,
+		"message":    message,
+		"created_at": time.Now().Unix(),
+		"metadata":   nil,
+	}
+	if meta != "" {
+		var v any
+		if err := json.Unmarshal([]byte(meta), &v); err == nil {
+			m["metadata"] = v
+		}
+	}
+	return m
 }
 
 // scanJsonMeta serializes v to a JSON string for events.metadata.

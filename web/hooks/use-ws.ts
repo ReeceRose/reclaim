@@ -156,6 +156,11 @@ export function useWS() {
           qc.setQueryData<{ items: AppEvent[] }>(["events"], (prev) => ({
             items: [newEvent, ...(prev?.items ?? [])].slice(0, 200),
           }));
+          if (newEvent.type === "missing_pruned") {
+            invalidateScanData(qc);
+            qc.invalidateQueries({ queryKey: ["files"] });
+            qc.invalidateQueries({ queryKey: ["settings"] });
+          }
         }
       };
 

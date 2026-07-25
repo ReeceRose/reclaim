@@ -14,6 +14,9 @@ func (s *Store) bootstrapIfNeeded(ctx context.Context) error {
 	if err := s.ensureJobEncodeSnapshot(ctx); err != nil {
 		return fmt.Errorf("ensure job encode snapshot: %w", err)
 	}
+	if err := s.ensureMissingSince(ctx); err != nil {
+		return fmt.Errorf("ensure missing_since: %w", err)
+	}
 
 	needsStats, err := s.Stats.needsRebuild(ctx)
 	if err != nil {
@@ -78,6 +81,30 @@ func (s *Store) ensureJobEncodeSnapshot(ctx context.Context) error {
 		    encode_crf = (SELECT crf FROM transcode_profiles WHERE id = transcode_jobs.profile_id),
 		    encode_extra_args = (SELECT extra_args FROM transcode_profiles WHERE id = transcode_jobs.profile_id)
 		WHERE encode_preset IS NULL`)
+	return err
+}
+
+// ensureMissingSince repairs databases where migration 00012 was recorded but
+// the column is absent. Every write path that soft-deletes a row references
+// missing_since, so a missing column would break scanning outright.
+func (s *Store) ensureMissingSince(ctx context.Context) error {
+	has, err := tableHasColumn(ctx, s.w, "media_files", "missing_since")
+	if err != nil {
+		return err
+	}
+	if has {
+		return nil
+	}
+
+	if _, err := s.w.ExecContext(ctx,
+		`ALTER TABLE media_files ADD COLUMN missing_since INTEGER`,
+	); err != nil {
+		return err
+	}
+	_, err = s.w.ExecContext(ctx, `
+		UPDATE media_files
+		SET missing_since = COALESCE(last_probed_at, unixepoch())
+		WHERE status = 'missing' AND missing_since IS NULL`)
 	return err
 }
 

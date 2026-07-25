@@ -105,7 +105,7 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 3. `store.Open()` — opens SQLite (WAL mode, two pools: 1 writer / 25 readers), runs goose migrations, bootstraps defaults
 4. `config.NewLive(cfg)` — creates the runtime-mutable settings holder (encode window, scan interval, probe concurrency); read by the scanner and worker on every use so PUT `/api/settings` takes effect without a restart
 5. `scanner.New()` + `sc.Start(ctx)` — runs startup scan, starts fsnotify watcher, schedules periodic rescans
-6. `api.New()` — wires routes on Echo v5; full route list: `/healthz`, `/api/{setup,login,logout,session}`, `/api/{stats,files,candidates}{,/grouped,/grouped/seasons,/grouped/episodes}`, `/api/files/:id`, `/api/scan{,/full}`, `/api/profiles{,/:id}`, `/api/jobs{,/:id/cancel,/:id/force,/:id}`, `/api/events{,/:id}`, `/api/settings{,/credentials}`, `/api/metadata{,/search,/refresh}`, `/api/ws`
+6. `api.New()` — wires routes on Echo v5; full route list: `/healthz`, `/api/{setup,login,logout,session}`, `/api/{stats,files,candidates}{,/grouped,/grouped/seasons,/grouped/episodes}`, `/api/files/:id`, `/api/scan{,/full}`, `/api/profiles{,/:id}`, `/api/jobs{,/:id/cancel,/:id/force,/:id}`, `/api/events{,/:id}`, `/api/settings{,/credentials,/prune-missing}`, `/api/metadata{,/search,/refresh}`, `/api/ws`
 7. `worker.New()` + `wk.Run(ctx)` — encode loop; polls for queued jobs inside the window
 
 ### Package map
@@ -134,9 +134,15 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 
 The worker encodes to a `.reclaim-tmp.<ext>` temp file, verifies it with ffprobe (duration ±1s, stream counts, resolution), then atomically swaps: `original → .reclaim-backup`, `tmp → original`, delete backup. A crash between steps is recovered by `sweepOrphans` on next boot: a backup present with its original missing means the swap was interrupted and the backup is restored.
 
+### Missing-file lifecycle
+
+A file that vanishes from disk is soft-deleted: `status='missing'`, `missing_since` stamped (migration `00012`), and its `library_stats` contribution removed. The stamp is set with `COALESCE` so repeat marks don't restart the clock, and cleared when the file returns (re-probe, rename match, or post-encode swap).
+
+`MISSING_RETENTION` (default `0` = never) drives the post-scan cleanup in `scanner.pruneMissing`: rows past the cutoff are hard-deleted along with their `transcode_jobs` history, skipping files with a `queued`/`running`/`verifying` job. `POST /api/settings/prune-missing` does the same ignoring the cutoff. Both write a `missing_pruned` event. Stats need no adjustment — the contribution left when the row went missing.
+
 ### Live settings
 
-`config.Live` is a `sync.RWMutex`-guarded struct seeded from env at boot. The scanner and worker read it on each tick, so PUT `/api/settings` takes effect immediately. Settings overrides are in-memory only — a restart re-seeds from env.
+`config.Live` is a `sync.RWMutex`-guarded struct seeded from env at boot. The scanner and worker read it on each tick, so PUT `/api/settings` takes effect immediately. Settings overrides are in-memory only — a restart re-seeds from env (this includes `missing_retention`, so a retention set in the UI reverts to `MISSING_RETENTION` on restart).
 
 ### Authentication
 

@@ -78,6 +78,7 @@ export DB_PATH=/var/lib/reclaim/reclaim.db
 | `SCAN_INTERVAL` | no | `24h` | How often a diff-based rescan runs (Go duration string) |
 | `PROBE_CONCURRENCY` | no | `4` | Max parallel ffprobe calls during a scan |
 | `SCAN_ANCHOR` | no | `00:00` | Daily scan anchor time (`HH:MM`, local) |
+| `MISSING_RETENTION` | no | `0` | How long files that vanished from disk are kept as `missing` rows before their records are deleted after a scan (Go duration string; `0` = keep forever) |
 | `TZ` | no | — | Container timezone — **set this in Docker** so the encode window matches your clock |
 | `TMDB_API_KEY` | no | — | TMDB API key for movie/TV poster, backdrop, and metadata fetching |
 | `PUID` | no | `1000` | Docker only — uid that owns your media library (see `docker-entrypoint.sh`) |

@@ -33,17 +33,21 @@ const (
 	FileSortMtimeDesc   FileSort = "mtime_desc"
 	FileSortMtimeAsc    FileSort = "mtime_asc"
 	FileSortLibraryType FileSort = "library_type"
+	// FileSortOversizeDesc ranks files by how bloated they are for their runtime
+	// (oversize_ratio), largest first — the "most oversized" view.
+	FileSortOversizeDesc FileSort = "oversize_desc"
 )
 
 var fileOrderClauses = map[FileSort]string{
-	SortPathAsc:         "path ASC, id ASC",
-	FileSortSizeDesc:    "size_bytes DESC, id ASC",
-	FileSortSizeAsc:     "size_bytes ASC, id ASC",
-	FileSortCodec:       "video_codec ASC, path ASC, id ASC",
-	FileSortResolution:  "height DESC, path ASC, id ASC",
-	FileSortMtimeDesc:   "mtime DESC, id ASC",
-	FileSortMtimeAsc:    "mtime ASC, id ASC",
-	FileSortLibraryType: "library_type ASC, path ASC, id ASC",
+	SortPathAsc:          "path ASC, id ASC",
+	FileSortSizeDesc:     "size_bytes DESC, id ASC",
+	FileSortSizeAsc:      "size_bytes ASC, id ASC",
+	FileSortCodec:        "video_codec ASC, path ASC, id ASC",
+	FileSortResolution:   "height DESC, path ASC, id ASC",
+	FileSortMtimeDesc:    "mtime DESC, id ASC",
+	FileSortMtimeAsc:     "mtime ASC, id ASC",
+	FileSortLibraryType:  "library_type ASC, path ASC, id ASC",
+	FileSortOversizeDesc: "oversize_ratio DESC, id ASC",
 }
 
 // FileFilter narrows the all-files Library view. Zero values mean "no filter".
@@ -54,6 +58,10 @@ type FileFilter struct {
 	Search         string
 	Status         string
 	CandidateState string
+	// OversizedMinRatio, when > 0, keeps only files whose oversize_ratio meets or
+	// exceeds it — i.e. files at least this many times larger than a well-encoded
+	// file of the same codec and resolution. It is the live flag threshold.
+	OversizedMinRatio float64
 }
 
 // FileQuery is one page request against all scanned files.
@@ -92,6 +100,10 @@ func appendFileFilter(where []string, args []any, f FileFilter) ([]string, []any
 			return nil, nil, err
 		}
 		where = append(where, clause)
+	}
+	if f.OversizedMinRatio > 0 {
+		where = append(where, "oversize_ratio >= ?")
+		args = append(args, f.OversizedMinRatio)
 	}
 	return where, args, nil
 }
@@ -454,6 +466,103 @@ type TVSeasonRow struct {
 	// actions like "rescan this season" that need explicit IDs rather than
 	// a filesystem walk.
 	EpisodeIDs []int64
+}
+
+// TVSeasonAcrossShowsRow is one season of one series, used by the cross-show
+// "largest seasons" ranking rather than a single-series drill-down.
+type TVSeasonAcrossShowsRow struct {
+	SeriesTitle           string
+	Season                int
+	FileCount             int
+	EligibleCount         int
+	MissingCount          int
+	TotalBytes            int64
+	PredictedSavingsBytes int64
+}
+
+// TVSeasonSort selects the ordering for TVSeasonsAcrossShows.
+type TVSeasonSort string
+
+const (
+	SeasonSortSizeDesc    TVSeasonSort = "size_desc"
+	SeasonSortSavingsDesc TVSeasonSort = "savings_desc"
+)
+
+// TVSeasonsAcrossShows ranks every (series, season) pair across the whole TV
+// library by total size or predicted savings. One GROUP BY query, so it stays
+// O(1) regardless of library size.
+func (m *Media) TVSeasonsAcrossShows(ctx context.Context, search string, sort TVSeasonSort, limit, offset int) ([]TVSeasonAcrossShowsRow, error) {
+	if limit <= 0 {
+		limit = defaultFileLimit
+	}
+
+	where := []string{"library_type = 'tv'", "series_title IS NOT NULL", "series_title != ''", "season_number IS NOT NULL"}
+	var args []any
+	if s := strings.TrimSpace(search); s != "" {
+		where = append(where, "LOWER(series_title) LIKE '%' || LOWER(?) || '%'")
+		args = append(args, s)
+	}
+
+	orderBy := "total_bytes DESC, LOWER(series_title), season_number"
+	if sort == SeasonSortSavingsDesc {
+		orderBy = "predicted_savings_bytes DESC, total_bytes DESC, LOWER(series_title), season_number"
+	}
+
+	query := `
+		SELECT
+			series_title,
+			season_number,
+			COUNT(*) AS file_count,
+			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN 1 ELSE 0 END) AS eligible_count,
+			SUM(CASE WHEN status = 'missing' THEN 1 ELSE 0 END) AS missing_count,
+			SUM(size_bytes) AS total_bytes,
+			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN predicted_savings_bytes ELSE 0 END) AS predicted_savings_bytes
+		FROM media_files
+		WHERE ` + strings.Join(where, " AND ") + `
+		GROUP BY series_title, season_number
+		ORDER BY ` + orderBy + `
+		LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+
+	rows, err := m.r.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []TVSeasonAcrossShowsRow
+	for rows.Next() {
+		var r TVSeasonAcrossShowsRow
+		if err := rows.Scan(&r.SeriesTitle, &r.Season, &r.FileCount, &r.EligibleCount, &r.MissingCount, &r.TotalBytes, &r.PredictedSavingsBytes); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// CountTVSeasonsAcrossShows returns the total number of (series, season) pairs
+// matching the search, for pagination.
+func (m *Media) CountTVSeasonsAcrossShows(ctx context.Context, search string) (int64, error) {
+	where := []string{"library_type = 'tv'", "series_title IS NOT NULL", "series_title != ''", "season_number IS NOT NULL"}
+	var args []any
+	if s := strings.TrimSpace(search); s != "" {
+		where = append(where, "LOWER(series_title) LIKE '%' || LOWER(?) || '%'")
+		args = append(args, s)
+	}
+
+	query := `
+		SELECT COUNT(*) FROM (
+			SELECT 1 FROM media_files
+			WHERE ` + strings.Join(where, " AND ") + `
+			GROUP BY series_title, season_number
+		)`
+
+	var n int64
+	if err := m.r.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // TVShowSeasons returns per-season summaries for a single TV series.

@@ -251,7 +251,7 @@ function QueueContent() {
     hasNextPage: hasNextQueued,
     isFetchingNextPage: isFetchingNextQueued,
   } = useInfiniteQuery({
-    queryKey: ["jobs", "queued"],
+    queryKey: ["jobs", "queued", "infinite"],
     queryFn: ({ pageParam }: { pageParam: number }) =>
       api.jobs({
         status: "queued",

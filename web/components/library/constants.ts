@@ -5,7 +5,8 @@ export type LibrarySortKey =
   | "mtime_desc"
   | "mtime_asc"
   | "codec"
-  | "resolution";
+  | "resolution"
+  | "oversize_desc";
 
 export const LIBRARY_SORT_OPTIONS: {
   value: LibrarySortKey;
@@ -18,6 +19,7 @@ export const LIBRARY_SORT_OPTIONS: {
   { value: "mtime_asc", label: "Oldest modified" },
   { value: "codec", label: "Codec" },
   { value: "resolution", label: "Resolution" },
+  { value: "oversize_desc", label: "Most oversized" },
 ];
 
 export type LibrarySortColumn = "file" | "codec" | "res" | "size";
@@ -30,6 +32,7 @@ const SORT_COLUMN: Record<LibrarySortKey, LibrarySortColumn> = {
   size_asc: "size",
   codec: "codec",
   resolution: "res",
+  oversize_desc: "size",
 };
 
 const COLUMN_DEFAULT_SORT: Record<LibrarySortColumn, LibrarySortKey> = {

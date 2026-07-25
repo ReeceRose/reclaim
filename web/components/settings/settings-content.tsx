@@ -42,6 +42,9 @@ export function SettingsContent() {
   const [probeConcurrency, setProbeConcurrency] = useState(
     settings.probe_concurrency,
   );
+  const [oversizeThreshold, setOversizeThreshold] = useState(
+    settings.oversize_threshold,
+  );
 
   const [credPassword, setCredPassword] = useState("");
   const [credConfirm, setCredConfirm] = useState("");
@@ -54,6 +57,7 @@ export function SettingsContent() {
         scan_interval: `${scanIntervalHours}h0m0s`,
         scan_anchor: scanAnchor,
         probe_concurrency: probeConcurrency,
+        oversize_threshold: oversizeThreshold,
       }),
     onSuccess: () => {
       toast.success("Settings saved");
@@ -141,6 +145,8 @@ export function SettingsContent() {
             onWindowEndChange={setWindowEnd}
             probeConcurrency={probeConcurrency}
             onProbeConcurrencyChange={setProbeConcurrency}
+            oversizeThreshold={oversizeThreshold}
+            onOversizeThresholdChange={setOversizeThreshold}
             scanIntervalHours={scanIntervalHours}
             onScanIntervalHoursChange={setScanIntervalHours}
             scanAnchor={scanAnchor}

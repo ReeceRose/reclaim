@@ -8,6 +8,7 @@ import { baseName, dirName, formatBytes, resolutionLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { isQueueable, queueBlockReason, StateBadge } from "./candidate-state";
 import { CodecBadge } from "./codec-badge";
+import { OversizeBadge } from "./oversize-badge";
 
 export function MediaFlatRow({
   item,
@@ -66,13 +67,16 @@ export function MediaFlatRow({
         />
       </div>
       <div className="flex-1 min-w-0 pr-3">
-        <div
-          className={cn(
-            "font-semibold text-sm truncate",
-            missing && "line-through text-muted-fg",
-          )}
-        >
-          {baseName(item.path)}
+        <div className="flex items-center gap-2 min-w-0">
+          <div
+            className={cn(
+              "font-semibold text-sm truncate",
+              missing && "line-through text-muted-fg",
+            )}
+          >
+            {baseName(item.path)}
+          </div>
+          <OversizeBadge file={item} />
         </div>
         <div className="text-xs text-muted-dim truncate font-mono">
           {dirName(item.path)}

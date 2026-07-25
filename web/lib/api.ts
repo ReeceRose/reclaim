@@ -14,12 +14,21 @@ export class ApiError extends Error {
 }
 
 /**
- * True when a request failed before reaching the server (DNS failure, dropped
- * VPN, offline) — fetch rejects these with a TypeError rather than resolving
- * to a Response.
+ * Thrown when a request fails before reaching the server (DNS failure,
+ * dropped VPN, offline) — fetch rejects these with a TypeError rather than
+ * resolving to a Response. Kept distinct from other TypeErrors (e.g. bugs in
+ * response handling) so those aren't misreported as "server unreachable".
  */
+export class NetworkError extends Error {
+  constructor(cause: unknown) {
+    super("Network request failed");
+    this.name = "NetworkError";
+    this.cause = cause;
+  }
+}
+
 export function isNetworkError(error: unknown): boolean {
-  return error instanceof TypeError;
+  return error instanceof NetworkError;
 }
 
 async function request<T>(
@@ -27,12 +36,17 @@ async function request<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    credentials: "include",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method,
+      credentials: "include",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (err) {
+    throw new NetworkError(err);
+  }
 
   if (res.status === 204) return undefined as T;
 
@@ -117,6 +131,8 @@ export interface MediaFile {
   container_format: string | null;
   is_already_hevc: boolean;
   predicted_savings_bytes: number;
+  oversize_ratio: number;
+  is_oversized: boolean;
   last_probed_at: number | null;
   probe_error: string | null;
   status: string;
@@ -217,6 +233,22 @@ export interface GroupedFiles {
   total_count?: number;
 }
 
+export interface RankedSeason {
+  series_title: string;
+  season: number;
+  file_count: number;
+  eligible_count: number;
+  missing_count: number;
+  total_bytes: number;
+  predicted_savings_bytes: number;
+  poster_path?: string | null;
+}
+
+export interface RankedSeasons {
+  seasons: RankedSeason[];
+  total_count: number;
+}
+
 export interface GroupedSeasonEpisodes {
   episodes: Episode[];
   total_count?: number;
@@ -271,6 +303,7 @@ export interface Settings {
   scan_interval: string;
   scan_anchor: string;
   probe_concurrency: number;
+  oversize_threshold: number;
   movies_path: string;
   tv_path: string;
   tmdb_configured?: boolean;
@@ -384,6 +417,7 @@ export interface CandidateFilters {
 export interface FileFilters extends CandidateFilters {
   status?: string;
   candidate_state?: CandidateState | "";
+  oversized?: "true" | "";
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: params come from heterogeneous filter objects across callers
@@ -437,6 +471,12 @@ export const api = {
       "GET",
       `/api/files/grouped/seasons${buildQuery({ series })}`,
     ),
+  seasonsRanked: (params: {
+    sort?: "size_desc" | "savings_desc";
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }) => request<RankedSeasons>("GET", `/api/seasons${buildQuery(params)}`),
   candidates: (
     filters: CandidateFilters & {
       limit?: number;
@@ -528,6 +568,7 @@ export const api = {
         | "scan_interval"
         | "scan_anchor"
         | "probe_concurrency"
+        | "oversize_threshold"
       >
     >,
   ) => request<Settings>("PUT", "/api/settings", s),

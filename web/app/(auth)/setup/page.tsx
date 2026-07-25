@@ -19,12 +19,8 @@ export default function SetupPage() {
   async function handleSubmit() {
     setLoading(true);
     try {
-      const { username: user } = await api.setup(username, password);
-      qc.setQueryData(["session"], {
-        setup_complete: true,
-        authenticated: true,
-        username: user,
-      });
+      await api.setup(username, password);
+      await qc.invalidateQueries({ queryKey: ["session"] });
       router.replace("/");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Setup failed");

@@ -157,6 +157,7 @@ func (s *Server) Handler() http.Handler {
 	api.GET("/files/grouped/episodes", s.handleGroupedFileEpisodes)
 	api.GET("/files/grouped/seasons", s.handleGroupedFileSeasons)
 	api.GET("/files/grouped", s.handleGroupedFiles)
+	api.GET("/seasons", s.handleSeasonsRanked)
 	api.GET("/candidates", s.handleCandidates)
 	api.GET("/files/:id", s.handleFileDetail)
 

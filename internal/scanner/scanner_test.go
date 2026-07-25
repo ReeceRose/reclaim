@@ -664,7 +664,7 @@ func TestLiveProbeConcurrency(t *testing.T) {
 	}
 
 	high := capHigh
-	if err := live.Update(nil, nil, nil, nil, &high); err != nil {
+	if err := live.Update(nil, nil, nil, nil, &high, nil); err != nil {
 		t.Fatalf("live update: %v", err)
 	}
 	close(release)

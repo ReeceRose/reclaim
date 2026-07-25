@@ -17,6 +17,7 @@ type Config struct {
 	ScanInterval      time.Duration
 	ScanAnchor        string
 	ProbeConcurrency  int
+	OversizeThreshold float64
 	DisableAuth       bool
 	ResetAuth         bool
 }
@@ -35,6 +36,7 @@ func Load() (*Config, error) {
 	c.ScanInterval = parseDuration("SCAN_INTERVAL", "24h", &errs)
 	c.ScanAnchor = parseHHMMString("SCAN_ANCHOR", "00:00", &errs)
 	c.ProbeConcurrency = parseInt("PROBE_CONCURRENCY", "4", &errs)
+	c.OversizeThreshold = parseFloat("OVERSIZE_THRESHOLD", "2.0", &errs)
 
 	c.TMDBKey = os.Getenv("TMDB_API_KEY")
 
@@ -102,4 +104,16 @@ func parseInt(key, def string, errs *[]error) int {
 		*errs = append(*errs, fmt.Errorf("%s must be a positive integer (got %q)", key, v))
 	}
 	return n
+}
+
+func parseFloat(key, def string, errs *[]error) float64 {
+	v := os.Getenv(key)
+	if v == "" {
+		v = def
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil || f <= 1 {
+		*errs = append(*errs, fmt.Errorf("%s must be a number greater than 1 (got %q)", key, v))
+	}
+	return f
 }

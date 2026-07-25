@@ -34,6 +34,7 @@ type testFile struct {
 	height      int
 	hevc        bool
 	savings     int64
+	oversize    float64
 	probeErr    string // non-empty → set probe_error
 	status      string // "" → "active"
 }
@@ -47,6 +48,7 @@ func (tf testFile) toMedia() *MediaFile {
 		Fingerprint:           "fp-" + tf.path,
 		IsAlreadyHEVC:         tf.hevc,
 		PredictedSavingsBytes: tf.savings,
+		OversizeRatio:         tf.oversize,
 		Status:                orDefault(tf.status, "active"),
 	}
 	if tf.codec != "" {

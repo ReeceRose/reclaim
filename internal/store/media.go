@@ -26,6 +26,7 @@ type MediaFile struct {
 	ContainerFormat       *string
 	IsAlreadyHEVC         bool
 	PredictedSavingsBytes int64
+	OversizeRatio         float64
 	LastProbedAt          *int64
 	ProbeError            *string
 	Status                string
@@ -57,13 +58,13 @@ func (m *Media) Insert(ctx context.Context, f *MediaFile) (int64, error) {
 			path, library_type, size_bytes, mtime, fingerprint,
 			video_codec, video_codec_profile, width, height, duration_seconds,
 			bitrate_kbps, audio_codec, audio_channels, container_format,
-			is_already_hevc, predicted_savings_bytes, last_probed_at, probe_error, status,
+			is_already_hevc, predicted_savings_bytes, oversize_ratio, last_probed_at, probe_error, status,
 			series_title, season_number
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		f.Path, f.LibraryType, f.SizeBytes, f.Mtime, f.Fingerprint,
 		f.VideoCodec, f.VideoCodecProfile, f.Width, f.Height, f.DurationSeconds,
 		f.BitrateKbps, f.AudioCodec, f.AudioChannels, f.ContainerFormat,
-		btoi(f.IsAlreadyHEVC), f.PredictedSavingsBytes, f.LastProbedAt, f.ProbeError, f.Status,
+		btoi(f.IsAlreadyHEVC), f.PredictedSavingsBytes, f.OversizeRatio, f.LastProbedAt, f.ProbeError, f.Status,
 		f.SeriesTitle, f.SeasonNumber,
 	)
 	if err != nil {
@@ -109,14 +110,14 @@ func (m *Media) UpdateProbe(ctx context.Context, f *MediaFile) error {
 			video_codec = ?, video_codec_profile = ?, width = ?, height = ?,
 			duration_seconds = ?, bitrate_kbps = ?, audio_codec = ?, audio_channels = ?,
 			container_format = ?, is_already_hevc = ?, predicted_savings_bytes = ?,
-			last_probed_at = ?, probe_error = ?, status = ?,
+			oversize_ratio = ?, last_probed_at = ?, probe_error = ?, status = ?,
 			series_title = ?, season_number = ?
 		WHERE id = ?`,
 		f.SizeBytes, f.Mtime, f.Fingerprint,
 		f.VideoCodec, f.VideoCodecProfile, f.Width, f.Height,
 		f.DurationSeconds, f.BitrateKbps, f.AudioCodec, f.AudioChannels,
 		f.ContainerFormat, btoi(f.IsAlreadyHEVC), f.PredictedSavingsBytes,
-		f.LastProbedAt, f.ProbeError, f.Status,
+		f.OversizeRatio, f.LastProbedAt, f.ProbeError, f.Status,
 		f.SeriesTitle, f.SeasonNumber, f.ID,
 	); err != nil {
 		return err
@@ -296,13 +297,27 @@ func (m *Media) ReplaceWithEncodedTx(ctx context.Context, tx *sql.Tx, id, newSiz
 		return err
 	}
 
+	// The file is now HEVC at a new (smaller) size, so its old oversize ratio —
+	// computed from the pre-encode size and source codec — is stale. Recompute it
+	// against the new size and hevc ceiling so the Library flag stays honest
+	// without waiting for the next scan.
+	var width, height *int
+	var duration *float64
+	if err := tx.QueryRowContext(ctx,
+		"SELECT width, height, duration_seconds FROM media_files WHERE id = ?", id,
+	).Scan(&width, &height, &duration); err != nil {
+		return err
+	}
+	hevc := "hevc"
+	oversize := media.OversizeRatio(&hevc, width, height, newSize, duration)
+
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE media_files SET
 			size_bytes = ?, fingerprint = ?, video_codec = 'hevc',
-			is_already_hevc = 1, predicted_savings_bytes = 0,
+			is_already_hevc = 1, predicted_savings_bytes = 0, oversize_ratio = ?,
 			mtime = ?, last_probed_at = ?, probe_error = NULL, status = ?
 		WHERE id = ?`,
-		newSize, newFingerprint, now, now, MediaStatusActive, id,
+		newSize, newFingerprint, oversize, now, now, MediaStatusActive, id,
 	); err != nil {
 		return err
 	}
@@ -356,7 +371,7 @@ const mediaQ = `
 	SELECT id, path, library_type, size_bytes, mtime, fingerprint,
 		video_codec, video_codec_profile, width, height, duration_seconds,
 		bitrate_kbps, audio_codec, audio_channels, container_format,
-		is_already_hevc, predicted_savings_bytes, last_probed_at, probe_error, status,
+		is_already_hevc, predicted_savings_bytes, oversize_ratio, last_probed_at, probe_error, status,
 		series_title, season_number
 	FROM media_files`
 
@@ -367,7 +382,7 @@ func scanMedia(s rowScanner) (*MediaFile, error) {
 		&f.ID, &f.Path, &f.LibraryType, &f.SizeBytes, &f.Mtime, &f.Fingerprint,
 		&f.VideoCodec, &f.VideoCodecProfile, &f.Width, &f.Height, &f.DurationSeconds,
 		&f.BitrateKbps, &f.AudioCodec, &f.AudioChannels, &f.ContainerFormat,
-		&isHEVC, &f.PredictedSavingsBytes, &f.LastProbedAt, &f.ProbeError, &f.Status,
+		&isHEVC, &f.PredictedSavingsBytes, &f.OversizeRatio, &f.LastProbedAt, &f.ProbeError, &f.Status,
 		&f.SeriesTitle, &f.SeasonNumber,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

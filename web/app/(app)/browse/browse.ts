@@ -11,7 +11,14 @@ export const QUERY_PARAMS = {
   TAB: "tab",
   TV_SORT: "tvsort",
   MOVIE_SORT: "msort",
+  SEASON_SORT: "ssort",
   VIEW: "view",
+} as const;
+
+export const BROWSE_TAB = {
+  TV: "tv",
+  MOVIES: "movies",
+  SEASONS: "seasons",
 } as const;
 
 export const VIEW_MODE = {
@@ -35,6 +42,11 @@ export const MOVIE_SORT = {
   ALPHA: "path_asc",
   SIZE: "size_desc",
   RECENT: "mtime_desc",
+} as const;
+
+export const SEASON_SORT = {
+  SIZE: "size_desc",
+  SAVINGS: "savings_desc",
 } as const;
 
 export const PAGE_SIZE = 48;

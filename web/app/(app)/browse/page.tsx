@@ -4,6 +4,8 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { MovieCard } from "@/components/media/movie-card";
 import { MovieRow } from "@/components/media/movie-row";
+import { SeasonRankCard } from "@/components/media/season-rank-card";
+import { SeasonRankRow } from "@/components/media/season-rank-row";
 import { ShowCard } from "@/components/media/show-card";
 import { ShowRow } from "@/components/media/show-row";
 import { Input } from "@/components/ui/input";
@@ -22,10 +24,12 @@ import { formatInt } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   BROWSE_ROUTES,
+  BROWSE_TAB,
   LIBRARY_TYPE,
   MOVIE_SORT,
   PAGE_SIZE,
   QUERY_PARAMS,
+  SEASON_SORT,
   TV_SORT,
   VIEW_MODE,
 } from "./browse";
@@ -43,8 +47,14 @@ const MOVIE_SORT_OPTIONS = [
   { value: MOVIE_SORT.RECENT, label: "Recently added" },
 ] as const;
 
+const SEASON_SORT_OPTIONS = [
+  { value: SEASON_SORT.SIZE, label: "Largest" },
+  { value: SEASON_SORT.SAVINGS, label: "Most savings" },
+] as const;
+
 type TVSortValue = (typeof TV_SORT_OPTIONS)[number]["value"];
 type MovieSortValue = (typeof MOVIE_SORT_OPTIONS)[number]["value"];
+type SeasonSortValue = (typeof SEASON_SORT_OPTIONS)[number]["value"];
 
 function sortShows(
   shows: LibrarySeriesGroup[],
@@ -390,12 +400,156 @@ function MoviesContent({
   );
 }
 
+function SeasonsContent({
+  search,
+  sort,
+  view,
+}: {
+  search: string;
+  sort: SeasonSortValue;
+  view: string;
+}) {
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useInfiniteQuery({
+    queryKey: ["browse", BROWSE_TAB.SEASONS, search, sort],
+    queryFn: ({ pageParam }: { pageParam: number }) =>
+      api.seasonsRanked({
+        sort,
+        search: search || undefined,
+        limit: PAGE_SIZE,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.flatMap((p) => p.seasons).length;
+      return loaded < lastPage.total_count ? loaded : undefined;
+    },
+    placeholderData: (prev) => prev,
+  });
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasNextPage && !isFetchingNextPage)
+          void fetchNextPage();
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  const seasons = useMemo(
+    () => data?.pages.flatMap((p) => p.seasons) ?? [],
+    [data],
+  );
+  const totalCount = data?.pages[0]?.total_count;
+  const isList = view === VIEW_MODE.LIST;
+
+  if (isError && !data) {
+    return (
+      <QueryErrorState
+        error={error}
+        onRetry={() => void refetch()}
+        title="Failed to load seasons"
+      />
+    );
+  }
+
+  return (
+    <>
+      <div className="text-xs text-muted-dim mb-4">
+        {isLoading && seasons.length === 0 ? (
+          <Skeleton className="h-3 w-20" />
+        ) : (
+          `${formatInt(totalCount ?? seasons.length)} seasons`
+        )}
+      </div>
+
+      {isLoading && seasons.length === 0 ? (
+        isList ? (
+          <ListSkeleton />
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {Array.from({ length: 12 }).map((_, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: reason: static, fixed-length skeleton placeholder list with no stable identity
+              <CardSkeleton key={i} />
+            ))}
+          </div>
+        )
+      ) : seasons.length === 0 ? (
+        <div className="text-center py-24 text-muted-dim text-sm">
+          {search
+            ? "No seasons match your search."
+            : "No TV seasons found. Run a scan to index your library."}
+        </div>
+      ) : isList ? (
+        <div className="bg-surface border border-line rounded-xl overflow-hidden">
+          <div
+            className="grid items-center gap-3 px-4 py-2 border-b border-line text-xs uppercase tracking-wider text-muted-dim font-bold"
+            style={{ gridTemplateColumns: "auto auto 1fr auto auto auto" }}
+          >
+            <span className="w-6 text-center">#</span>
+            <span className="w-8" />
+            <span>Season</span>
+            <span className="hidden md:inline">Files</span>
+            <span>Size</span>
+            <span className="w-24 text-right">Savings</span>
+          </div>
+          {seasons.map((s, i) => (
+            <SeasonRankRow
+              key={`${s.series_title}::${s.season}`}
+              season={s}
+              rank={i + 1}
+              href={BROWSE_ROUTES.TV_SHOW(s.series_title)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {seasons.map((s, i) => (
+            <SeasonRankCard
+              key={`${s.series_title}::${s.season}`}
+              season={s}
+              rank={i + 1}
+              href={BROWSE_ROUTES.TV_SHOW(s.series_title)}
+            />
+          ))}
+        </div>
+      )}
+
+      <div ref={sentinelRef} className="h-px" />
+      {isFetchingNextPage &&
+        (isList ? null : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mt-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: reason: static, fixed-length skeleton placeholder list with no stable identity
+              <CardSkeleton key={i} />
+            ))}
+          </div>
+        ))}
+    </>
+  );
+}
+
 function BrowsePage() {
-  const [tabRaw, setTabRaw] = useQueryParam(QUERY_PARAMS.TAB, LIBRARY_TYPE.TV);
+  const [tabRaw, setTabRaw] = useQueryParam(QUERY_PARAMS.TAB, BROWSE_TAB.TV);
   const tab = parseQueryEnum(
     tabRaw,
-    [LIBRARY_TYPE.TV, LIBRARY_TYPE.MOVIES] as const,
-    LIBRARY_TYPE.TV,
+    [BROWSE_TAB.TV, BROWSE_TAB.MOVIES, BROWSE_TAB.SEASONS] as const,
+    BROWSE_TAB.TV,
   );
 
   const [tvSortRaw, setTVSort] = useQueryParam(
@@ -418,6 +572,16 @@ function BrowsePage() {
     MOVIE_SORT.RECENT,
   );
 
+  const [seasonSortRaw, setSeasonSort] = useQueryParam(
+    QUERY_PARAMS.SEASON_SORT,
+    SEASON_SORT.SIZE,
+  );
+  const seasonSort = parseQueryEnum(
+    seasonSortRaw,
+    SEASON_SORT_OPTIONS.map((o) => o.value),
+    SEASON_SORT.SIZE,
+  );
+
   const [viewRaw, setView] = useQueryParam(QUERY_PARAMS.VIEW, VIEW_MODE.GRID);
   const view = parseQueryEnum(
     viewRaw,
@@ -433,11 +597,16 @@ function BrowsePage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const isTV = tab === LIBRARY_TYPE.TV;
+  const isTV = tab === BROWSE_TAB.TV;
+  const isSeasons = tab === BROWSE_TAB.SEASONS;
   const isList = view === VIEW_MODE.LIST;
-  const sortOptions = isTV ? TV_SORT_OPTIONS : MOVIE_SORT_OPTIONS;
-  const sortValue = isTV ? tvSort : movieSort;
-  const setSort = isTV ? setTVSort : setMovieSort;
+  const sortOptions = isSeasons
+    ? SEASON_SORT_OPTIONS
+    : isTV
+      ? TV_SORT_OPTIONS
+      : MOVIE_SORT_OPTIONS;
+  const sortValue = isSeasons ? seasonSort : isTV ? tvSort : movieSort;
+  const setSort = isSeasons ? setSeasonSort : isTV ? setTVSort : setMovieSort;
 
   return (
     <div className="flex flex-col min-w-0 h-screen overflow-hidden max-sm:h-full">
@@ -465,7 +634,7 @@ function BrowsePage() {
             <button
               type="button"
               onClick={() => {
-                setTabRaw(LIBRARY_TYPE.TV);
+                setTabRaw(BROWSE_TAB.TV);
                 setSearch("");
               }}
               className={cn(
@@ -480,17 +649,32 @@ function BrowsePage() {
             <button
               type="button"
               onClick={() => {
-                setTabRaw(LIBRARY_TYPE.MOVIES);
+                setTabRaw(BROWSE_TAB.MOVIES);
                 setSearch("");
               }}
               className={cn(
                 "rounded-lg text-xs font-semibold py-2 px-3 transition-colors cursor-pointer",
-                !isTV
+                tab === BROWSE_TAB.MOVIES
                   ? "bg-brand-soft text-brand"
                   : "text-muted-fg hover:text-text",
               )}
             >
               Movies
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTabRaw(BROWSE_TAB.SEASONS);
+                setSearch("");
+              }}
+              className={cn(
+                "rounded-lg text-xs font-semibold py-2 px-3 transition-colors cursor-pointer",
+                isSeasons
+                  ? "bg-brand-soft text-brand"
+                  : "text-muted-fg hover:text-text",
+              )}
+            >
+              Seasons
             </button>
           </div>
 
@@ -524,7 +708,9 @@ function BrowsePage() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={isTV ? "Search TV shows…" : "Search movies…"}
+              placeholder={
+                isTV || isSeasons ? "Search TV shows…" : "Search movies…"
+              }
               className="rounded-xl pl-8 text-sm"
             />
           </div>
@@ -599,7 +785,13 @@ function BrowsePage() {
       </div>
 
       <div className="flex-1 overflow-auto px-4 pt-4 pb-6 sm:px-7">
-        {isTV ? (
+        {isSeasons ? (
+          <SeasonsContent
+            search={debouncedSearch}
+            sort={seasonSort}
+            view={view}
+          />
+        ) : isTV ? (
           <TVContent search={debouncedSearch} sort={tvSort} view={view} />
         ) : (
           <MoviesContent

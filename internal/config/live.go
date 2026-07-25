@@ -19,6 +19,7 @@ type Live struct {
 	scanInterval      time.Duration
 	scanAnchor        string
 	probeConcurrency  int
+	oversizeThreshold float64
 }
 
 // NewLive seeds a Live holder from the immutable boot Config.
@@ -29,6 +30,7 @@ func NewLive(c *Config) *Live {
 		scanInterval:      c.ScanInterval,
 		scanAnchor:        c.ScanAnchor,
 		probeConcurrency:  c.ProbeConcurrency,
+		oversizeThreshold: c.OversizeThreshold,
 	}
 }
 
@@ -62,16 +64,25 @@ func (l *Live) ProbeConcurrency() int {
 	return l.probeConcurrency
 }
 
+// OversizeThreshold is the oversize_ratio at or above which a file is flagged as
+// oversized (larger than a well-encoded file of its codec and resolution).
+func (l *Live) OversizeThreshold() float64 {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.oversizeThreshold
+}
+
 // Update applies validated settings. Any field left nil is unchanged. It
 // validates the whole set before mutating, so a bad value never leaves the
 // holder half-updated.
-func (l *Live) Update(encodeStart, encodeEnd, scanInterval, scanAnchor *string, probeConcurrency *int) error {
+func (l *Live) Update(encodeStart, encodeEnd, scanInterval, scanAnchor *string, probeConcurrency *int, oversizeThreshold *float64) error {
 	var (
 		start  = l.EncodeWindowStart()
 		end    = l.EncodeWindowEnd()
 		intvl  = l.ScanInterval()
 		anchor = l.ScanAnchor()
 		conc   = l.ProbeConcurrency()
+		thresh = l.OversizeThreshold()
 		err    error
 	)
 
@@ -105,6 +116,12 @@ func (l *Live) Update(encodeStart, encodeEnd, scanInterval, scanAnchor *string, 
 		}
 		conc = *probeConcurrency
 	}
+	if oversizeThreshold != nil {
+		if *oversizeThreshold <= 1 {
+			return fmt.Errorf("oversize_threshold must be greater than 1")
+		}
+		thresh = *oversizeThreshold
+	}
 
 	l.mu.Lock()
 	l.encodeWindowStart = start
@@ -112,6 +129,7 @@ func (l *Live) Update(encodeStart, encodeEnd, scanInterval, scanAnchor *string, 
 	l.scanInterval = intvl
 	l.scanAnchor = anchor
 	l.probeConcurrency = conc
+	l.oversizeThreshold = thresh
 	l.mu.Unlock()
 	return nil
 }

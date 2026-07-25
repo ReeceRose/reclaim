@@ -45,8 +45,8 @@ type librarySeriesSummary struct {
 	BackdropPath          *string                `json:"backdrop_path"`
 }
 
-func parseFileFilter(c *echo.Context) store.FileFilter {
-	return store.FileFilter{
+func (s *Server) parseFileFilter(c *echo.Context) store.FileFilter {
+	f := store.FileFilter{
 		LibraryType:    c.QueryParam("library_type"),
 		VideoCodec:     c.QueryParam("video_codec"),
 		Height:         c.QueryParam("height"),
@@ -54,12 +54,16 @@ func parseFileFilter(c *echo.Context) store.FileFilter {
 		Status:         c.QueryParam("status"),
 		CandidateState: c.QueryParam("candidate_state"),
 	}
+	if c.QueryParam("oversized") == "true" {
+		f.OversizedMinRatio = s.live.OversizeThreshold()
+	}
+	return f
 }
 
 func (s *Server) handleFiles(c *echo.Context) error {
 	q := store.FileQuery{
 		Sort:   store.FileSort(defaultStr(c.QueryParam("sort"), string(store.SortPathAsc))),
-		Filter: parseFileFilter(c),
+		Filter: s.parseFileFilter(c),
 	}
 
 	if v := c.QueryParam("limit"); v != "" {
@@ -87,9 +91,10 @@ func (s *Server) handleFiles(c *echo.Context) error {
 		return serverError(c, err)
 	}
 
+	threshold := s.live.OversizeThreshold()
 	items := make([]mediaFileDTO, 0, len(files))
 	for i := range files {
-		items = append(items, toMediaFileDTOWithState(&files[i], string(states[files[i].ID])))
+		items = append(items, toMediaFileDTOWithState(&files[i], string(states[files[i].ID]), threshold))
 	}
 
 	if q.Filter.LibraryType == store.LibraryTypeMovies && s.store.Metadata != nil {
@@ -117,7 +122,7 @@ func (s *Server) handleFiles(c *echo.Context) error {
 }
 
 func (s *Server) handleGroupedFiles(c *echo.Context) error {
-	filter := parseFileFilter(c)
+	filter := s.parseFileFilter(c)
 	if filter.LibraryType == store.LibraryTypeMovies {
 		return c.JSON(http.StatusOK, map[string]any{"series": []librarySeriesSummary{}, "total_count": 0})
 	}
@@ -205,6 +210,79 @@ func (s *Server) handleGroupedFileSeasons(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"seasons": out})
 }
 
+// handleSeasonsRanked ranks every (series, season) pair across the whole TV
+// library by total size or predicted savings.
+func (s *Server) handleSeasonsRanked(c *echo.Context) error {
+	sort := store.SeasonSortSizeDesc
+	switch c.QueryParam("sort") {
+	case "", string(store.SeasonSortSizeDesc):
+		sort = store.SeasonSortSizeDesc
+	case string(store.SeasonSortSavingsDesc):
+		sort = store.SeasonSortSavingsDesc
+	default:
+		return badRequest(c, "sort must be size_desc or savings_desc")
+	}
+
+	limit, offset, err := parseLimitOffset(c, defaultPageLimit, maxPageLimit)
+	if err != nil {
+		return err
+	}
+
+	search := strings.TrimSpace(c.QueryParam("search"))
+	ctx := c.Request().Context()
+	rows, err := s.store.Media.TVSeasonsAcrossShows(ctx, search, sort, limit, offset)
+	if err != nil {
+		return serverError(c, err)
+	}
+	total, err := s.store.Media.CountTVSeasonsAcrossShows(ctx, search)
+	if err != nil {
+		return serverError(c, err)
+	}
+
+	type rankedSeasonDTO struct {
+		SeriesTitle           string  `json:"series_title"`
+		Season                int     `json:"season"`
+		FileCount             int     `json:"file_count"`
+		EligibleCount         int     `json:"eligible_count"`
+		MissingCount          int     `json:"missing_count"`
+		TotalBytes            int64   `json:"total_bytes"`
+		PredictedSavingsBytes int64   `json:"predicted_savings_bytes"`
+		PosterPath            *string `json:"poster_path"`
+	}
+
+	out := make([]rankedSeasonDTO, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, rankedSeasonDTO{
+			SeriesTitle:           r.SeriesTitle,
+			Season:                r.Season,
+			FileCount:             r.FileCount,
+			EligibleCount:         r.EligibleCount,
+			MissingCount:          r.MissingCount,
+			TotalBytes:            r.TotalBytes,
+			PredictedSavingsBytes: r.PredictedSavingsBytes,
+		})
+	}
+
+	if s.store.Metadata != nil && len(out) > 0 {
+		titles := make([]string, len(out))
+		for i := range out {
+			titles[i] = out[i].SeriesTitle
+		}
+		if metaMap, err := s.store.Metadata.GetBatch(ctx, titles); err == nil {
+			for i := range out {
+				if m, ok := metaMap[out[i].SeriesTitle]; ok {
+					out[i].PosterPath = m.PosterPath
+				}
+			}
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"seasons":     out,
+		"total_count": total,
+	})
+}
+
 func (s *Server) handleGroupedFileEpisodes(c *echo.Context) error {
 	series := strings.TrimSpace(c.QueryParam("series"))
 	if series == "" {
@@ -216,7 +294,7 @@ func (s *Server) handleGroupedFileEpisodes(c *echo.Context) error {
 		return badRequest(c, "season must be an integer")
 	}
 
-	filter := parseFileFilter(c)
+	filter := s.parseFileFilter(c)
 	filter.LibraryType = store.LibraryTypeTV
 
 	limit, offset, err := parseLimitOffset(c, defaultPageLimit, maxPageLimit)
@@ -252,6 +330,7 @@ func (s *Server) handleGroupedFileEpisodes(c *echo.Context) error {
 }
 
 func (s *Server) buildLibrarySeasonEpisodes(files []store.MediaFile, states map[int64]store.CandidateState, seriesTitle string, season int) []episodeDTO {
+	threshold := s.live.OversizeThreshold()
 	eps := make([]episodeDTO, 0)
 	for i := range files {
 		f := &files[i]
@@ -259,7 +338,7 @@ func (s *Server) buildLibrarySeasonEpisodes(files []store.MediaFile, states map[
 		if title != seriesTitle || sn != season {
 			continue
 		}
-		ep := episodeDTO{mediaFileDTO: toMediaFileDTOWithState(f, string(states[f.ID])), Season: season}
+		ep := episodeDTO{mediaFileDTO: toMediaFileDTOWithState(f, string(states[f.ID]), threshold), Season: season}
 		if episode >= 0 {
 			e := episode
 			ep.Episode = &e

@@ -144,6 +144,79 @@ func TestFiles_filtersUnknownBuckets(t *testing.T) {
 	}
 }
 
+// TestTVSeasonsAcrossShows_Ranking verifies seasons from different shows are
+// ranked together by total size (default) and by predicted savings, that the
+// search filter scopes to a single series, and that eligibility gating drives
+// the savings totals.
+func TestTVSeasonsAcrossShows_Ranking(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	codec := "h264"
+	insert := func(path, title string, season int, size, savings int64, hevc bool) {
+		t.Helper()
+		if _, err := s.Media.Insert(ctx, &MediaFile{
+			Path:                  path,
+			LibraryType:           "tv",
+			SizeBytes:             size,
+			Status:                "active",
+			VideoCodec:            &codec,
+			IsAlreadyHEVC:         hevc,
+			PredictedSavingsBytes: savings,
+			SeriesTitle:           &title,
+			SeasonNumber:          &season,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Breaking Bad S1: big on disk, small savings (mostly already HEVC).
+	insert("/tv/Breaking Bad/S01E01.mkv", "Breaking Bad", 1, 5000, 100, true)
+	insert("/tv/Breaking Bad/S01E02.mkv", "Breaking Bad", 1, 5000, 100, true)
+	// The Wire S1: smaller on disk, large savings (eligible h264).
+	insert("/tv/The Wire/S01E01.mkv", "The Wire", 1, 3000, 2000, false)
+	insert("/tv/The Wire/S01E02.mkv", "The Wire", 1, 3000, 2000, false)
+
+	bySize, err := s.Media.TVSeasonsAcrossShows(ctx, "", SeasonSortSizeDesc, 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bySize) != 2 {
+		t.Fatalf("len(bySize) = %d, want 2", len(bySize))
+	}
+	if bySize[0].SeriesTitle != "Breaking Bad" || bySize[0].TotalBytes != 10000 {
+		t.Fatalf("size_desc first = %+v, want Breaking Bad @ 10000", bySize[0])
+	}
+
+	bySavings, err := s.Media.TVSeasonsAcrossShows(ctx, "", SeasonSortSavingsDesc, 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bySavings[0].SeriesTitle != "The Wire" || bySavings[0].PredictedSavingsBytes != 4000 {
+		t.Fatalf("savings_desc first = %+v, want The Wire @ 4000", bySavings[0])
+	}
+	// Already-HEVC episodes are ineligible, so their savings must not count.
+	if bySavings[1].SeriesTitle != "Breaking Bad" || bySavings[1].PredictedSavingsBytes != 0 {
+		t.Fatalf("savings_desc second = %+v, want Breaking Bad @ 0", bySavings[1])
+	}
+
+	filtered, err := s.Media.TVSeasonsAcrossShows(ctx, "wire", SeasonSortSizeDesc, 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(filtered) != 1 || filtered[0].SeriesTitle != "The Wire" {
+		t.Fatalf("search 'wire' = %+v, want single The Wire row", filtered)
+	}
+
+	total, err := s.Media.CountTVSeasonsAcrossShows(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 2 {
+		t.Fatalf("count = %d, want 2", total)
+	}
+}
+
 // TestTVShowSeasons_EpisodeIDs verifies each season row carries the IDs of
 // every episode file in that season, grouped correctly and excluding other
 // shows/seasons. Consumers (bulk rescan) rely on this to target the right

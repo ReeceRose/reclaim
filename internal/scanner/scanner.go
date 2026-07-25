@@ -629,6 +629,11 @@ func (s *Scanner) probeAndStore(
 		f.PredictedSavingsBytes = media.PredictedSavingsBytes(
 			result.VideoCodec, result.IsAlreadyHEVC, size,
 		)
+		// Compute the oversize ratio (bitrate vs. codec/resolution expectation)
+		// so the Library "oversized" flag, filter, and sort are pure SQL.
+		f.OversizeRatio = media.OversizeRatio(
+			result.VideoCodec, result.Width, result.Height, size, result.DurationSeconds,
+		)
 	}
 
 	if existing == nil {

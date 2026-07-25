@@ -100,6 +100,8 @@ const STATUS_OPTIONS = [
   { value: "missing", label: "Missing" },
 ];
 
+const OVERSIZED_OPTIONS = [{ value: "true", label: "Oversized only" }];
+
 function LibraryPage() {
   const qc = useQueryClient();
   const [isPending, startTransition] = useTransition();
@@ -117,6 +119,7 @@ function LibraryPage() {
   const [library, setLibrary] = useQueryParam("library");
   const [status, setStatus] = useQueryParam("status");
   const [candidateState, setCandidateState] = useQueryParam("state");
+  const [oversized, setOversized] = useQueryParam("oversized");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const fileMapRef = useRef<Map<number, MediaFile>>(new Map());
   const isSelectable = useCallback((id: number) => {
@@ -175,6 +178,7 @@ function LibraryPage() {
     library_type: effectiveLibrary || undefined,
     status: status || undefined,
     candidate_state: (candidateState as CandidateState) || undefined,
+    oversized: oversized === "true" ? "true" : undefined,
     search: debouncedSearch || undefined,
   };
 
@@ -378,6 +382,13 @@ function LibraryPage() {
             value={candidateState}
             options={STATE_OPTIONS}
             onChange={(v) => startTransition(() => setCandidateState(v))}
+            className="min-w-36"
+          />
+          <FilterSelect
+            label="Bitrate"
+            value={oversized}
+            options={OVERSIZED_OPTIONS}
+            onChange={(v) => startTransition(() => setOversized(v))}
             className="min-w-36"
           />
         </div>

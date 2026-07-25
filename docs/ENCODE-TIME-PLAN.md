@@ -137,7 +137,7 @@ type jobDTO struct {
 }
 ```
 
-Only populate `estimated_*` for `queued` and `running`. History gets `encode_duration_seconds` from `completed_at - started_at`.
+`estimated_duration_seconds` is live-computed for `queued`/`running` jobs. For `completed` jobs it's the frozen queue-time snapshot (`initial_estimated_duration_seconds`, migration `00010`), not a live recomputation — `null` for jobs queued before that column existed. History also gets `encode_duration_seconds` from `completed_at - started_at`, and `predicted_savings_bytes` as a queue-time snapshot for the same reason.
 
 **Optional:** include in list response *(included on first page when `offset=0`)*:
 

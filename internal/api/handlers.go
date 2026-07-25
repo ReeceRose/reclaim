@@ -117,9 +117,10 @@ func (s *Server) handleCandidates(c *echo.Context) error {
 		return badRequest(c, err.Error())
 	}
 
+	threshold := s.live.OversizeThreshold()
 	items := make([]mediaFileDTO, 0, len(files))
 	for i := range files {
-		items = append(items, toMediaFileDTOWithState(&files[i], string(store.CandidateStateCandidate)))
+		items = append(items, toMediaFileDTOWithState(&files[i], string(store.CandidateStateCandidate), threshold))
 	}
 
 	resp := map[string]any{"items": items}
@@ -158,7 +159,7 @@ func (s *Server) handleFileDetail(c *echo.Context) error {
 	if err != nil {
 		return serverError(c, err)
 	}
-	dto := toMediaFileDTOWithState(f, string(states[f.ID]))
+	dto := toMediaFileDTOWithState(f, string(states[f.ID]), s.live.OversizeThreshold())
 
 	if s.store.Metadata != nil {
 		var metaKey string
@@ -227,9 +228,10 @@ func (s *Server) handleRescanFiles(c *echo.Context) error {
 		return serverError(c, err)
 	}
 
+	threshold := s.live.OversizeThreshold()
 	items := make([]mediaFileDTO, 0, len(files))
 	for i := range files {
-		items = append(items, toMediaFileDTOWithState(&files[i], string(states[files[i].ID])))
+		items = append(items, toMediaFileDTOWithState(&files[i], string(states[files[i].ID]), threshold))
 	}
 	return c.JSON(http.StatusOK, map[string]any{"items": items})
 }

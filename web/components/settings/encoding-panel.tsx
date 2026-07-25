@@ -13,6 +13,8 @@ export function EncodingPanel({
   onWindowEndChange,
   probeConcurrency,
   onProbeConcurrencyChange,
+  oversizeThreshold,
+  onOversizeThresholdChange,
   scanIntervalHours,
   onScanIntervalHoursChange,
   scanAnchor,
@@ -26,6 +28,8 @@ export function EncodingPanel({
   onWindowEndChange: (v: string) => void;
   probeConcurrency: number;
   onProbeConcurrencyChange: (v: number) => void;
+  oversizeThreshold: number;
+  onOversizeThresholdChange: (v: number) => void;
   scanIntervalHours: number;
   onScanIntervalHoursChange: (v: number) => void;
   scanAnchor: string;
@@ -80,6 +84,33 @@ export function EncodingPanel({
         />
         <p className="text-xs text-muted-dim mt-1.5">
           Parallel ffprobe cap during scans.
+        </p>
+      </div>
+      <div className="mb-4">
+        <LabelWithHelp
+          label="Oversized flag threshold"
+          help={
+            <>
+              Flags a file as <strong>oversized</strong> in the Library when its
+              bitrate is at least this many times what a well-encoded file of
+              the same codec and resolution would use. It is codec-aware, so it
+              catches bloated files in <em>any</em> codec — including HEVC that
+              the HEVC-savings ranking skips. <strong>2</strong> means "twice
+              the expected bitrate". Lower it to flag more files, raise it to
+              flag only the worst offenders.
+            </>
+          }
+        />
+        <Input
+          type="number"
+          min={1.1}
+          max={20}
+          step={0.1}
+          value={oversizeThreshold}
+          onChange={(e) => onOversizeThresholdChange(Number(e.target.value))}
+        />
+        <p className="text-xs text-muted-dim mt-1.5">
+          Bitrate multiple over expected before a file is flagged oversized.
         </p>
       </div>
       <div className="mb-4">

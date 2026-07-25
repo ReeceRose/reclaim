@@ -33,7 +33,7 @@ export function formatCoverage(files: number, candidates: number): string {
 
 /** formatVersion renders the build version + short commit, e.g. "v1.4.2 · a3f9c1d" or "dev · a3f9c1d". */
 export function formatVersion(version: string, commit: string): string {
-  const short = commit.slice(0, 7);
+  const short = (commit ?? "").slice(0, 7);
   const label = version === "dev" ? "dev" : `v${version}`;
   return short && short !== "unknown" ? `${label} · ${short}` : label;
 }

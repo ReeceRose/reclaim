@@ -39,6 +39,8 @@ type mediaFileDTO struct {
 	ContainerFormat       *string  `json:"container_format"`
 	IsAlreadyHEVC         bool     `json:"is_already_hevc"`
 	PredictedSavingsBytes int64    `json:"predicted_savings_bytes"`
+	OversizeRatio         float64  `json:"oversize_ratio"`
+	IsOversized           bool     `json:"is_oversized"`
 	LastProbedAt          *int64   `json:"last_probed_at"`
 	ProbeError            *string  `json:"probe_error"`
 	Status                string   `json:"status"`
@@ -56,10 +58,14 @@ type mediaFileDTO struct {
 }
 
 func toMediaFileDTO(f *store.MediaFile) mediaFileDTO {
-	return toMediaFileDTOWithState(f, "")
+	return toMediaFileDTOWithState(f, "", 0)
 }
 
-func toMediaFileDTOWithState(f *store.MediaFile, candidateState string) mediaFileDTO {
+// toMediaFileDTOWithState builds the wire DTO. oversizeThreshold is the live
+// flag threshold; a file is marked oversized when its stored ratio meets or
+// exceeds it. Pass 0 to leave is_oversized false (contexts where the flag is
+// not surfaced).
+func toMediaFileDTOWithState(f *store.MediaFile, candidateState string, oversizeThreshold float64) mediaFileDTO {
 	return mediaFileDTO{
 		ID:                    f.ID,
 		Path:                  f.Path,
@@ -77,6 +83,8 @@ func toMediaFileDTOWithState(f *store.MediaFile, candidateState string) mediaFil
 		ContainerFormat:       f.ContainerFormat,
 		IsAlreadyHEVC:         f.IsAlreadyHEVC,
 		PredictedSavingsBytes: f.PredictedSavingsBytes,
+		OversizeRatio:         f.OversizeRatio,
+		IsOversized:           oversizeThreshold > 0 && f.OversizeRatio >= oversizeThreshold,
 		LastProbedAt:          f.LastProbedAt,
 		ProbeError:            f.ProbeError,
 		Status:                f.Status,

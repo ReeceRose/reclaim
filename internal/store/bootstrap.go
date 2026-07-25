@@ -23,13 +23,22 @@ func (s *Store) bootstrapIfNeeded(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("check savings bootstrap: %w", err)
 	}
-	if !needsStats && !needsSavings {
+	needsOversize, err := s.Media.needsOversizeBackfill(ctx)
+	if err != nil {
+		return fmt.Errorf("check oversize bootstrap: %w", err)
+	}
+	if !needsStats && !needsSavings && !needsOversize {
 		return nil
 	}
 
 	if needsSavings {
 		if _, err := s.Media.BackfillPredictedSavings(ctx); err != nil {
 			return fmt.Errorf("backfill predicted savings: %w", err)
+		}
+	}
+	if needsOversize {
+		if _, err := s.Media.BackfillOversizeRatio(ctx); err != nil {
+			return fmt.Errorf("backfill oversize ratio: %w", err)
 		}
 	}
 	if needsStats {
@@ -131,6 +140,89 @@ func (m *Media) needsSavingsBackfill(ctx context.Context) (bool, error) {
 		  AND predicted_savings_bytes = 0`,
 	).Scan(&n)
 	return n > 0, err
+}
+
+// needsOversizeBackfill reports whether any probed row that has the inputs for
+// an oversize ratio (size, duration, resolution) still carries the default 0.
+func (m *Media) needsOversizeBackfill(ctx context.Context) (bool, error) {
+	var n int
+	err := m.r.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM media_files
+		WHERE status = 'active'
+		  AND probe_error IS NULL
+		  AND size_bytes > 0
+		  AND duration_seconds > 0
+		  AND (COALESCE(width, 0) > 0 OR COALESCE(height, 0) > 0)
+		  AND oversize_ratio = 0`,
+	).Scan(&n)
+	return n > 0, err
+}
+
+// BackfillOversizeRatio recomputes oversize_ratio from stored probe fields
+// without re-running ffprobe. Returns the number of rows updated. Runs once on
+// boot after the column is added; fresh scans set the ratio inline.
+func (m *Media) BackfillOversizeRatio(ctx context.Context) (int, error) {
+	rows, err := m.r.QueryContext(ctx, `
+		SELECT id, video_codec, width, height, duration_seconds, size_bytes
+		FROM media_files
+		WHERE status = 'active'
+		  AND probe_error IS NULL
+		  AND size_bytes > 0
+		  AND duration_seconds > 0
+		  AND (COALESCE(width, 0) > 0 OR COALESCE(height, 0) > 0)
+		  AND oversize_ratio = 0`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	type row struct {
+		id       int64
+		codec    *string
+		width    *int
+		height   *int
+		duration *float64
+		size     int64
+	}
+	var pending []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.codec, &r.width, &r.height, &r.duration, &r.size); err != nil {
+			return 0, err
+		}
+		pending = append(pending, r)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if len(pending) == 0 {
+		return 0, nil
+	}
+
+	tx, err := m.w.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	updated := 0
+	for _, r := range pending {
+		ratio := media.OversizeRatio(r.codec, r.width, r.height, r.size, r.duration)
+		if ratio <= 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE media_files SET oversize_ratio = ? WHERE id = ?`,
+			ratio, r.id,
+		); err != nil {
+			return 0, err
+		}
+		updated++
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return updated, nil
 }
 
 // BackfillPredictedSavings recomputes predicted_savings_bytes from stored probe

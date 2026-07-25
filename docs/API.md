@@ -103,13 +103,16 @@ as `null`.
 
 `id, path, library_type, size_bytes, mtime, video_codec, video_codec_profile,
 width, height, duration_seconds, bitrate_kbps, audio_codec, audio_channels,
-container_format, is_already_hevc, predicted_savings_bytes, last_probed_at,
-probe_error, status, candidate_state, poster_path, backdrop_path`
+container_format, is_already_hevc, predicted_savings_bytes, oversize_ratio,
+is_oversized, last_probed_at, probe_error, status, candidate_state, poster_path,
+backdrop_path`
 
 | Field | Notes |
 |---|---|
 | `status` | `active` or `missing` (soft-deleted when the path disappears) |
 | `candidate_state` | Why a file can or can't be queued: `candidate`, `already_hevc`, `probe_failed`, `unknown_codec`, `queued`, `completed`, `missing` |
+| `oversize_ratio` | How many times larger the file's bitrate is than a well-encoded file of the same codec and resolution — `actual_bitrate / expected_bitrate`. Codec-aware (efficient codecs get a tighter ceiling), so it flags bloat in any codec, HEVC included. `0` when not computable (missing duration/size or unknown resolution) |
+| `is_oversized` | `true` when `oversize_ratio` meets or exceeds the live `oversize_threshold` setting |
 | `poster_path`, `backdrop_path` | TMDB image paths (e.g. `/abc123.jpg`); prefix with `https://image.tmdb.org/t/p/<size>`. Populated on grouped TV/movie views and `GET /api/files/:id` when TMDB is configured. Movie list pages also attach posters when configured. |
 
 `GET /api/files/:id` additionally includes TMDB detail fields when metadata
@@ -189,13 +192,14 @@ eligibility.
 
 | Param | Notes |
 |---|---|
-| `sort` | `path_asc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type` |
+| `sort` | `path_asc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`, `oversize_desc` (most oversized first) |
 | `library_type` | filter: `movies` or `tv` |
 | `video_codec` | filter, exact source codec, e.g. `h264` |
 | `height` | resolution bucket filter (same values as `/api/candidates`) |
 | `search` | path substring filter |
 | `status` | `active` or `missing` |
 | `candidate_state` | `candidate`, `already_hevc`, `probe_failed`, `unknown_codec`, `queued`, `completed`, `missing` |
+| `oversized` | `true` → only files flagged oversized (`oversize_ratio ≥` the live `oversize_threshold`), any codec including HEVC |
 | `limit` | page size (default 50, max 200) |
 | `offset` | page offset |
 
@@ -244,6 +248,27 @@ Season breakdown for one TV series.
       "total_bytes": 25000000000, "predicted_savings_bytes": 7000000000,
       "episode_ids": [1, 2, 3, 4, 5, 6] }
   ]
+}
+```
+
+### `GET /api/seasons`
+Every `(series, season)` pair across the whole TV library, ranked together — the
+"largest seasons" leaderboard. One `GROUP BY` query, so it stays O(1) regardless
+of library size.
+
+**Query params:** `sort` (`size_desc` default | `savings_desc`), `search`
+(series-title substring), `limit` (default 50, max 200), `offset`.
+`savings_desc` counts only eligible (non-HEVC, probeable, not already
+queued/done) episodes, matching the per-series season breakdown.
+
+```json
+{
+  "seasons": [
+    { "series_title": "Breaking Bad", "season": 3, "file_count": 6,
+      "eligible_count": 4, "missing_count": 0, "total_bytes": 51000000000,
+      "predicted_savings_bytes": 14000000000, "poster_path": "/abc.jpg" }
+  ],
+  "total_count": 42
 }
 ```
 
@@ -322,7 +347,7 @@ original_size_bytes, output_size_bytes, progress_percent, output_path,
 error_message, verification_result, source_path, queue_position, forced,
 encode_preset, encode_crf, encode_extra_args,
 estimated_duration_seconds, encode_duration_seconds,
-estimate_source, estimate_sample_count
+estimate_source, estimate_sample_count, predicted_savings_bytes
 ```
 
 | Field | Notes |
@@ -330,10 +355,11 @@ estimate_source, estimate_sample_count
 | `queue_position` | 1-based for `queued` jobs, `0` otherwise |
 | `forced` | `true` when the job was marked to bypass the encode window |
 | `encode_preset`, `encode_crf`, `encode_extra_args` | Snapshot of the profile settings at queue time. The worker still reads the **live** profile when encoding, but learning and history display use these columns |
-| `estimated_duration_seconds` | Wall-clock encode estimate in seconds. Populated for `queued` and `running` jobs only. Omitted when the media file has no `duration_seconds` |
+| `estimated_duration_seconds` | Wall-clock encode estimate in seconds. For `queued`/`running` jobs this is a live, continuously-refreshed prediction. For `completed` jobs this is the frozen queue-time snapshot (`null` for jobs queued before this snapshot was introduced) |
 | `encode_duration_seconds` | Actual wall-clock encode time (`completed_at − started_at`). Populated for `completed` jobs only |
-| `estimate_source` | Where `estimated_duration_seconds` came from: `seed`, `learned_profile`, `learned_preset_crf`, `learned_preset`, or `learned_global` |
+| `estimate_source` | Where `estimated_duration_seconds` came from: `seed`, `learned_profile`, `learned_preset_crf`, `learned_preset`, or `learned_global`. Only set for `queued`/`running` jobs |
 | `estimate_sample_count` | Number of completed jobs in the bucket that produced the estimate. Omitted for `seed` |
+| `predicted_savings_bytes` | Queue-time prediction of bytes reclaimed, snapshotted so history can compare it against the actual outcome even after the source file has since become HEVC. `null` for jobs queued before this snapshot was introduced |
 
 **Encode time estimates** are computed at read time from this instance's completed jobs, bucketed by profile first with fallbacks (preset+CRF → preset → global → conservative seed rates per preset). See [`docs/ENCODE-TIME-PLAN.md`](ENCODE-TIME-PLAN.md) for the rate model. Estimates require probed `duration_seconds` on the media file; without duration, no estimate is returned.
 
@@ -470,6 +496,7 @@ re-seeds from env.
   "scan_interval": "24h0m0s",
   "scan_anchor": "00:00",
   "probe_concurrency": 4,
+  "oversize_threshold": 2.0,
   "movies_path": "/media/movies",
   "tv_path": "/media/tv",
   "tmdb_configured": true
@@ -477,15 +504,16 @@ re-seeds from env.
 ```
 
 `tmdb_configured` is `true` when a TMDB API key is present (set via `TMDB_API_KEY` env var).
+`oversize_threshold` (> 1) is the bitrate multiple at or above which a file is flagged oversized.
 
 ### `PUT /api/settings`
 Any subset of the mutable fields. Validated as a set before applying.
 ```json
 { "encode_window_start": "01:00", "encode_window_end": "07:00",
-  "scan_interval": "12h", "probe_concurrency": 8 }
+  "scan_interval": "12h", "probe_concurrency": 8, "oversize_threshold": 2.5 }
 ```
 - `200` → the full settings object (same shape as GET)
-- `400` → invalid value (e.g. `encode_window_start: "99:99"`, non-positive interval/concurrency)
+- `400` → invalid value (e.g. `encode_window_start: "99:99"`, non-positive interval/concurrency, `oversize_threshold ≤ 1`)
 
 ---
 

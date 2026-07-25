@@ -93,6 +93,7 @@ func testConfig() *config.Config {
 		EncodeWindowEnd:   6 * time.Hour,
 		ScanInterval:      24 * time.Hour,
 		ProbeConcurrency:  4,
+		OversizeThreshold: 2.0,
 		MoviesPath:        "/media/movies",
 		TVPath:            "/media/tv",
 	}
@@ -414,9 +415,10 @@ func TestSettingsLiveUpdate(t *testing.T) {
 	cookie := completeSetup(t, st)
 
 	w := doReq(h, http.MethodPut, "/api/settings", map[string]any{
-		"scan_interval":     "12h",
-		"scan_anchor":       "02:30",
-		"probe_concurrency": 8,
+		"scan_interval":      "12h",
+		"scan_anchor":        "02:30",
+		"probe_concurrency":  8,
+		"oversize_threshold": 3.5,
 	}, cookie)
 	if w.Code != http.StatusOK {
 		t.Fatalf("put settings: want 200, got %d (%s)", w.Code, w.Body.String())
@@ -429,6 +431,9 @@ func TestSettingsLiveUpdate(t *testing.T) {
 	}
 	if srv.live.ProbeConcurrency() != 8 {
 		t.Errorf("probe concurrency not applied: %d", srv.live.ProbeConcurrency())
+	}
+	if srv.live.OversizeThreshold() != 3.5 {
+		t.Errorf("oversize threshold not applied: %v", srv.live.OversizeThreshold())
 	}
 
 	body := decodeBody(t, w)

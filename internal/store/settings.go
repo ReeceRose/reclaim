@@ -13,6 +13,17 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// Clock format values for the settings row's clock_format column.
+const (
+	DefaultClockFormat = "12h"
+	ClockFormat24h     = "24h"
+)
+
+// ValidClockFormat reports whether v is a clock format the UI can render.
+func ValidClockFormat(v string) bool {
+	return v == DefaultClockFormat || v == ClockFormat24h
+}
+
 // Settings implements api.AuthStore and manages the singleton settings row.
 type Settings struct {
 	r, w *sql.DB
@@ -76,6 +87,30 @@ func (s *Settings) SessionSecret() []byte {
 	}
 	s.secret = decoded
 	return s.secret
+}
+
+// ClockFormat returns the stored display clock preference, defaulting to "12h"
+// on a row that predates the column or holds anything unrecognised.
+func (s *Settings) ClockFormat(ctx context.Context) string {
+	var v sql.NullString
+	if err := s.r.QueryRowContext(ctx,
+		"SELECT clock_format FROM settings WHERE id = 1",
+	).Scan(&v); err != nil || !v.Valid || !ValidClockFormat(v.String) {
+		return DefaultClockFormat
+	}
+	return v.String
+}
+
+// SetClockFormat stores the display clock preference. Unlike the env-seeded
+// runtime knobs in config.Live, this one is persisted, so it survives restarts.
+func (s *Settings) SetClockFormat(ctx context.Context, format string) error {
+	if !ValidClockFormat(format) {
+		return fmt.Errorf("clock_format must be %q or %q", DefaultClockFormat, ClockFormat24h)
+	}
+	_, err := s.w.ExecContext(ctx,
+		"UPDATE settings SET clock_format = ? WHERE id = 1", format,
+	)
+	return err
 }
 
 // CompleteSetup stores bcrypt-hashed credentials and marks setup as done.

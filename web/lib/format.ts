@@ -1,6 +1,6 @@
 // Human-readable formatting helpers shared across screens.
 
-import type { Settings } from "@/lib/api";
+import type { ClockFormat, Settings } from "@/lib/api";
 
 const TB = 1024 ** 4;
 const GB = 1024 ** 3;
@@ -82,20 +82,50 @@ export function resolutionBucketLabel(bucket: string): string {
 }
 
 /**
- * formatClock12 renders an "HH:MM" wall time on a 12-hour clock, matching the
- * hour + AM/PM control the settings panel uses to set these times. Minutes are
- * dropped when zero, so the common whole-hour window stays short.
+ * formatClock renders an "HH:MM" wall time on the chosen clock. On the 12-hour
+ * clock minutes are dropped when zero, so the common whole-hour window stays
+ * short; the 24-hour clock always keeps them.
  */
-export function formatClock12(hhmm: string): string {
+export function formatClock(hhmm: string, format: ClockFormat): string {
   const [rawH, rawM] = hhmm.split(":");
   const h24 = Number(rawH);
   if (!Number.isFinite(h24)) return hhmm;
   const m = Number(rawM);
+  const mins = Number.isFinite(m) ? m : 0;
+  if (format === "24h") {
+    return `${String(h24).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+  }
   const h12 = h24 % 12 || 12;
   const suffix = h24 >= 12 ? "PM" : "AM";
-  return Number.isFinite(m) && m > 0
-    ? `${h12}:${String(m).padStart(2, "0")} ${suffix}`
+  return mins > 0
+    ? `${h12}:${String(mins).padStart(2, "0")} ${suffix}`
     : `${h12} ${suffix}`;
+}
+
+/** formatZoneClock renders an instant as a wall time in the given IANA zone. */
+export function formatZoneClock(
+  at: Date,
+  zone: string,
+  format: ClockFormat,
+): string | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hourCycle: format === "24h" ? "h23" : "h12",
+      timeZone: zone,
+    }).formatToParts(at);
+    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+    const h = get("hour");
+    const m = get("minute");
+    if (!h || !m) return null;
+    if (format === "24h") return `${h.padStart(2, "0")}:${m}`;
+    const suffix = get("dayPeriod").toUpperCase();
+    if (!suffix) return null;
+    return m === "00" ? `${h} ${suffix}` : `${h}:${m} ${suffix}`;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -114,6 +144,7 @@ export function windowInfo(
     | "window_changes_at"
   >,
   now: Date,
+  format: ClockFormat,
 ): { open: boolean; label: string; detail: string } {
   const {
     encode_window_start: start,
@@ -121,7 +152,7 @@ export function windowInfo(
     window_open: open,
     window_changes_at: changesAt,
   } = settings;
-  const label = `${formatClock12(start)} – ${formatClock12(end)}`;
+  const label = `${formatClock(start, format)} – ${formatClock(end, format)}`;
 
   // A window with equal bounds is always open and never flips.
   if (changesAt == null) {

@@ -7,6 +7,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"reclaim/internal/config"
+	"reclaim/internal/store"
 )
 
 func (s *Server) handleGetSettings(c *echo.Context) error {
@@ -17,8 +18,14 @@ func (s *Server) handleGetSettings(c *echo.Context) error {
 	now := time.Now().In(s.live.Location())
 	windowOpen, until := config.WindowState(now, s.live.EncodeWindowStart(), s.live.EncodeWindowEnd())
 
+	clockFormat := store.DefaultClockFormat
+	if s.store != nil {
+		clockFormat = s.store.Settings.ClockFormat(c.Request().Context())
+	}
+
 	resp := map[string]any{
 		"timezone":            s.live.Timezone(),
+		"clock_format":        clockFormat,
 		"server_time":         now.Format("15:04"),
 		"window_open":         windowOpen,
 		"window_changes_at":   nil,
@@ -59,6 +66,7 @@ func formatRetention(d time.Duration) string {
 
 type settingsRequest struct {
 	Timezone          *string  `json:"timezone"`
+	ClockFormat       *string  `json:"clock_format"`
 	EncodeWindowStart *string  `json:"encode_window_start"`
 	EncodeWindowEnd   *string  `json:"encode_window_end"`
 	ScanInterval      *string  `json:"scan_interval"`
@@ -73,11 +81,21 @@ func (s *Server) handlePutSettings(c *echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return badRequest(c, "invalid JSON body")
 	}
+	// clock_format is persisted rather than held in config.Live, so it is
+	// validated alongside the live knobs but written to the settings row.
+	if req.ClockFormat != nil && !store.ValidClockFormat(*req.ClockFormat) {
+		return badRequest(c, "clock_format must be \"12h\" or \"24h\"")
+	}
 	if err := s.live.Update(
 		req.EncodeWindowStart, req.EncodeWindowEnd, req.ScanInterval, req.ScanAnchor,
 		req.ProbeConcurrency, req.OversizeThreshold, req.MissingRetention, req.Timezone,
 	); err != nil {
 		return badRequest(c, err.Error())
+	}
+	if req.ClockFormat != nil && s.store != nil {
+		if err := s.store.Settings.SetClockFormat(c.Request().Context(), *req.ClockFormat); err != nil {
+			return serverError(c, err)
+		}
 	}
 	return s.handleGetSettings(c)
 }

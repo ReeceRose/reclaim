@@ -152,6 +152,8 @@ Before a vanished file is marked missing, the scanner tries two reconciliations.
 
 `config.Live` is a `sync.RWMutex`-guarded struct seeded from env at boot. The scanner and worker read it on each tick, so PUT `/api/settings` takes effect immediately. Settings overrides are in-memory only — a restart re-seeds from env (this includes `missing_retention`, so a retention set in the UI reverts to `MISSING_RETENTION` on restart).
 
+`clock_format` is the exception: it has no env var and is persisted to the `settings` row (`clock_format` column, migration `00013`, `"12h"` default). It is display-only — the API always speaks 24-hour `HH:MM` — and instance-wide, since sessions are single-user. The frontend reads it off the cached settings query via `web/hooks/use-clock-format.ts`, so `formatClock`, `formatZoneClock`, and `windowInfo` all render on the chosen clock.
+
 ### Authentication
 
 HMAC-signed session cookie (`reclaim_session`). First-run setup creates credentials in the DB. `DISABLE_AUTH=true` bypasses the middleware entirely. `RESET_AUTH=true` clears credentials on boot.

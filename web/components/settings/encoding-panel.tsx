@@ -1,17 +1,30 @@
 "use client";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatClock12 } from "@/lib/format";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useClockFormat } from "@/hooks/use-clock-format";
+import { useNow } from "@/hooks/use-now";
+import type { ClockFormat, Settings } from "@/lib/api";
+import { formatClock, formatZoneClock, windowInfo } from "@/lib/format";
 import { LabelWithHelp } from "./help-tip";
 import { TimeSelect } from "./time-select";
 import { TimezoneSelect } from "./timezone-select";
 
 export function EncodingPanel({
   timezone,
+  savedTimezone,
   onTimezoneChange,
   serverTime,
+  windowState,
   windowStart,
   windowEnd,
   onWindowStartChange,
@@ -24,12 +37,21 @@ export function EncodingPanel({
   onScanIntervalHoursChange,
   scanAnchor,
   onScanAnchorChange,
+  onClockFormatChange,
   onSave,
   isSaving,
 }: {
   timezone: string;
+  savedTimezone: string;
   onTimezoneChange: (v: string) => void;
   serverTime: string;
+  windowState: Pick<
+    Settings,
+    | "encode_window_start"
+    | "encode_window_end"
+    | "window_open"
+    | "window_changes_at"
+  >;
   windowStart: string;
   windowEnd: string;
   onWindowStartChange: (v: string) => void;
@@ -42,9 +64,21 @@ export function EncodingPanel({
   onScanIntervalHoursChange: (v: number) => void;
   scanAnchor: string;
   onScanAnchorChange: (v: string) => void;
+  onClockFormatChange: (v: ClockFormat) => void;
   onSave: () => void;
   isSaving: boolean;
 }) {
+  const now = useNow();
+  const clockFormat = useClockFormat();
+  const win = windowInfo(windowState, now, clockFormat);
+  const zoneChanged = timezone !== savedTimezone;
+  const clock = zoneChanged
+    ? formatZoneClock(now, timezone, clockFormat)
+    : formatClock(serverTime, clockFormat);
+  const windowChanged =
+    windowStart !== windowState.encode_window_start ||
+    windowEnd !== windowState.encode_window_end;
+
   return (
     <div
       className="border border-line rounded-(--radius) p-5"
@@ -68,8 +102,39 @@ export function EncodingPanel({
         />
         <TimezoneSelect value={timezone} onChange={onTimezoneChange} />
         <p className="text-xs text-muted-dim mt-1.5">
-          Server clock: {formatClock12(serverTime)} in{" "}
-          {timezone.replace(/_/g, " ")}.
+          {clock
+            ? `${zoneChanged ? "Would read" : "Server clock"}: ${clock} in ${timezone.replace(/_/g, " ")}.`
+            : `Server clock unavailable in ${timezone.replace(/_/g, " ")}.`}
+          {zoneChanged && " Save to switch the server to this zone."}
+        </p>
+      </div>
+      <div className="mb-4">
+        <LabelWithHelp
+          label="Clock format"
+          help={
+            <>
+              How times are displayed across Reclaim — the encode window, the
+              scan schedule, and the window badge in the sidebar. It is stored
+              on the server and shared by everyone using this instance, it saves
+              as soon as you pick it, and it never changes when jobs actually
+              run.
+            </>
+          }
+        />
+        <Select
+          value={clockFormat}
+          onValueChange={(v) => onClockFormatChange(v as ClockFormat)}
+        >
+          <SelectTrigger className="w-full rounded-xl text-sm sm:w-72">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="12h">12-hour · 10 PM</SelectItem>
+            <SelectItem value="24h">24-hour · 22:00</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-dim mt-1.5">
+          Applies everywhere in Reclaim, and saves immediately.
         </p>
       </div>
       <div className="mb-4">
@@ -80,9 +145,38 @@ export function EncodingPanel({
           </span>
         </Label>
         <div className="flex items-center gap-2 flex-wrap sm:gap-3">
-          <TimeSelect value={windowStart} onChange={onWindowStartChange} />
+          <TimeSelect
+            value={windowStart}
+            onChange={onWindowStartChange}
+            format={clockFormat}
+          />
           <span className="text-muted-fg">to</span>
-          <TimeSelect value={windowEnd} onChange={onWindowEndChange} />
+          <TimeSelect
+            value={windowEnd}
+            onChange={onWindowEndChange}
+            format={clockFormat}
+          />
+        </div>
+        <div className="flex items-center gap-2 flex-wrap mt-2.5">
+          <Badge
+            variant="outline"
+            className="gap-2 text-xs font-semibold px-2.5 py-1 rounded-xl border-line bg-surface-2"
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${win.open ? "bg-green" : "bg-muted-dim"}`}
+              style={
+                win.open
+                  ? { boxShadow: "0 0 0 3px var(--green-soft)" }
+                  : undefined
+              }
+            />
+            {win.open ? "Open" : "Closed"} · {win.detail}
+          </Badge>
+          <span className="text-xs text-muted-dim">
+            {windowChanged
+              ? `Running window ${win.label} ${savedTimezone.replace(/_/g, " ")} — save to apply the change.`
+              : `${win.label} ${savedTimezone.replace(/_/g, " ")}.`}
+          </span>
         </div>
         <p className="text-xs text-muted-dim mt-1.5">
           A running job finishes even if the window closes — only new pulls
@@ -147,7 +241,7 @@ export function EncodingPanel({
             <>
               How often Reclaim re-walks your libraries to pick up new or
               changed files. The <strong>at</strong> time anchors the schedule,
-              so a 24h interval anchored to 12:00 AM rescans nightly at
+              so a 24h interval anchored to midnight rescans nightly at
               midnight. File changes are also caught live via a filesystem
               watcher between scans.
             </>
@@ -167,7 +261,11 @@ export function EncodingPanel({
             />
             <span className="text-sm text-muted-fg">hours · at</span>
           </div>
-          <TimeSelect value={scanAnchor} onChange={onScanAnchorChange} />
+          <TimeSelect
+            value={scanAnchor}
+            onChange={onScanAnchorChange}
+            format={clockFormat}
+          />
         </div>
         <p className="text-xs text-muted-dim mt-1.5">
           Rescans repeat every N hours, aligned to the chosen time.

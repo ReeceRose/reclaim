@@ -481,6 +481,57 @@ func TestSettingsMissingRetention(t *testing.T) {
 	}
 }
 
+func TestSettingsClockFormat(t *testing.T) {
+	_, h, st, _ := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+
+	w := doReq(h, http.MethodGet, "/api/settings", nil, cookie)
+	if got := decodeBody(t, w)["clock_format"]; got != store.DefaultClockFormat {
+		t.Errorf("default clock_format = %v, want %q", got, store.DefaultClockFormat)
+	}
+
+	w = doReq(h, http.MethodPut, "/api/settings", map[string]any{
+		"clock_format": store.ClockFormat24h,
+	}, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("put clock format: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	if got := decodeBody(t, w)["clock_format"]; got != store.ClockFormat24h {
+		t.Errorf("clock_format echoed = %v, want %q", got, store.ClockFormat24h)
+	}
+	if got := st.Settings.ClockFormat(context.Background()); got != store.ClockFormat24h {
+		t.Errorf("clock_format persisted = %q, want %q", got, store.ClockFormat24h)
+	}
+
+	w = doReq(h, http.MethodPut, "/api/settings", map[string]any{
+		"clock_format": "sundial",
+	}, cookie)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("bad clock format: want 400, got %d", w.Code)
+	}
+	if got := st.Settings.ClockFormat(context.Background()); got != store.ClockFormat24h {
+		t.Errorf("rejected write changed stored value to %q", got)
+	}
+}
+
+// A rejected value elsewhere in the payload must not leave the clock format
+// applied, since the two are written by separate paths.
+func TestSettingsClockFormat_notAppliedWhenSetInvalid(t *testing.T) {
+	_, h, st, _ := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+
+	w := doReq(h, http.MethodPut, "/api/settings", map[string]any{
+		"clock_format":        store.ClockFormat24h,
+		"encode_window_start": "99:99",
+	}, cookie)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d (%s)", w.Code, w.Body.String())
+	}
+	if got := st.Settings.ClockFormat(context.Background()); got != store.DefaultClockFormat {
+		t.Errorf("clock_format = %q, want it untouched at %q", got, store.DefaultClockFormat)
+	}
+}
+
 func TestPruneMissingEndpoint(t *testing.T) {
 	_, h, st, _ := newTestServer(t, false)
 	cookie := completeSetup(t, st)

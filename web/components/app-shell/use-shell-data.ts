@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useUnreadCount } from "@/components/notification-panel";
+import { useClockFormat } from "@/hooks/use-clock-format";
 import { useNow } from "@/hooks/use-now";
 import { useWS } from "@/hooks/use-ws";
 import { api, type ScanProgress } from "@/lib/api";
@@ -10,6 +11,7 @@ import { formatInt, formatVersion, windowInfo } from "@/lib/format";
 export function useShellData() {
   useWS();
   const now = useNow();
+  const clockFormat = useClockFormat();
 
   const { data: isScanning } = useQuery<boolean>({
     queryKey: ["scanning"],
@@ -101,7 +103,7 @@ export function useShellData() {
     "/queue": queueBadge,
   };
 
-  const encodeWindow = settings ? windowInfo(settings, now) : null;
+  const encodeWindow = settings ? windowInfo(settings, now, clockFormat) : null;
   const username = session?.username ?? "";
   const initials = username.slice(0, 2).toUpperCase() || "?";
   const version = session

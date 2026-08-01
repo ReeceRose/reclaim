@@ -487,12 +487,14 @@ Removes one event. `204 No Content` · `404` if not found.
 
 Runtime-mutable knobs, applied without a restart (the scanner/worker read them
 live). Mount paths are read-only (env-set). Overrides are in-memory: a restart
-re-seeds from env.
+re-seeds from env. The one exception is `clock_format`, which is persisted to
+the `settings` row and therefore survives restarts.
 
 ### `GET /api/settings`
 ```json
 {
   "timezone": "America/New_York",
+  "clock_format": "12h",
   "server_time": "23:24",
   "window_open": false,
   "window_changes_at": 1690000000,
@@ -518,6 +520,9 @@ and log stamps are always UTC, so this is what maps them to wall time. It is see
 `encode_window_start == encode_window_end` and the window is therefore always open) are the same
 values the worker gates on. Clients must render these rather than recomputing the window from the
 browser clock, which disagrees whenever the viewer is in a different zone than the server.
+`clock_format` is `"12h"` or `"24h"` and decides how the UI renders every wall-clock time
+(encode window, scan anchor, window badge). It is instance-wide, has no env var, and defaults
+to `"12h"`; unlike the other fields it is stored in the DB rather than in `config.Live`.
 `tmdb_configured` is `true` when a TMDB API key is present (set via `TMDB_API_KEY` env var).
 `oversize_threshold` (> 1) is the bitrate multiple at or above which a file is flagged oversized.
 `missing_retention` is how long a file that vanished from disk is kept as a `missing` row before
@@ -528,13 +533,16 @@ and both it and `size_bytes` are `0` when `count` is `0`.
 ### `PUT /api/settings`
 Any subset of the mutable fields. Validated as a set before applying.
 ```json
-{ "timezone": "America/New_York",
+{ "timezone": "America/New_York", "clock_format": "24h",
   "encode_window_start": "01:00", "encode_window_end": "07:00",
   "scan_interval": "12h", "probe_concurrency": 8, "oversize_threshold": 2.5,
   "missing_retention": "720h" }
 ```
 - `200` → the full settings object (same shape as GET)
-- `400` → invalid value (e.g. `encode_window_start: "99:99"`, non-positive interval/concurrency, `oversize_threshold ≤ 1`, unparseable/negative `missing_retention`, a `timezone` that is not a loadable IANA name)
+- `400` → invalid value (e.g. `encode_window_start: "99:99"`, non-positive interval/concurrency, `oversize_threshold ≤ 1`, unparseable/negative `missing_retention`, a `timezone` that is not a loadable IANA name, a `clock_format` other than `"12h"`/`"24h"`)
+
+Every value is validated before anything is applied, so a rejected field leaves `clock_format`
+unwritten even though it persists to a different place than the live knobs.
 
 ### `POST /api/settings/prune-missing`
 Immediately hard-deletes every `missing` media row and its job history, ignoring

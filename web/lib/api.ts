@@ -303,8 +303,12 @@ export interface MissingFilesSummary {
   size_bytes: number;
 }
 
+/** ClockFormat is the instance-wide 12h/24h display preference. */
+export type ClockFormat = "12h" | "24h";
+
 export interface Settings {
   timezone: string;
+  clock_format: ClockFormat;
   server_time: string;
   window_open: boolean;
   window_changes_at: number | null;
@@ -571,6 +575,7 @@ export const api = {
       Pick<
         Settings,
         | "timezone"
+        | "clock_format"
         | "encode_window_start"
         | "encode_window_end"
         | "scan_interval"

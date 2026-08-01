@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { api, type Profile } from "@/lib/api";
+import { api, type ClockFormat, type Profile, type Settings } from "@/lib/api";
 import { AccountPanel } from "./account-panel";
 import { EncodingPanel } from "./encoding-panel";
 import { LibraryPanel, RETENTION_OPTIONS } from "./library-panel";
@@ -21,6 +21,7 @@ export function SettingsContent() {
   const { data: settings } = useSuspenseQuery({
     queryKey: ["settings"],
     queryFn: api.settings,
+    refetchInterval: 60_000,
   });
   const { data: session } = useSuspenseQuery({
     queryKey: ["session"],
@@ -91,6 +92,26 @@ export function SettingsContent() {
     onError: (_err, _value, previous) => {
       setMissingRetention(previous ?? "0");
       toast.error("Failed to save retention period");
+    },
+  });
+
+  const clockFormatMutation = useMutation({
+    mutationFn: (value: ClockFormat) =>
+      api.updateSettings({ clock_format: value }),
+    onMutate: (value: ClockFormat) => {
+      const previous = qc.getQueryData<Settings>(["settings"]);
+      if (previous) {
+        qc.setQueryData<Settings>(["settings"], {
+          ...previous,
+          clock_format: value,
+        });
+      }
+      return previous;
+    },
+    onSuccess: (updated) => qc.setQueryData<Settings>(["settings"], updated),
+    onError: (_err, _value, previous) => {
+      if (previous) qc.setQueryData<Settings>(["settings"], previous);
+      toast.error("Failed to save clock format");
     },
   });
 
@@ -186,8 +207,10 @@ export function SettingsContent() {
         <div className="grid grid-cols-2 gap-5 mb-5 max-sm:grid-cols-1">
           <EncodingPanel
             timezone={timezone}
+            savedTimezone={settings.timezone}
             onTimezoneChange={setTimezone}
             serverTime={settings.server_time}
+            windowState={settings}
             windowStart={windowStart}
             windowEnd={windowEnd}
             onWindowStartChange={setWindowStart}
@@ -200,6 +223,7 @@ export function SettingsContent() {
             onScanIntervalHoursChange={setScanIntervalHours}
             scanAnchor={scanAnchor}
             onScanAnchorChange={setScanAnchor}
+            onClockFormatChange={(v) => clockFormatMutation.mutate(v)}
             onSave={() => settingsMutation.mutate()}
             isSaving={settingsMutation.isPending}
           />

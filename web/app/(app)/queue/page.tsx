@@ -21,6 +21,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useClockFormat } from "@/hooks/use-clock-format";
 import { useNow } from "@/hooks/use-now";
 import {
   api,
@@ -238,6 +239,7 @@ function LoadMoreSentinel({
 
 function QueueContent() {
   const now = useNow();
+  const clockFormat = useClockFormat();
   const qc = useQueryClient();
 
   const { data: runningData } = useSuspenseQuery({
@@ -371,7 +373,7 @@ function QueueContent() {
             0,
           )
       : 0;
-  const win = windowInfo(settingsData, now);
+  const win = windowInfo(settingsData, now, clockFormat);
 
   return (
     <>

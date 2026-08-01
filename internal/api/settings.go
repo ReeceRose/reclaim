@@ -10,7 +10,18 @@ import (
 )
 
 func (s *Server) handleGetSettings(c *echo.Context) error {
+	// The window is evaluated here, server-side, in the configured zone — the
+	// same call the worker gates on. A browser in another timezone (or a
+	// container whose TZ never resolved) would otherwise render a window state
+	// that disagrees with when jobs actually run.
+	now := time.Now().In(s.live.Location())
+	windowOpen, until := config.WindowState(now, s.live.EncodeWindowStart(), s.live.EncodeWindowEnd())
+
 	resp := map[string]any{
+		"timezone":            s.live.Timezone(),
+		"server_time":         now.Format("15:04"),
+		"window_open":         windowOpen,
+		"window_changes_at":   nil,
 		"encode_window_start": config.FormatHHMM(s.live.EncodeWindowStart()),
 		"encode_window_end":   config.FormatHHMM(s.live.EncodeWindowEnd()),
 		"scan_interval":       s.live.ScanInterval().String(),
@@ -21,6 +32,11 @@ func (s *Server) handleGetSettings(c *echo.Context) error {
 		"movies_path":         s.moviesPath,
 		"tv_path":             s.tvPath,
 		"tmdb_configured":     s.tmdbKey != "",
+	}
+	// An always-open window (start == end) never flips, so it has no next
+	// transition to count down to.
+	if until > 0 {
+		resp["window_changes_at"] = now.Add(until).Unix()
 	}
 	if s.store != nil {
 		missing, err := s.store.Media.MissingOverview(c.Request().Context())
@@ -42,6 +58,7 @@ func formatRetention(d time.Duration) string {
 }
 
 type settingsRequest struct {
+	Timezone          *string  `json:"timezone"`
 	EncodeWindowStart *string  `json:"encode_window_start"`
 	EncodeWindowEnd   *string  `json:"encode_window_end"`
 	ScanInterval      *string  `json:"scan_interval"`
@@ -58,7 +75,7 @@ func (s *Server) handlePutSettings(c *echo.Context) error {
 	}
 	if err := s.live.Update(
 		req.EncodeWindowStart, req.EncodeWindowEnd, req.ScanInterval, req.ScanAnchor,
-		req.ProbeConcurrency, req.OversizeThreshold, req.MissingRetention,
+		req.ProbeConcurrency, req.OversizeThreshold, req.MissingRetention, req.Timezone,
 	); err != nil {
 		return badRequest(c, err.Error())
 	}

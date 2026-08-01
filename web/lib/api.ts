@@ -304,6 +304,10 @@ export interface MissingFilesSummary {
 }
 
 export interface Settings {
+  timezone: string;
+  server_time: string;
+  window_open: boolean;
+  window_changes_at: number | null;
   encode_window_start: string;
   encode_window_end: string;
   scan_interval: string;
@@ -566,6 +570,7 @@ export const api = {
     s: Partial<
       Pick<
         Settings,
+        | "timezone"
         | "encode_window_start"
         | "encode_window_end"
         | "scan_interval"

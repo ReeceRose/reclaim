@@ -3,10 +3,15 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatClock12 } from "@/lib/format";
 import { LabelWithHelp } from "./help-tip";
 import { TimeSelect } from "./time-select";
+import { TimezoneSelect } from "./timezone-select";
 
 export function EncodingPanel({
+  timezone,
+  onTimezoneChange,
+  serverTime,
   windowStart,
   windowEnd,
   onWindowStartChange,
@@ -22,6 +27,9 @@ export function EncodingPanel({
   onSave,
   isSaving,
 }: {
+  timezone: string;
+  onTimezoneChange: (v: string) => void;
+  serverTime: string;
   windowStart: string;
   windowEnd: string;
   onWindowStartChange: (v: string) => void;
@@ -44,6 +52,25 @@ export function EncodingPanel({
     >
       <div className="text-xs uppercase tracking-widest text-muted-fg font-bold mb-4">
         Encoding
+      </div>
+      <div className="mb-4">
+        <LabelWithHelp
+          label="Timezone"
+          help={
+            <>
+              The clock the encode window and scan schedule are read in. The
+              server itself runs on <span className="font-mono">UTC</span>; this
+              setting is what turns that into your wall time, so it does not
+              depend on the container&apos;s{" "}
+              <span className="font-mono">TZ</span> being set correctly.
+            </>
+          }
+        />
+        <TimezoneSelect value={timezone} onChange={onTimezoneChange} />
+        <p className="text-xs text-muted-dim mt-1.5">
+          Server clock: {formatClock12(serverTime)} in{" "}
+          {timezone.replace(/_/g, " ")}.
+        </p>
       </div>
       <div className="mb-4">
         <Label className="text-xs font-semibold mb-1.5 block">

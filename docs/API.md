@@ -492,6 +492,10 @@ re-seeds from env.
 ### `GET /api/settings`
 ```json
 {
+  "timezone": "America/New_York",
+  "server_time": "23:24",
+  "window_open": false,
+  "window_changes_at": 1690000000,
   "encode_window_start": "00:00",
   "encode_window_end": "06:00",
   "scan_interval": "24h0m0s",
@@ -506,6 +510,14 @@ re-seeds from env.
 }
 ```
 
+`timezone` is the IANA zone the encode window and scan anchor are read in — the process clock
+and log stamps are always UTC, so this is what maps them to wall time. It is seeded from
+`TIMEZONE` (falling back to `TZ`, then `UTC`).
+`server_time` is the server's current `HH:MM` in that zone, and `window_open` /
+`window_changes_at` (Unix timestamp of the next open→closed or closed→open flip, `null` when
+`encode_window_start == encode_window_end` and the window is therefore always open) are the same
+values the worker gates on. Clients must render these rather than recomputing the window from the
+browser clock, which disagrees whenever the viewer is in a different zone than the server.
 `tmdb_configured` is `true` when a TMDB API key is present (set via `TMDB_API_KEY` env var).
 `oversize_threshold` (> 1) is the bitrate multiple at or above which a file is flagged oversized.
 `missing_retention` is how long a file that vanished from disk is kept as a `missing` row before
@@ -516,12 +528,13 @@ and both it and `size_bytes` are `0` when `count` is `0`.
 ### `PUT /api/settings`
 Any subset of the mutable fields. Validated as a set before applying.
 ```json
-{ "encode_window_start": "01:00", "encode_window_end": "07:00",
+{ "timezone": "America/New_York",
+  "encode_window_start": "01:00", "encode_window_end": "07:00",
   "scan_interval": "12h", "probe_concurrency": 8, "oversize_threshold": 2.5,
   "missing_retention": "720h" }
 ```
 - `200` → the full settings object (same shape as GET)
-- `400` → invalid value (e.g. `encode_window_start: "99:99"`, non-positive interval/concurrency, `oversize_threshold ≤ 1`, unparseable/negative `missing_retention`)
+- `400` → invalid value (e.g. `encode_window_start: "99:99"`, non-positive interval/concurrency, `oversize_threshold ≤ 1`, unparseable/negative `missing_retention`, a `timezone` that is not a loadable IANA name)
 
 ### `POST /api/settings/prune-missing`
 Immediately hard-deletes every `missing` media row and its job history, ignoring

@@ -85,11 +85,13 @@ type Scanner struct {
 	scanInterval time.Duration
 	scanAnchor   string
 
-	// scanIntervalFn / scanAnchorFn return the current scheduled-rescan interval
-	// and anchor time. They default to the boot values but can be backed by the
-	// live config so a settings change reschedules without a restart.
+	// scanIntervalFn / scanAnchorFn / locationFn return the current scheduled-
+	// rescan interval, anchor time, and the zone the anchor is read in. They
+	// default to the boot values but can be backed by the live config so a
+	// settings change reschedules without a restart.
 	scanIntervalFn func() time.Duration
 	scanAnchorFn   func() string
+	locationFn     func() *time.Location
 
 	// missingRetentionFn returns how long a soft-deleted row is kept before the
 	// post-scan cleanup hard-deletes it. Zero disables the cleanup.
@@ -153,18 +155,32 @@ type liveScanConfig interface {
 	ScanAnchor() string
 	ProbeConcurrency() int
 	MissingRetention() time.Duration
+	Location() *time.Location
 }
 
-// WithLiveConfig backs the scheduled-rescan interval, anchor, probe concurrency,
-// and missing-file retention with the live config so PUT /api/settings takes
-// effect without a restart.
+// WithLiveConfig backs the scheduled-rescan interval, anchor, timezone, probe
+// concurrency, and missing-file retention with the live config so PUT
+// /api/settings takes effect without a restart.
 func WithLiveConfig(live liveScanConfig) Option {
 	return func(s *Scanner) {
 		s.scanIntervalFn = live.ScanInterval
 		s.scanAnchorFn = live.ScanAnchor
+		s.locationFn = live.Location
 		s.probe.capFn = live.ProbeConcurrency
 		s.missingRetentionFn = live.MissingRetention
 	}
+}
+
+// nextScanDelay is the wait until the next scheduled scan, with the anchor read
+// in the configured zone rather than the (UTC) process clock.
+func (s *Scanner) nextScanDelay() time.Duration {
+	loc := time.UTC
+	if s.locationFn != nil {
+		if l := s.locationFn(); l != nil {
+			loc = l
+		}
+	}
+	return durationUntilNext(time.Now().In(loc), s.scanIntervalFn(), s.scanAnchorFn())
 }
 
 // durationUntilNext returns the wait time until the next clock-aligned scan.
@@ -220,6 +236,13 @@ func New(st *store.Store, cfg *config.Config, opts ...Option) (*Scanner, error) 
 	}
 	if s.missingRetentionFn == nil {
 		s.missingRetentionFn = func() time.Duration { return bootMissingRetention }
+	}
+	if s.locationFn == nil {
+		bootLocation := cfg.Location
+		if bootLocation == nil {
+			bootLocation = time.UTC
+		}
+		s.locationFn = func() *time.Location { return bootLocation }
 	}
 	return s, nil
 }
@@ -781,7 +804,7 @@ func (s *Scanner) Start(ctx context.Context) {
 
 	// A resettable timer (rather than a fixed ticker) lets each scheduled rescan
 	// pick up a live SCAN_INTERVAL change applied via PUT /api/settings.
-	timer := time.NewTimer(durationUntilNext(time.Now(), s.scanIntervalFn(), s.scanAnchorFn()))
+	timer := time.NewTimer(s.nextScanDelay())
 	defer timer.Stop()
 
 	// Initial scan on startup. Backfill series metadata first so the browse
@@ -824,7 +847,7 @@ func (s *Scanner) Start(ctx context.Context) {
 					}
 				}
 			}()
-			timer.Reset(durationUntilNext(time.Now(), s.scanIntervalFn(), s.scanAnchorFn()))
+			timer.Reset(s.nextScanDelay())
 		}
 	}
 }

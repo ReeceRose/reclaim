@@ -142,6 +142,12 @@ Before a vanished file is marked missing, the scanner tries two reconciliations.
 
 `MISSING_RETENTION` (default `0` = never) drives the post-scan cleanup in `scanner.pruneMissing`: rows past the cutoff are hard-deleted along with their `transcode_jobs` history, skipping files with a `queued`/`running`/`verifying` job. `POST /api/settings/prune-missing` does the same ignoring the cutoff. Both write a `missing_pruned` event. Stats need no adjustment — the contribution left when the row went missing.
 
+### Timezone model
+
+`main.go` sets `time.Local = time.UTC` before anything else, so every bare `time.Now()` — log stamps above all — is UTC regardless of the container's `TZ`. Wall-clock decisions are made explicitly against `live.Location()`: the worker's `withinWindow` and the scanner's `nextScanDelay` both do `time.Now().In(loc)`. The zone comes from `TIMEZONE` (validated at boot; an unloadable value is fatal), falling back to `TZ` (warn + UTC if unloadable), then UTC. Both are trimmed — a trailing space in a NAS template field otherwise makes `LoadLocation` fail and silently shifts the window by the whole UTC offset.
+
+`config.WindowState(now, start, end)` is the single implementation of "is the window open, and when does it next flip". The worker gates on it and `GET /api/settings` reports it (`window_open`, `window_changes_at`), so the UI badge renders server truth instead of recomputing from the browser clock.
+
 ### Live settings
 
 `config.Live` is a `sync.RWMutex`-guarded struct seeded from env at boot. The scanner and worker read it on each tick, so PUT `/api/settings` takes effect immediately. Settings overrides are in-memory only — a restart re-seeds from env (this includes `missing_retention`, so a retention set in the UI reverts to `MISSING_RETENTION` on restart).

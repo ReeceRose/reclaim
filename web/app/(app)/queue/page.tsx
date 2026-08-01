@@ -303,6 +303,7 @@ function QueueContent() {
   const { data: settingsData } = useSuspenseQuery({
     queryKey: ["settings"],
     queryFn: api.settings,
+    refetchInterval: 60_000,
   });
 
   const { data: profilesData } = useSuspenseQuery({
@@ -370,17 +371,13 @@ function QueueContent() {
             0,
           )
       : 0;
-  const win = windowInfo(
-    settingsData.encode_window_start,
-    settingsData.encode_window_end,
-    now,
-  );
+  const win = windowInfo(settingsData, now);
 
   return (
     <>
       <PageHeader
         title="Queue & history"
-        subtitle={`${running.length > 0 ? `${running.length} running · ` : ""}${queuedTotalCount} queued · window ${win.label}`}
+        subtitle={`${running.length > 0 ? `${running.length} running · ` : ""}${queuedTotalCount} queued · window ${win.label} ${settingsData.timezone}`}
       >
         <div className="sm:ml-auto">
           <Badge
@@ -417,6 +414,14 @@ function QueueContent() {
               <span className="text-muted-fg text-xs">
                 {encodeSettingsLabel(runningJob)}
               </span>
+              {runningJob.forced && (
+                <Badge
+                  className="text-xs rounded-3xl border-transparent text-brand bg-brand-soft shrink-0"
+                  title="Started with Run now, so it ignores the encode window"
+                >
+                  forced
+                </Badge>
+              )}
             </div>
             <Link
               href={BROWSE_ROUTES.FILE(runningJob.media_file_id)}

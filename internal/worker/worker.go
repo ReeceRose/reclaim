@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"reclaim/internal/config"
 	"reclaim/internal/ffmpeg"
 	"reclaim/internal/ffprobe"
 	"reclaim/internal/jobs"
@@ -49,6 +50,7 @@ type Broadcaster interface {
 type liveWindow interface {
 	EncodeWindowStart() time.Duration
 	EncodeWindowEnd() time.Duration
+	Location() *time.Location
 }
 
 // EncodeFunc runs one encode; defaults to ffmpeg.Encode, injectable for tests.
@@ -194,21 +196,16 @@ func (w *Worker) Cancel(jobID int64) bool {
 }
 
 // withinWindow reports whether the encode window is currently open. The window
-// is read live so a settings change applies immediately. A zero-length window
-// (start == end) is treated as always-open.
+// and its timezone are read live so a settings change applies immediately. The
+// clock is UTC process-wide, so the configured location is what turns it into
+// the operator's wall time.
 func (w *Worker) withinWindow() bool {
-	start := w.window.EncodeWindowStart()
-	end := w.window.EncodeWindowEnd()
-	if start == end {
-		return true
+	loc := w.window.Location()
+	if loc == nil {
+		loc = time.UTC
 	}
-	now := w.clock()
-	mins := time.Duration(now.Hour())*time.Hour + time.Duration(now.Minute())*time.Minute
-	if start < end {
-		return mins >= start && mins < end
-	}
-	// Overnight window wraps midnight.
-	return mins >= start || mins < end
+	open, _ := config.WindowState(w.clock().In(loc), w.window.EncodeWindowStart(), w.window.EncodeWindowEnd())
+	return open
 }
 
 // processJob runs one job end-to-end: encode → verify → replace. The job is

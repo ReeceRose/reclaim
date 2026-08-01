@@ -33,6 +33,12 @@ func (sb *scanBroadcaster) ScanCompleted(data map[string]any) {
 }
 
 func main() {
+	// Everything the process does with a bare time.Now() — log stamps above all
+	// — is UTC, regardless of the container's TZ. Wall-clock decisions (encode
+	// window, scan anchor) are made against cfg.Location instead, so a missing
+	// or malformed TZ can no longer move them by a whole UTC offset.
+	time.Local = time.UTC
+
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("config invalid", "err", err)
@@ -71,6 +77,16 @@ func main() {
 	slog.Info("startup checks passed")
 
 	live := config.NewLive(cfg)
+
+	now := time.Now().In(live.Location())
+	open, until := config.WindowState(now, live.EncodeWindowStart(), live.EncodeWindowEnd())
+	slog.Info("encode window",
+		"timezone", live.Timezone(),
+		"local_time", now.Format("15:04"),
+		"window", config.FormatHHMM(live.EncodeWindowStart())+"–"+config.FormatHHMM(live.EncodeWindowEnd()),
+		"open", open,
+		"changes_in", until.Round(time.Minute).String(),
+	)
 
 	metaFetcher := metadata.New(db, cfg.MoviesPath, cfg.TVPath, cfg.TMDBKey)
 

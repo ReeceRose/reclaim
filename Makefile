@@ -15,11 +15,18 @@ DEV_DATA    := $(DEV_DIR)/data
 $(DEV_DIR):
 	mkdir -p $(DEV_MOVIES) $(DEV_TV) $(DEV_DATA)
 
+# Host timezone for dev. The app's clock is UTC and TIMEZONE is what maps it to
+# wall time, so without this the encode window in dev runs on UTC and disagrees
+# with your own clock. macOS and Linux both symlink /etc/localtime into the
+# zoneinfo tree; anything unreadable falls back to UTC.
+DEV_TZ := $(shell readlink /etc/localtime 2>/dev/null | sed 's|.*zoneinfo/||' | grep . || echo UTC)
+
 ## dev: run Go backend + Next.js dev server concurrently
 dev: $(DEV_DIR)
 	MOVIES_PATH=$(abspath $(DEV_MOVIES)) \
 	TV_PATH=$(abspath $(DEV_TV)) \
 	DB_PATH=$(abspath $(DEV_DATA))/reclaim.db \
+	TIMEZONE=$${TIMEZONE:-$(DEV_TZ)} \
 	ENCODE_WINDOW_START=00:00 \
 	ENCODE_WINDOW_END=06:00 \
 	SCAN_INTERVAL=24h \

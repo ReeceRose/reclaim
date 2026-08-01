@@ -33,6 +33,7 @@ export function SettingsContent() {
   });
   const profiles = profilesData.items ?? [];
 
+  const [timezone, setTimezone] = useState(settings.timezone);
   const [windowStart, setWindowStart] = useState(settings.encode_window_start);
   const [windowEnd, setWindowEnd] = useState(settings.encode_window_end);
   const [scanIntervalHours, setScanIntervalHours] = useState(() => {
@@ -56,6 +57,7 @@ export function SettingsContent() {
   const settingsMutation = useMutation({
     mutationFn: () =>
       api.updateSettings({
+        timezone,
         encode_window_start: windowStart,
         encode_window_end: windowEnd,
         scan_interval: `${scanIntervalHours}h0m0s`,
@@ -183,6 +185,9 @@ export function SettingsContent() {
       <div className="px-4 py-6 w-full pb-14 sm:px-7 sm:py-7">
         <div className="grid grid-cols-2 gap-5 mb-5 max-sm:grid-cols-1">
           <EncodingPanel
+            timezone={timezone}
+            onTimezoneChange={setTimezone}
+            serverTime={settings.server_time}
             windowStart={windowStart}
             windowEnd={windowEnd}
             onWindowStartChange={setWindowStart}

@@ -45,6 +45,9 @@ export function useShellData() {
   const { data: settings } = useQuery({
     queryKey: ["settings"],
     queryFn: api.settings,
+    // The window state is decided server-side, so re-ask periodically rather
+    // than letting the badge sit on a transition the browser can't see.
+    refetchInterval: 60_000,
   });
   const { data: stats } = useQuery({
     queryKey: ["stats"],
@@ -98,9 +101,7 @@ export function useShellData() {
     "/queue": queueBadge,
   };
 
-  const encodeWindow = settings
-    ? windowInfo(settings.encode_window_start, settings.encode_window_end, now)
-    : null;
+  const encodeWindow = settings ? windowInfo(settings, now) : null;
   const username = session?.username ?? "";
   const initials = username.slice(0, 2).toUpperCase() || "?";
   const version = session

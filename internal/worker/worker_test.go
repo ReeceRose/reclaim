@@ -38,10 +38,19 @@ func (f *fakeHub) has(event string) bool {
 	return false
 }
 
-type fakeWindow struct{ start, end time.Duration }
+type fakeWindow struct {
+	start, end time.Duration
+	loc        *time.Location // nil means UTC
+}
 
 func (f fakeWindow) EncodeWindowStart() time.Duration { return f.start }
 func (f fakeWindow) EncodeWindowEnd() time.Duration   { return f.end }
+func (f fakeWindow) Location() *time.Location {
+	if f.loc == nil {
+		return time.UTC
+	}
+	return f.loc
+}
 
 func newStore(t *testing.T) *store.Store {
 	t.Helper()
@@ -98,26 +107,37 @@ func matchingInspect(*ffprobe.Inspection) InspectFunc {
 // --- window ----------------------------------------------------------------
 
 func TestWithinWindow(t *testing.T) {
+	// The clock is UTC, as it is in the running binary; the window is evaluated
+	// in the configured location.
 	at := func(h, m int) func() time.Time {
-		return func() time.Time { return time.Date(2026, 1, 1, h, m, 0, 0, time.Local) }
+		return func() time.Time { return time.Date(2026, 1, 1, h, m, 0, 0, time.UTC) }
+	}
+	newYork, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
 	}
 	cases := []struct {
 		name       string
 		start, end time.Duration
+		loc        *time.Location
 		clock      func() time.Time
 		wantOpen   bool
 	}{
-		{"inside daytime", 9 * time.Hour, 17 * time.Hour, at(12, 0), true},
-		{"before daytime", 9 * time.Hour, 17 * time.Hour, at(8, 0), false},
-		{"at end is closed", 9 * time.Hour, 17 * time.Hour, at(17, 0), false},
-		{"overnight inside late", 22 * time.Hour, 6 * time.Hour, at(23, 30), true},
-		{"overnight inside early", 22 * time.Hour, 6 * time.Hour, at(2, 0), true},
-		{"overnight outside", 22 * time.Hour, 6 * time.Hour, at(12, 0), false},
-		{"zero-length always open", 3 * time.Hour, 3 * time.Hour, at(12, 0), true},
+		{"inside daytime", 9 * time.Hour, 17 * time.Hour, nil, at(12, 0), true},
+		{"before daytime", 9 * time.Hour, 17 * time.Hour, nil, at(8, 0), false},
+		{"at end is closed", 9 * time.Hour, 17 * time.Hour, nil, at(17, 0), false},
+		{"overnight inside late", 22 * time.Hour, 6 * time.Hour, nil, at(23, 30), true},
+		{"overnight inside early", 22 * time.Hour, 6 * time.Hour, nil, at(2, 0), true},
+		{"overnight outside", 22 * time.Hour, 6 * time.Hour, nil, at(12, 0), false},
+		{"zero-length always open", 3 * time.Hour, 3 * time.Hour, nil, at(12, 0), true},
+		// 03:24 UTC is 22:24 the previous evening in New York — outside
+		// 00:00–06:00 there, but inside it if the zone is ignored.
+		{"zoned window is closed while UTC would be open", 0, 6 * time.Hour, newYork, at(3, 24), false},
+		{"zoned window is open at local midnight", 0, 6 * time.Hour, newYork, at(5, 0), true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			w := New(nil, fakeWindow{c.start, c.end}, &fakeHub{}, nil, WithClock(c.clock))
+			w := New(nil, fakeWindow{start: c.start, end: c.end, loc: c.loc}, &fakeHub{}, nil, WithClock(c.clock))
 			if got := w.withinWindow(); got != c.wantOpen {
 				t.Errorf("withinWindow = %v, want %v", got, c.wantOpen)
 			}
@@ -143,7 +163,7 @@ func TestProcessJobHappyPath(t *testing.T) {
 		return nil
 	}
 
-	w := New(st, fakeWindow{0, 0}, hub, []string{dir},
+	w := New(st, fakeWindow{start: 0, end: 0}, hub, []string{dir},
 		WithEncodeFunc(encode),
 		WithInspectFunc(matchingInspect(nil)),
 		WithProgressDBPeriod(0),
@@ -201,7 +221,7 @@ func TestProcessJobVerificationFailureKeepsTemp(t *testing.T) {
 		return &ffprobe.Inspection{DurationSeconds: 2, Width: 1920, Height: 1080, VideoStreams: 1, AudioStreams: 1}, nil
 	}
 
-	w := New(st, fakeWindow{0, 0}, hub, []string{dir},
+	w := New(st, fakeWindow{start: 0, end: 0}, hub, []string{dir},
 		WithEncodeFunc(encode), WithInspectFunc(inspect))
 	w.processJob(context.Background(), job)
 
@@ -237,7 +257,7 @@ func TestProcessJobEncodeFailureDeletesTemp(t *testing.T) {
 		return &ffmpeg.EncodeError{Path: opts.InputPath, Msg: "boom"}
 	}
 
-	w := New(st, fakeWindow{0, 0}, hub, []string{dir},
+	w := New(st, fakeWindow{start: 0, end: 0}, hub, []string{dir},
 		WithEncodeFunc(encode), WithInspectFunc(matchingInspect(nil)))
 	w.processJob(context.Background(), job)
 
@@ -269,7 +289,7 @@ func TestCancelRunningJob(t *testing.T) {
 		return ctx.Err()
 	}
 
-	w := New(st, fakeWindow{0, 0}, hub, []string{dir},
+	w := New(st, fakeWindow{start: 0, end: 0}, hub, []string{dir},
 		WithEncodeFunc(encode), WithInspectFunc(matchingInspect(nil)))
 
 	done := make(chan struct{})
@@ -328,7 +348,7 @@ func TestSweepOrphans(t *testing.T) {
 		}
 	}
 
-	w := New(st, fakeWindow{0, 0}, &fakeHub{}, []string{dir})
+	w := New(st, fakeWindow{start: 0, end: 0}, &fakeHub{}, []string{dir})
 	w.sweepOrphans(ctx)
 
 	if _, err := os.Stat(staleTmp); !os.IsNotExist(err) {
@@ -348,7 +368,7 @@ func TestSweepOrphans(t *testing.T) {
 
 func TestSweepOrphansEmptyLibraryFast(t *testing.T) {
 	st := newStore(t)
-	w := New(st, fakeWindow{0, 0}, &fakeHub{}, []string{t.TempDir()})
+	w := New(st, fakeWindow{start: 0, end: 0}, &fakeHub{}, []string{t.TempDir()})
 	start := time.Now()
 	w.sweepOrphans(context.Background())
 	if elapsed := time.Since(start); elapsed > time.Second {
@@ -362,7 +382,7 @@ func TestSweepOrphansSkipsActiveTemp(t *testing.T) {
 	activeTmp := filepath.Join(dir, "live.mkv"+tmpSuffix+".mkv")
 	mustWrite(t, activeTmp, "in-progress")
 
-	w := New(st, fakeWindow{0, 0}, &fakeHub{}, []string{dir})
+	w := New(st, fakeWindow{start: 0, end: 0}, &fakeHub{}, []string{dir})
 	w.active[42] = &activeJob{tempPath: activeTmp}
 
 	w.sweepOrphans(context.Background())
@@ -384,7 +404,7 @@ func TestReconcileInterrupted(t *testing.T) {
 		t.Fatalf("set output path: %v", err)
 	}
 
-	w := New(st, fakeWindow{0, 0}, &fakeHub{}, []string{dir})
+	w := New(st, fakeWindow{start: 0, end: 0}, &fakeHub{}, []string{dir})
 	w.reconcileInterrupted(ctx)
 
 	got, _ := st.Jobs.GetByID(ctx, job.ID)
@@ -422,7 +442,7 @@ func TestReconcilePostSwapCommit(t *testing.T) {
 
 	hub := &fakeHub{}
 	hevc := "hevc"
-	w := New(st, fakeWindow{0, 0}, hub, []string{dir}, WithProbeFunc(func(_ context.Context, _ string) (*ffprobe.Result, error) {
+	w := New(st, fakeWindow{start: 0, end: 0}, hub, []string{dir}, WithProbeFunc(func(_ context.Context, _ string) (*ffprobe.Result, error) {
 		return &ffprobe.Result{VideoCodec: &hevc, IsAlreadyHEVC: true}, nil
 	}))
 	w.reconcileInterrupted(ctx)
@@ -498,7 +518,7 @@ func TestEncodeVerifyReplaceReal(t *testing.T) {
 		t.Fatalf("update profile: %v", err)
 	}
 
-	w := New(st, fakeWindow{0, 0}, hub, []string{dir})
+	w := New(st, fakeWindow{start: 0, end: 0}, hub, []string{dir})
 	w.processJob(ctx, job)
 
 	got, _ := st.Jobs.GetByID(ctx, job.ID)

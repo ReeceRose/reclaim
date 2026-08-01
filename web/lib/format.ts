@@ -1,5 +1,7 @@
 // Human-readable formatting helpers shared across screens.
 
+import type { Settings } from "@/lib/api";
+
 const TB = 1024 ** 4;
 const GB = 1024 ** 3;
 const MB = 1024 ** 2;
@@ -79,33 +81,64 @@ export function resolutionBucketLabel(bucket: string): string {
   return `${h}p`;
 }
 
-/** windowInfo computes open/closed state and a countdown label for an encode window. */
+/**
+ * formatClock12 renders an "HH:MM" wall time on a 12-hour clock, matching the
+ * hour + AM/PM control the settings panel uses to set these times. Minutes are
+ * dropped when zero, so the common whole-hour window stays short.
+ */
+export function formatClock12(hhmm: string): string {
+  const [rawH, rawM] = hhmm.split(":");
+  const h24 = Number(rawH);
+  if (!Number.isFinite(h24)) return hhmm;
+  const m = Number(rawM);
+  const h12 = h24 % 12 || 12;
+  const suffix = h24 >= 12 ? "PM" : "AM";
+  return Number.isFinite(m) && m > 0
+    ? `${h12}:${String(m).padStart(2, "0")} ${suffix}`
+    : `${h12} ${suffix}`;
+}
+
+/**
+ * windowInfo labels the encode window from the state the server reported. Open/
+ * closed and the transition instant are decided server-side, in the configured
+ * timezone, because that is the clock the worker gates on — computing them from
+ * the browser clock makes the badge disagree with reality whenever the viewer
+ * is in another timezone than the server.
+ */
 export function windowInfo(
-  start: string,
-  end: string,
+  settings: Pick<
+    Settings,
+    | "encode_window_start"
+    | "encode_window_end"
+    | "window_open"
+    | "window_changes_at"
+  >,
   now: Date,
 ): { open: boolean; label: string; detail: string } {
-  const [sh, sm] = start.split(":").map(Number);
-  const [eh, em] = end.split(":").map(Number);
-  const nowMins = now.getHours() * 60 + now.getMinutes();
-  const startMins = sh * 60 + (sm ?? 0);
-  const endMins = eh * 60 + (em ?? 0);
+  const {
+    encode_window_start: start,
+    encode_window_end: end,
+    window_open: open,
+    window_changes_at: changesAt,
+  } = settings;
+  const label = `${formatClock12(start)} – ${formatClock12(end)}`;
 
-  const open =
-    startMins <= endMins
-      ? nowMins >= startMins && nowMins < endMins
-      : nowMins >= startMins || nowMins < endMins;
+  // A window with equal bounds is always open and never flips.
+  if (changesAt == null) {
+    return { open, label, detail: open ? "always open" : "closed" };
+  }
 
-  const targetMins = open ? endMins : startMins;
-  let diff = targetMins - nowMins;
-  if (diff < 0) diff += 1440;
+  const diff = Math.max(
+    0,
+    Math.round((changesAt * 1000 - now.getTime()) / 60000),
+  );
   const h = Math.floor(diff / 60);
   const m = diff % 60;
   const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
 
   return {
     open,
-    label: `${start}–${end}`,
+    label,
     detail: open ? `closes in ${timeStr}` : `opens in ${timeStr}`,
   };
 }

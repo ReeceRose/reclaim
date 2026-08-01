@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -12,7 +14,9 @@ type Config struct {
 	TVPath            string
 	DBPath            string
 	TMDBKey           string
-	EncodeWindowStart time.Duration // minutes since midnight
+	Timezone          string         // IANA name the window and anchor are evaluated in
+	Location          *time.Location // resolved Timezone
+	EncodeWindowStart time.Duration  // minutes since midnight
 	EncodeWindowEnd   time.Duration
 	ScanInterval      time.Duration
 	ScanAnchor        string
@@ -31,6 +35,7 @@ func Load() (*Config, error) {
 	c.TVPath = requireEnv("TV_PATH", &errs)
 	c.DBPath = requireEnv("DB_PATH", &errs)
 
+	c.Timezone, c.Location = parseTimezone(&errs)
 	c.EncodeWindowStart = parseHHMM("ENCODE_WINDOW_START", "00:00", &errs)
 	c.EncodeWindowEnd = parseHHMM("ENCODE_WINDOW_END", "06:00", &errs)
 
@@ -57,6 +62,35 @@ func requireEnv(key string, errs *[]error) string {
 		*errs = append(*errs, fmt.Errorf("%s must not be empty", key))
 	}
 	return v
+}
+
+// parseTimezone resolves the zone the encode window and scan anchor are
+// evaluated in, independent of the process clock (which stays UTC). TIMEZONE
+// wins; TZ is honoured as a fallback so a deployment that already relies on the
+// container timezone keeps its behaviour. Both are trimmed — a trailing space,
+// which a NAS template field picks up easily, otherwise makes LoadLocation fail
+// and silently shifts the window by the whole UTC offset. An unusable TIMEZONE
+// is fatal because the operator set it for this purpose; an unusable TZ only
+// warns, since the app does not own that variable.
+func parseTimezone(errs *[]error) (string, *time.Location) {
+	if v := strings.TrimSpace(os.Getenv("TIMEZONE")); v != "" {
+		loc, err := time.LoadLocation(v)
+		if err != nil {
+			*errs = append(*errs, fmt.Errorf("TIMEZONE must be an IANA name like \"America/New_York\" (got %q)", v))
+			return "UTC", time.UTC
+		}
+		return v, loc
+	}
+	if v := strings.TrimSpace(os.Getenv("TZ")); v != "" {
+		loc, err := time.LoadLocation(v)
+		if err != nil {
+			slog.Warn("TZ is not a loadable IANA timezone — falling back to UTC for the encode window; set TIMEZONE to be explicit",
+				"tz", v, "err", err)
+			return "UTC", time.UTC
+		}
+		return v, loc
+	}
+	return "UTC", time.UTC
 }
 
 func parseHHMMString(key, def string, errs *[]error) string {

@@ -40,7 +40,7 @@ On Unraid, map `/data` to `appdata`. The repo Compose file uses a named volume f
 
 | Variable              | Default           | Description                                                                             |
 | --------------------- | ----------------- | --------------------------------------------------------------------------------------- |
-| `TZ`                  | container default | **Set this.** Encode window times use local time                                        |
+| `TIMEZONE`            | `TZ`, else `UTC`  | **Set this.** IANA zone the encode window is read in (the clock itself stays UTC)       |
 | `PUID`                | `1000`            | Set to the uid that owns your media library so the container can write re-encoded files |
 | `PGID`                | `1000`            | Set to the gid that owns your media library                                             |
 | `ENCODE_WINDOW_START` | `00:00`           | Start of overnight encode window (`HH:MM`, 24h)                                         |
@@ -126,7 +126,7 @@ In `docker-compose.yml`, comment out `build: .` and set `image:` to the tag you 
 MOVIES_PATH=/movies
 TV_PATH=/tv
 DB_PATH=/data/reclaim.db
-TZ=America/New_York
+TIMEZONE=America/New_York
 ENCODE_WINDOW_START=00:00
 ENCODE_WINDOW_END=06:00
 SCAN_INTERVAL=24h
@@ -162,7 +162,7 @@ docker run -d \
   -e MOVIES_PATH=/movies \
   -e TV_PATH=/tv \
   -e DB_PATH=/data/reclaim.db \
-  -e TZ=America/New_York \
+  -e TIMEZONE=America/New_York \
   -e ENCODE_WINDOW_START=00:00 \
   -e ENCODE_WINDOW_END=06:00 \
   -e SCAN_INTERVAL=24h \

@@ -79,7 +79,7 @@ export DB_PATH=/var/lib/reclaim/reclaim.db
 | `PROBE_CONCURRENCY` | no | `4` | Max parallel ffprobe calls during a scan |
 | `SCAN_ANCHOR` | no | `00:00` | Daily scan anchor time (`HH:MM`, local) |
 | `MISSING_RETENTION` | no | `0` | How long files that vanished from disk are kept as `missing` rows before their records are deleted after a scan (Go duration string; `0` = keep forever) |
-| `TZ` | no | — | Container timezone — **set this in Docker** so the encode window matches your clock |
+| `TIMEZONE` | no | `TZ`, else `UTC` | IANA timezone the encode window and scan anchor are read in — **set this** so they fire on your clock. Logs and the process clock stay UTC. Also settable at runtime under Settings › Encoding |
 | `TMDB_API_KEY` | no | — | TMDB API key for movie/TV poster, backdrop, and metadata fetching |
 | `PUID` | no | `1000` | Docker only — uid that owns your media library (see `docker-entrypoint.sh`) |
 | `PGID` | no | `1000` | Docker only — gid that owns your media library |

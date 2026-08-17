@@ -160,6 +160,11 @@ export function useWS() {
             invalidateScanData(qc);
             qc.invalidateQueries({ queryKey: ["files"] });
             qc.invalidateQueries({ queryKey: ["settings"] });
+          } else if (newEvent.type === "candidates_added") {
+            // Files picked up by the watcher between scans land here with no
+            // scan event to refresh the lists they belong in.
+            invalidateScanData(qc);
+            qc.invalidateQueries({ queryKey: ["files"] });
           }
         }
       };

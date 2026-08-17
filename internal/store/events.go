@@ -8,13 +8,14 @@ import (
 
 // Event type constants.
 const (
-	EventJobCompleted   = "job_completed"
-	EventJobFailed      = "job_failed"
-	EventJobCancelled   = "job_cancelled"
-	EventScanCompleted  = "scan_completed"
-	EventOrphanRestored = "orphan_restored"
-	EventMissingPruned  = "missing_pruned"
-	EventFileSuperseded = "file_superseded"
+	EventJobCompleted    = "job_completed"
+	EventJobFailed       = "job_failed"
+	EventJobCancelled    = "job_cancelled"
+	EventScanCompleted   = "scan_completed"
+	EventOrphanRestored  = "orphan_restored"
+	EventMissingPruned   = "missing_pruned"
+	EventFileSuperseded  = "file_superseded"
+	EventCandidatesAdded = "candidates_added"
 )
 
 // Event severity constants.

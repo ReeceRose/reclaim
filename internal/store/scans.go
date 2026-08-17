@@ -32,6 +32,18 @@ func (s *Scans) Create(ctx context.Context, trigger string, startedAt int64) (in
 	return res.LastInsertId()
 }
 
+// CompletedBefore counts the scans that finished before the given run started.
+// Zero means the run is this instance's first ever scan — the one that indexes
+// an empty database — which the notifier uses to tell "your library baseline"
+// apart from "something new arrived".
+func (s *Scans) CompletedBefore(ctx context.Context, id int64) (int, error) {
+	var n int
+	err := s.r.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM scan_runs WHERE completed_at IS NOT NULL AND id < ?", id,
+	).Scan(&n)
+	return n, err
+}
+
 // Complete updates the run record with final counters. run.ID must be set.
 func (s *Scans) Complete(ctx context.Context, run *ScanRun) error {
 	_, err := s.w.ExecContext(ctx, `

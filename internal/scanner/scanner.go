@@ -33,6 +33,14 @@ type Broadcaster interface {
 	ScanFailed(errMsg string)
 }
 
+// CandidateNotifier receives the IDs of media rows the scanner inserted, so the
+// new arrivals among them can be announced as one batch. Satisfied by
+// notify.Notifier; an interface so the scanner stays testable without it.
+type CandidateNotifier interface {
+	Add(ids ...int64)
+	Discard(ids ...int64)
+}
+
 // Scan trigger values passed to Scan and recorded in scan_runs.
 const (
 	TriggerStartup   = "startup"
@@ -77,9 +85,10 @@ type ProbeFunc func(ctx context.Context, path string) (*ffprobe.Result, error)
 
 // Scanner indexes media files, maintains the DB, and drives the fsnotify watcher.
 type Scanner struct {
-	store *store.Store
-	roots map[string]string // mountPath -> libraryType
-	hub   Broadcaster       // nil-safe; set via SetBroadcaster
+	store    *store.Store
+	roots    map[string]string // mountPath -> libraryType
+	hub      Broadcaster       // nil-safe; set via SetBroadcaster
+	notifier CandidateNotifier // nil-safe; set via SetNotifier
 
 	probeFunc    ProbeFunc
 	scanInterval time.Duration
@@ -129,6 +138,10 @@ func WithProbeFunc(fn ProbeFunc) Option {
 // SetBroadcaster wires the hub after construction. Used in main.go where the
 // API server (and its hub) is created after the scanner.
 func (s *Scanner) SetBroadcaster(b Broadcaster) { s.hub = b }
+
+// SetNotifier wires the new-candidate notifier after construction. Call before
+// Start.
+func (s *Scanner) SetNotifier(n CandidateNotifier) { s.notifier = n }
 
 func (s *Scanner) tvRoot() string {
 	for path, lt := range s.roots {
@@ -374,12 +387,15 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 	seenPaths := make(map[string]struct{})
 
 	// newlyInserted maps fingerprint -> {id, path} for files inserted this scan;
-	// written by probe goroutines → protected by newMu.
+	// written by probe goroutines → protected by newMu. newIDs is the same set
+	// of inserts as a plain list, kept for the new-candidate notification (which
+	// needs every insert, including the ones with no fingerprint).
 	type newInsert struct {
 		id   int64
 		path string
 	}
 	newlyInserted := make(map[string]newInsert)
+	var newIDs []int64
 	var newMu sync.Mutex
 
 	type probeWork struct {
@@ -406,11 +422,12 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 				}
 				if isNew {
 					atomic.AddInt64(&added, 1)
+					newMu.Lock()
+					newIDs = append(newIDs, newID)
 					if fp != "" {
-						newMu.Lock()
 						newlyInserted[fp] = newInsert{id: newID, path: task.path}
-						newMu.Unlock()
 					}
+					newMu.Unlock()
 				} else {
 					atomic.AddInt64(&updated, 1)
 				}
@@ -479,8 +496,12 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 	// name, new bytes), or a genuine delete. All inserts are done by now, so
 	// both lookups can see rows added during this scan.
 	//
-	// Unlike the counters above, this one is written only here, sequentially.
+	// Unlike the counters above, these are written only here, sequentially.
+	// supersededNew holds the surviving rows of a supersede: those were inserted
+	// this scan, but they are the same content in a new container rather than an
+	// arrival, so they must not be announced as new candidates.
 	superseded := 0
+	supersededNew := make(map[int64]struct{})
 	for path, rec := range known {
 		if _, seen := seenPaths[path]; seen {
 			continue
@@ -521,6 +542,7 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 		// match. Counted as a move — the file is reconciled, not lost.
 		if newFile := s.supersede(ctx, path, rec.ID); newFile != nil {
 			superseded++
+			supersededNew[newFile.ID] = struct{}{}
 			atomic.AddInt64(&moved, 1)
 			emitProgress(false)
 			continue
@@ -597,6 +619,10 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 		}))
 	}
 
+	// Queued after the reconciliation loop so renames and container swaps have
+	// already been folded away — what's left is genuinely new.
+	s.queueCandidateNotice(ctx, runID, newIDs, supersededNew)
+
 	// Cleanup runs after the scan event so the two read in order in the activity
 	// feed, and only once the diff has had its chance to resurrect rows — a file
 	// that reappeared on this pass is active again and no longer a candidate.
@@ -612,6 +638,41 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 		"errors", run.Errors,
 	)
 	return run, nil
+}
+
+// queueCandidateNotice hands this scan's inserts to the notifier, which batches
+// them and announces the ones that are still re-encode candidates once the
+// library goes quiet.
+//
+// The first scan an instance ever completes is skipped: on a fresh install every
+// file in the library is an insert, and "your 12,000 files are candidates" is
+// the library baseline, not news. Every later scan — including the startup scan
+// after a restart — notifies normally.
+func (s *Scanner) queueCandidateNotice(ctx context.Context, runID int64, newIDs []int64, superseded map[int64]struct{}) {
+	if s.notifier == nil || len(newIDs) == 0 {
+		return
+	}
+
+	prior, err := s.store.Scans.CompletedBefore(ctx, runID)
+	if err != nil {
+		// Without the count there is no way to tell a baseline from an arrival,
+		// so stay quiet rather than risk announcing a whole library.
+		slog.Warn("scanner: count earlier scans for notification", "err", err)
+		return
+	}
+	if prior == 0 {
+		slog.Info("scanner: baseline scan — new-candidate notification skipped", "inserted", len(newIDs))
+		return
+	}
+
+	ids := make([]int64, 0, len(newIDs))
+	for _, id := range newIDs {
+		if _, skip := superseded[id]; skip {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	s.notifier.Add(ids...)
 }
 
 // probeAndStore probes path and inserts or updates the DB row.
@@ -927,7 +988,13 @@ func (s *Scanner) probeSingleFile(ctx context.Context, path string) {
 	}
 
 	lt := s.libraryTypeFor(path)
-	s.probeAndStore(ctx, path, lt, info.Size(), info.ModTime().Unix(), rec)
+	_, id, isNew := s.probeAndStore(ctx, path, lt, info.Size(), info.ModTime().Unix(), rec)
+
+	// A file the watcher sees for the first time is an arrival — a Sonarr/Radarr
+	// import, a manual copy. The notifier decides whether it is worth announcing.
+	if isNew && id > 0 && s.notifier != nil {
+		s.notifier.Add(id)
+	}
 }
 
 // checkVanishedFile handles a file that no longer exists on disk: if another
@@ -961,6 +1028,11 @@ func (s *Scanner) checkVanishedFile(ctx context.Context, path string) {
 
 	// Same name, different container — see the matching branch in Scan.
 	if newFile := s.supersede(ctx, path, f.ID); newFile != nil {
+		// The surviving row was inserted moments ago by the watcher's probe
+		// path, which queued it as an arrival. It isn't one.
+		if s.notifier != nil {
+			s.notifier.Discard(newFile.ID)
+		}
 		s.emitSupersededEvent(ctx,
 			fmt.Sprintf("Superseded %s, replaced by %s", filepath.Base(path), filepath.Base(newFile.Path)),
 			scanJsonMeta(map[string]any{

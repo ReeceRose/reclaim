@@ -463,7 +463,14 @@ Newest first. Keyset-paginated via `after_id`.
 
 **Query params:** `limit` (default 50, max 200), `after_id`, `severity` (`info`/`warn`/`error`),
 `type` (e.g. `job_completed`, `job_failed`, `job_cancelled`, `scan_completed`, `orphan_restored`,
-`missing_pruned`, `file_superseded`).
+`missing_pruned`, `file_superseded`, `candidates_added`).
+
+A `candidates_added` event covers **one title** — a single TV series (across however many of its
+seasons arrived) or a single movie. Its metadata carries `title`, `library_type`, `count`,
+`titles`, `size_bytes`, `predicted_savings_bytes`, and for TV a `seasons` array (`season`,
+`count`, `size_bytes`, `savings_bytes`). A bulk arrival past the per-flush cap instead produces
+one rollup event with `title` empty, `titles` set to the number covered, and up to 10 entries in
+`rollup`. See § Notifications.
 
 ```json
 {
@@ -487,8 +494,8 @@ Removes one event. `204 No Content` · `404` if not found.
 
 Runtime-mutable knobs, applied without a restart (the scanner/worker read them
 live). Mount paths are read-only (env-set). Overrides are in-memory: a restart
-re-seeds from env. The one exception is `clock_format`, which is persisted to
-the `settings` row and therefore survives restarts.
+re-seeds from env. The exceptions are `clock_format` and the `notify_*` fields,
+which are persisted to the `settings` row and therefore survive restarts.
 
 ### `GET /api/settings`
 ```json
@@ -508,7 +515,11 @@ the `settings` row and therefore survives restarts.
   "movies_path": "/media/movies",
   "tv_path": "/media/tv",
   "tmdb_configured": true,
-  "missing_files": { "count": 34, "oldest_since": 1690000000, "size_bytes": 187000000000 }
+  "missing_files": { "count": 34, "oldest_since": 1690000000, "size_bytes": 187000000000 },
+  "notify_enabled": true,
+  "notify_delay_seconds": 900,
+  "notify_webhook_url": "",
+  "notify_webhook_format": "json"
 }
 ```
 
@@ -529,6 +540,7 @@ to `"12h"`; unlike the other fields it is stored in the DB rather than in `confi
 the post-scan cleanup deletes it; `"0"` means never prune (the default, from `MISSING_RETENTION`).
 `missing_files` summarizes the rows currently soft-deleted — `oldest_since` is a Unix timestamp,
 and both it and `size_bytes` are `0` when `count` is `0`.
+The `notify_*` fields configure new-candidate notifications — see § Notifications.
 
 ### `PUT /api/settings`
 Any subset of the mutable fields. Validated as a set before applying.
@@ -536,13 +548,17 @@ Any subset of the mutable fields. Validated as a set before applying.
 { "timezone": "America/New_York", "clock_format": "24h",
   "encode_window_start": "01:00", "encode_window_end": "07:00",
   "scan_interval": "12h", "probe_concurrency": 8, "oversize_threshold": 2.5,
-  "missing_retention": "720h" }
+  "missing_retention": "720h",
+  "notify_enabled": true, "notify_delay_seconds": 900,
+  "notify_webhook_url": "https://discord.com/api/webhooks/…",
+  "notify_webhook_format": "discord" }
 ```
 - `200` → the full settings object (same shape as GET)
-- `400` → invalid value (e.g. `encode_window_start: "99:99"`, non-positive interval/concurrency, `oversize_threshold ≤ 1`, unparseable/negative `missing_retention`, a `timezone` that is not a loadable IANA name, a `clock_format` other than `"12h"`/`"24h"`)
+- `400` → invalid value (e.g. `encode_window_start: "99:99"`, non-positive interval/concurrency, `oversize_threshold ≤ 1`, unparseable/negative `missing_retention`, a `timezone` that is not a loadable IANA name, a `clock_format` other than `"12h"`/`"24h"`, a `notify_webhook_url` that is not absolute http(s), a `notify_webhook_format` outside the four known values, a `notify_delay_seconds` outside `0…86400`)
 
 Every value is validated before anything is applied, so a rejected field leaves `clock_format`
-unwritten even though it persists to a different place than the live knobs.
+unwritten even though it persists to a different place than the live knobs. A request carrying
+no `notify_*` field leaves the stored notification settings untouched.
 
 ### `POST /api/settings/prune-missing`
 Immediately hard-deletes every `missing` media row and its job history, ignoring
@@ -552,6 +568,58 @@ reported by `GET /api/settings`. Writes a `missing_pruned` event when anything w
 ```json
 { "deleted": 34, "missing_files": { "count": 0, "oldest_since": 0, "size_bytes": 0 } }
 ```
+
+---
+
+## Notifications
+
+Reclaim announces newly-indexed **re-encode candidates** — any newly-added active file that
+isn't already HEVC.
+
+**When** — arrivals are collected until nothing new has landed for `notify_delay_seconds`
+(default 900), or until 4× that if files keep trickling in. The quiet period is library-wide.
+Every batch is re-checked against the candidate query before it is sent, so renamed, queued, or
+already re-encoded rows drop out.
+
+**What** — the batch is then split **one notification per title**: a TV series is one message no
+matter how many episodes or seasons of it arrived, and every movie is its own. Two shows landing
+in the same window are two notifications, never one mixed message. Past `maxTitlesPerFlush` (10)
+titles in a single flush the whole thing collapses into one rollup instead, so a bulk import
+doesn't become 200 messages (or trip a chat service's rate limit). Consecutive webhook posts are
+spaced 500 ms apart for the same reason.
+
+Example messages:
+```
+Severance · Season 3 — 9 new re-encode candidates · 42.1 GB recoverable
+Severance — 30 new re-encode candidates across 3 seasons · 128.4 GB recoverable
+Dune (2021) — 1 new re-encode candidate · 3.1 GB recoverable
+47 new re-encode candidates across 23 titles · 120.0 GB recoverable   (rollup)
+```
+
+The first scan an instance ever completes is treated as the library baseline and never notifies;
+every later scan does, including the startup scan after a restart.
+
+Each batch writes a `candidates_added` event (pushed live as `event_created`) and, when
+`notify_webhook_url` is set, POSTs to that URL. Delivery failures are logged only — use the
+test endpoint below to verify a receiver.
+
+**`notify_webhook_format`** picks the body shape:
+
+| Value | Body |
+|---|---|
+| `json` (default) | `{ "event": "candidates_added", "message", "occurred_at", "title", "library_type", "count", "titles", "size_bytes", "predicted_savings_bytes", "seasons": [...] }` |
+| `discord` | `{ "embeds": [{ "title", "description", "fields", … }] }` |
+| `slack` | `{ "text": "…" }` |
+| `ntfy` | plain-text body; the message rides in the `Title` header |
+
+### `POST /api/settings/notify-test`
+Delivers a sample batch so a webhook can be verified. The body may override the stored URL and
+format, so a value can be tested before it is saved. Writes nothing to the events log.
+```json
+{ "notify_webhook_url": "https://ntfy.sh/my-topic", "notify_webhook_format": "ntfy" }
+```
+- `200` → `{ "sent": true }`
+- `400` → no webhook configured, an invalid URL, or the receiver rejected the delivery (the message quotes the receiver's status and response)
 
 ---
 

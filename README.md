@@ -122,6 +122,8 @@ For HTTPS reverse proxies, forward `X-Forwarded-Proto: https` so cookies get the
 
 6. **Recover** — on boot, temp files are cleaned up, interrupted backups are restored, and stuck jobs are marked failed. Job and scan events are logged to a persistent audit trail (bell icon in the UI).
 
+7. **Notify** — when new re-encode candidates arrive (anything indexed that isn't already HEVC), Reclaim tells you. Arrivals are collected until the library has been quiet for a configurable delay (default 15 minutes), then sent as **one notification per show or movie** — a whole season import pings you once, and a second show arriving at the same time gets its own message instead of being mixed in. Notifications land on the bell icon, and optionally on a webhook — Discord, Slack, ntfy, or generic JSON — configured under **Settings › Notifications**. The very first scan on a new install is treated as your library baseline and stays quiet.
+
 ---
 
 ## Throughput expectations

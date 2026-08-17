@@ -104,8 +104,8 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 2. `startup.CheckBinaries()` — asserts `ffprobe`/`ffmpeg` on PATH
 3. `store.Open()` — opens SQLite (WAL mode, two pools: 1 writer / 25 readers), runs goose migrations, bootstraps defaults
 4. `config.NewLive(cfg)` — creates the runtime-mutable settings holder (encode window, scan interval, probe concurrency); read by the scanner and worker on every use so PUT `/api/settings` takes effect without a restart
-5. `scanner.New()` + `sc.Start(ctx)` — runs startup scan, starts fsnotify watcher, schedules periodic rescans
-6. `api.New()` — wires routes on Echo v5; full route list: `/healthz`, `/api/{setup,login,logout,session}`, `/api/{stats,files,candidates}{,/grouped,/grouped/seasons,/grouped/episodes}`, `/api/files/:id`, `/api/scan{,/full}`, `/api/profiles{,/:id}`, `/api/jobs{,/:id/cancel,/:id/force,/:id}`, `/api/events{,/:id}`, `/api/settings{,/credentials,/prune-missing}`, `/api/metadata{,/search,/refresh}`, `/api/ws`
+5. `scanner.New()` + `sc.Start(ctx)` — runs startup scan, starts fsnotify watcher, schedules periodic rescans; `notify.New()` + `nt.Run(ctx)` batches the new candidates it finds
+6. `api.New()` — wires routes on Echo v5; full route list: `/healthz`, `/api/{setup,login,logout,session}`, `/api/{stats,files,candidates}{,/grouped,/grouped/seasons,/grouped/episodes}`, `/api/files/:id`, `/api/scan{,/full}`, `/api/profiles{,/:id}`, `/api/jobs{,/:id/cancel,/:id/force,/:id}`, `/api/events{,/:id}`, `/api/settings{,/credentials,/prune-missing,/notify-test}`, `/api/metadata{,/search,/refresh}`, `/api/ws`
 7. `worker.New()` + `wk.Run(ctx)` — encode loop; polls for queued jobs inside the window
 
 ### Package map
@@ -124,6 +124,7 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 | `internal/startup` | Pre-flight checks (binaries, mounts) |
 | `internal/tmdb` | Rate-limited TMDB API client (3 req/s) — movie/TV search, detail fetching, image URL helpers |
 | `internal/metadata` | Background fetcher: runs after each scan, populates `media_metadata` with staleness rules (14/30/90 days by status) |
+| `internal/notify` | Batches newly-added re-encode candidates into one `candidates_added` event + optional webhook |
 | `web/` | Next.js 16 static export embedded into the binary via `web/embed.go` |
 
 ### Store
@@ -154,6 +155,33 @@ Before a vanished file is marked missing, the scanner tries two reconciliations.
 
 `clock_format` is the exception: it has no env var and is persisted to the `settings` row (`clock_format` column, migration `00013`, `"12h"` default). It is display-only — the API always speaks 24-hour `HH:MM` — and instance-wide, since sessions are single-user. The frontend reads it off the cached settings query via `web/hooks/use-clock-format.ts`, so `formatClock`, `formatZoneClock`, and `windowInfo` all render on the chosen clock.
 
+### New-candidate notifications
+
+`internal/notify` announces newly-indexed re-encode candidates. The scanner feeds it row IDs —
+one `Add` per watcher insert, one batched `Add` per scan after the rename/supersede
+reconciliation has run — and the notifier holds them until the library goes quiet for
+`notify_delay_seconds` (default 900), or 4× that if files keep trickling in. Its `Run` loop
+ticks every 15s and re-reads the settings each tick, so a change applies without a restart.
+
+IDs are collected at insert time and only judged at send time, via `Media.CandidatesByID`: a
+rename's duplicate row has been deleted by `RecordMove`, a file may have been queued or
+re-encoded, and the candidate query is the same one the Candidates page uses. The surviving
+half of a supersede is explicitly `Discard`ed — same content, new container, not an arrival.
+The first scan an instance ever completes (`Scans.CompletedBefore(runID) == 0`) is the library
+baseline and never notifies; later scans, including the startup scan after a restart, do.
+
+A flush is then split **one notification per title** (`notify.Split`): a TV series is one
+`candidates_added` event however many episodes/seasons of it arrived, and every movie is its own
+— a message that mixes two shows is unactionable. Past `maxTitlesPerFlush` (10) titles the flush
+collapses into a single rollup (`notify.RollUp`) so a bulk import doesn't emit 200 events, and
+consecutive webhook posts are spaced `webhookSpacing` (500ms) apart to stay under chat-service
+rate limits. Each event is POSTed, if `notify_webhook_url` is set, in the shape
+`notify_webhook_format` names (`json`/`discord`/`slack`/`ntfy`). Runtime delivery failures are
+logged only — `POST /api/settings/notify-test` is where a webhook error is visible, so it
+returns the receiver's own message. The `notify_*` settings live in the `settings` row
+(migration `00014`), not `config.Live`: there is no env var behind a webhook URL typed into the
+UI, so it has to survive restarts.
+
 ### Authentication
 
 HMAC-signed session cookie (`reclaim_session`). First-run setup creates credentials in the DB. `DISABLE_AUTH=true` bypasses the middleware entirely. `RESET_AUTH=true` clears credentials on boot.
@@ -173,7 +201,7 @@ The frontend uses the **Next.js App Router** (`web/app/`). **Important:** `web/A
 
 ### WebSocket events
 
-The hub broadcasts: `job_started`, `job_progress` (with `percent`), `job_completed`, `job_failed`, `job_cancelled`, `jobs_queued`, `event_created`. The scanner broadcasts `scan_started`, `scan_completed`, and `scan_failed` during scans.
+The hub broadcasts: `job_started`, `job_progress` (with `percent`), `job_completed`, `job_failed`, `job_cancelled`, `jobs_queued`, `event_created`. The scanner broadcasts `scan_started`, `scan_completed`, and `scan_failed` during scans. The notifier broadcasts `event_created` for its `candidates_added` batches.
 
 ### Candidate pagination & filtering
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -41,6 +42,17 @@ type MetadataFetcher interface {
 	RefreshKey(ctx context.Context, key, mediaType string) error
 }
 
+// TestNotifier is the slice of the new-candidate notifier the API drives: a
+// one-off sample delivery so a webhook can be verified from the Settings page.
+// url and format override the stored settings when non-empty.
+type TestNotifier interface {
+	SendTest(ctx context.Context, url, format string) error
+}
+
+// errNotifierUnavailable is returned when a notification route is hit on a
+// server built without a notifier (API-only tests).
+var errNotifierUnavailable = errors.New("notifier not configured")
+
 // Deps are the wired dependencies the API needs. main.go builds this; tests
 // build a partial one with fakes.
 type Deps struct {
@@ -52,6 +64,7 @@ type Deps struct {
 	TMDBKey         string
 	DisableAuth     bool
 	MetadataFetcher MetadataFetcher
+	Notifier        TestNotifier
 
 	// StaticFS is the embedded frontend (Next.js static export). When nil, no
 	// static routes are mounted — handy for API-only tests.
@@ -76,6 +89,7 @@ type Server struct {
 	loginLimiter *rateLimiter
 	canceller    JobCanceller
 	metaFetcher  MetadataFetcher
+	notifier     TestNotifier
 }
 
 func New(d Deps) *Server {
@@ -91,6 +105,7 @@ func New(d Deps) *Server {
 		hub:          NewHub(),
 		loginLimiter: newRateLimiter(),
 		metaFetcher:  d.MetadataFetcher,
+		notifier:     d.Notifier,
 	}
 	if d.Store != nil {
 		s.auth = d.Store.Settings
@@ -189,6 +204,7 @@ func (s *Server) Handler() http.Handler {
 	api.PUT("/settings", s.handlePutSettings)
 	api.PUT("/settings/credentials", s.handleChangeCredentials)
 	api.POST("/settings/prune-missing", s.handlePruneMissing)
+	api.POST("/settings/notify-test", s.handleNotifyTest)
 
 	// Metadata (TMDB).
 	api.GET("/metadata", s.handleMetadataGet)

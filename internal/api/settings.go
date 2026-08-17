@@ -19,8 +19,10 @@ func (s *Server) handleGetSettings(c *echo.Context) error {
 	windowOpen, until := config.WindowState(now, s.live.EncodeWindowStart(), s.live.EncodeWindowEnd())
 
 	clockFormat := store.DefaultClockFormat
+	notifyCfg := store.DefaultNotifySettings()
 	if s.store != nil {
 		clockFormat = s.store.Settings.ClockFormat(c.Request().Context())
+		notifyCfg = s.store.Settings.Notify(c.Request().Context())
 	}
 
 	resp := map[string]any{
@@ -39,6 +41,11 @@ func (s *Server) handleGetSettings(c *echo.Context) error {
 		"movies_path":         s.moviesPath,
 		"tv_path":             s.tvPath,
 		"tmdb_configured":     s.tmdbKey != "",
+
+		"notify_enabled":        notifyCfg.Enabled,
+		"notify_delay_seconds":  notifyCfg.DelaySeconds,
+		"notify_webhook_url":    notifyCfg.WebhookURL,
+		"notify_webhook_format": notifyCfg.WebhookFormat,
 	}
 	// An always-open window (start == end) never flips, so it has no next
 	// transition to count down to.
@@ -74,6 +81,18 @@ type settingsRequest struct {
 	ProbeConcurrency  *int     `json:"probe_concurrency"`
 	OversizeThreshold *float64 `json:"oversize_threshold"`
 	MissingRetention  *string  `json:"missing_retention"`
+
+	NotifyEnabled       *bool   `json:"notify_enabled"`
+	NotifyDelaySeconds  *int    `json:"notify_delay_seconds"`
+	NotifyWebhookURL    *string `json:"notify_webhook_url"`
+	NotifyWebhookFormat *string `json:"notify_webhook_format"`
+}
+
+// notifyTouched reports whether the request carries any notification field, so
+// a PUT that only changes the encode window doesn't rewrite the notify columns.
+func (r *settingsRequest) notifyTouched() bool {
+	return r.NotifyEnabled != nil || r.NotifyDelaySeconds != nil ||
+		r.NotifyWebhookURL != nil || r.NotifyWebhookFormat != nil
 }
 
 func (s *Server) handlePutSettings(c *echo.Context) error {
@@ -97,7 +116,52 @@ func (s *Server) handlePutSettings(c *echo.Context) error {
 			return serverError(c, err)
 		}
 	}
+	// Notification settings are persisted too: a webhook URL typed into the UI
+	// has no env var behind it to be re-seeded from on restart.
+	if req.notifyTouched() && s.store != nil {
+		ctx := c.Request().Context()
+		cfg := s.store.Settings.Notify(ctx)
+		if req.NotifyEnabled != nil {
+			cfg.Enabled = *req.NotifyEnabled
+		}
+		if req.NotifyDelaySeconds != nil {
+			cfg.DelaySeconds = *req.NotifyDelaySeconds
+		}
+		if req.NotifyWebhookURL != nil {
+			cfg.WebhookURL = *req.NotifyWebhookURL
+		}
+		if req.NotifyWebhookFormat != nil {
+			cfg.WebhookFormat = *req.NotifyWebhookFormat
+		}
+		if err := s.store.Settings.SetNotify(ctx, cfg); err != nil {
+			return badRequest(c, err.Error())
+		}
+	}
 	return s.handleGetSettings(c)
+}
+
+type notifyTestRequest struct {
+	WebhookURL    string `json:"notify_webhook_url"`
+	WebhookFormat string `json:"notify_webhook_format"`
+}
+
+// handleNotifyTest delivers a sample notification so the operator can verify a
+// webhook from the Settings page. The URL and format may be supplied in the body
+// to test a value before saving it; a delivery failure comes back as a 400 with
+// the receiver's own message, since that is the only place a webhook error is
+// ever visible.
+func (s *Server) handleNotifyTest(c *echo.Context) error {
+	if s.notifier == nil {
+		return serverError(c, errNotifierUnavailable)
+	}
+	var req notifyTestRequest
+	if err := c.Bind(&req); err != nil {
+		return badRequest(c, "invalid JSON body")
+	}
+	if err := s.notifier.SendTest(c.Request().Context(), req.WebhookURL, req.WebhookFormat); err != nil {
+		return badRequest(c, err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]any{"sent": true})
 }
 
 // handlePruneMissing hard-deletes soft-deleted media rows on demand, ignoring

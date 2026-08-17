@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -905,5 +906,100 @@ func TestScanWorkerPoolBounded(t *testing.T) {
 
 	if got := atomic.LoadInt32(&peak); got > int32(capN) {
 		t.Fatalf("peak concurrent probes = %d, want <= %d", got, capN)
+	}
+}
+
+// fakeNotifier records what the scanner hands to the new-candidate notifier.
+type fakeNotifier struct {
+	mu       sync.Mutex
+	added    []int64
+	discards []int64
+}
+
+func (f *fakeNotifier) Add(ids ...int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.added = append(f.added, ids...)
+}
+
+func (f *fakeNotifier) Discard(ids ...int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.discards = append(f.discards, ids...)
+}
+
+func (f *fakeNotifier) snapshot() (added, discards []int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]int64(nil), f.added...), append([]int64(nil), f.discards...)
+}
+
+// The first scan an instance ever runs is the library baseline, not news: every
+// file in it is an insert, and announcing the whole library would be noise.
+func TestScanBaselineSkipsNotification(t *testing.T) {
+	root := t.TempDir()
+	sc, st := newTestScanner(t, root, root)
+	notifier := &fakeNotifier{}
+	sc.SetNotifier(notifier)
+	ctx := context.Background()
+
+	writeFile(t, filepath.Join(root, "Existing.mkv"))
+	if _, err := sc.Scan(ctx, TriggerStartup, false); err != nil {
+		t.Fatalf("baseline scan: %v", err)
+	}
+	if added, _ := notifier.snapshot(); len(added) != 0 {
+		t.Fatalf("baseline scan queued %d ids, want none", len(added))
+	}
+
+	// Everything after the baseline is a real arrival.
+	arrival := filepath.Join(root, "Arrival.mkv")
+	writeFile(t, arrival)
+	if _, err := sc.Scan(ctx, TriggerScheduled, false); err != nil {
+		t.Fatalf("second scan: %v", err)
+	}
+
+	added, _ := notifier.snapshot()
+	if len(added) != 1 {
+		t.Fatalf("queued %v, want exactly the new file", added)
+	}
+	f, err := st.Media.GetByPath(ctx, arrival)
+	if err != nil {
+		t.Fatalf("get arrival: %v", err)
+	}
+	if added[0] != f.ID {
+		t.Errorf("queued id %d, want %d (%s)", added[0], f.ID, arrival)
+	}
+}
+
+// A container swap inserts a row for the new path, but it is the same content
+// under a new extension — an arrival only in the bookkeeping sense.
+func TestScanSupersededRowNotAnnounced(t *testing.T) {
+	root := t.TempDir()
+	sc, _ := newTestScanner(t, root, root)
+	notifier := &fakeNotifier{}
+	sc.SetNotifier(notifier)
+	ctx := context.Background()
+
+	src := filepath.Join(root, "Show", "S01E01.mkv")
+	dst := filepath.Join(root, "Show", "S01E01.mp4")
+	writeFile(t, src)
+
+	if _, err := sc.Scan(ctx, TriggerStartup, false); err != nil {
+		t.Fatalf("baseline scan: %v", err)
+	}
+
+	if err := os.Remove(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("re-encoded, much smaller"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := sc.Scan(ctx, TriggerScheduled, false); err != nil {
+		t.Fatalf("scan after re-encode: %v", err)
+	}
+
+	if added, _ := notifier.snapshot(); len(added) != 0 {
+		t.Errorf("queued %v, want nothing for a container swap", added)
 	}
 }

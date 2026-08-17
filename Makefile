@@ -51,7 +51,7 @@ test:
 
 ## test-race: race detector on concurrency-sensitive packages (P9 CI gate)
 test-race:
-	go test -race ./internal/scanner/... ./internal/worker/... ./internal/jobs/... ./internal/api/... ./internal/store/...
+	go test -race ./internal/scanner/... ./internal/worker/... ./internal/jobs/... ./internal/api/... ./internal/store/... ./internal/notify/...
 
 ## lint: lint + type-check web/, landing/, and go vet the backend (parallel)
 lint:

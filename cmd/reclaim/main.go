@@ -15,6 +15,7 @@ import (
 	"reclaim/internal/api"
 	"reclaim/internal/config"
 	"reclaim/internal/metadata"
+	"reclaim/internal/notify"
 	"reclaim/internal/scanner"
 	"reclaim/internal/startup"
 	"reclaim/internal/store"
@@ -96,6 +97,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	notifier := notify.New(db)
+	sc.SetNotifier(notifier)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -109,18 +113,20 @@ func main() {
 		DisableAuth:     cfg.DisableAuth,
 		StaticFS:        web.FS(),
 		MetadataFetcher: metaFetcher,
+		Notifier:        notifier,
 	})
 
 	sc.SetBroadcaster(&scanBroadcaster{
 		Hub:     apiSrv.Hub(),
 		trigger: metaFetcher.Trigger,
 	})
+	notifier.SetBroadcaster(apiSrv.Hub())
 
 	wk := worker.New(db, live, apiSrv.Hub(), []string{cfg.MoviesPath, cfg.TVPath})
 	apiSrv.SetCanceller(wk)
 
 	var bg sync.WaitGroup
-	bg.Add(3)
+	bg.Add(4)
 	go func() {
 		defer bg.Done()
 		sc.Start(ctx)
@@ -132,6 +138,10 @@ func main() {
 	go func() {
 		defer bg.Done()
 		metaFetcher.Start(ctx)
+	}()
+	go func() {
+		defer bg.Done()
+		notifier.Run(ctx)
 	}()
 
 	handler := apiSrv.Handler()

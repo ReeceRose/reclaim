@@ -7,11 +7,18 @@ import {
 } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { api, type ClockFormat, type Profile, type Settings } from "@/lib/api";
+import {
+  api,
+  type ClockFormat,
+  type Profile,
+  type Settings,
+  type WebhookFormat,
+} from "@/lib/api";
 import { AccountPanel } from "./account-panel";
 import { EncodingPanel } from "./encoding-panel";
 import { LibraryPanel, RETENTION_OPTIONS } from "./library-panel";
 import { MetadataPanel } from "./metadata-panel";
+import { NotificationsPanel } from "./notifications-panel";
 import { DeleteProfileDialog, ProfileDialog } from "./profile-dialog";
 import { ProfilesPanel } from "./profiles-panel";
 
@@ -50,6 +57,15 @@ export function SettingsContent() {
   );
   const [missingRetention, setMissingRetention] = useState(
     settings.missing_retention ?? "0",
+  );
+
+  const [notifyEnabled, setNotifyEnabled] = useState(settings.notify_enabled);
+  const [notifyDelay, setNotifyDelay] = useState(settings.notify_delay_seconds);
+  const [notifyWebhookUrl, setNotifyWebhookUrl] = useState(
+    settings.notify_webhook_url,
+  );
+  const [notifyWebhookFormat, setNotifyWebhookFormat] = useState<WebhookFormat>(
+    settings.notify_webhook_format,
   );
 
   const [credPassword, setCredPassword] = useState("");
@@ -93,6 +109,35 @@ export function SettingsContent() {
       setMissingRetention(previous ?? "0");
       toast.error("Failed to save retention period");
     },
+  });
+
+  const notifyMutation = useMutation({
+    mutationFn: () =>
+      api.updateSettings({
+        notify_enabled: notifyEnabled,
+        notify_delay_seconds: notifyDelay,
+        notify_webhook_url: notifyWebhookUrl.trim(),
+        notify_webhook_format: notifyWebhookFormat,
+      }),
+    onSuccess: (updated) => {
+      toast.success("Notification settings saved");
+      qc.setQueryData<Settings>(["settings"], updated);
+    },
+    onError: (err: Error) =>
+      toast.error("Failed to save notification settings", {
+        description: err.message,
+      }),
+  });
+
+  const notifyTestMutation = useMutation({
+    mutationFn: () =>
+      api.testNotification({
+        notify_webhook_url: notifyWebhookUrl.trim(),
+        notify_webhook_format: notifyWebhookFormat,
+      }),
+    onSuccess: () => toast.success("Test notification sent"),
+    onError: (err: Error) =>
+      toast.error("Test notification failed", { description: err.message }),
   });
 
   const clockFormatMutation = useMutation({
@@ -255,6 +300,21 @@ export function SettingsContent() {
           missing={settings.missing_files}
           onPurge={() => pruneMutation.mutate()}
           isPurging={pruneMutation.isPending}
+        />
+
+        <NotificationsPanel
+          enabled={notifyEnabled}
+          onEnabledChange={setNotifyEnabled}
+          delaySeconds={notifyDelay}
+          onDelaySecondsChange={setNotifyDelay}
+          webhookUrl={notifyWebhookUrl}
+          onWebhookUrlChange={setNotifyWebhookUrl}
+          webhookFormat={notifyWebhookFormat}
+          onWebhookFormatChange={setNotifyWebhookFormat}
+          onSave={() => notifyMutation.mutate()}
+          isSaving={notifyMutation.isPending}
+          onTest={() => notifyTestMutation.mutate()}
+          isTesting={notifyTestMutation.isPending}
         />
 
         <MetadataPanel

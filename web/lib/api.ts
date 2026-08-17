@@ -323,7 +323,13 @@ export interface Settings {
   tv_path: string;
   tmdb_configured?: boolean;
   missing_files?: MissingFilesSummary;
+  notify_enabled: boolean;
+  notify_delay_seconds: number;
+  notify_webhook_url: string;
+  notify_webhook_format: WebhookFormat;
 }
+
+export type WebhookFormat = "json" | "discord" | "slack" | "ntfy";
 
 export interface PruneMissingResult {
   deleted: number;
@@ -403,7 +409,8 @@ export interface AppEvent {
     | "scan_completed"
     | "orphan_restored"
     | "missing_pruned"
-    | "file_superseded";
+    | "file_superseded"
+    | "candidates_added";
   severity: "info" | "warn" | "error";
   message: string;
   metadata: Record<string, unknown> | null;
@@ -583,11 +590,20 @@ export const api = {
         | "probe_concurrency"
         | "oversize_threshold"
         | "missing_retention"
+        | "notify_enabled"
+        | "notify_delay_seconds"
+        | "notify_webhook_url"
+        | "notify_webhook_format"
       >
     >,
   ) => request<Settings>("PUT", "/api/settings", s),
   pruneMissing: () =>
     request<PruneMissingResult>("POST", "/api/settings/prune-missing"),
+  testNotification: (webhook: {
+    notify_webhook_url: string;
+    notify_webhook_format: WebhookFormat;
+  }) =>
+    request<{ sent: boolean }>("POST", "/api/settings/notify-test", webhook),
 
   // Metadata
   getMetadata: (key: string) =>

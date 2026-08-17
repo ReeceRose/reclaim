@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -311,6 +312,67 @@ func (m *Media) AllCandidates(ctx context.Context, filter CandidateFilter) ([]Me
 		out = append(out, *f)
 	}
 	return out, rows.Err()
+}
+
+// candidateIDChunk bounds each IN (...) batch well below SQLite's default
+// 999-variable limit.
+const candidateIDChunk = 400
+
+// CandidatesByID returns the subset of ids that are still re-encode candidates,
+// ranked by predicted savings (desc). It exists for the notifier, which collects
+// row IDs as they are inserted and only learns at send time which of them
+// survived: a renamed file's duplicate row is deleted by RecordMove, and a row
+// queued or already re-encoded in the meantime is no longer worth announcing.
+// IDs that no longer match are simply absent from the result.
+func (m *Media) CandidatesByID(ctx context.Context, ids []int64) ([]MediaFile, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	var out []MediaFile
+	for start := 0; start < len(ids); start += candidateIDChunk {
+		end := min(start+candidateIDChunk, len(ids))
+		chunk := ids[start:end]
+
+		args := make([]any, 0, len(chunk))
+		for _, id := range chunk {
+			args = append(args, id)
+		}
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(chunk)), ",")
+
+		query := mediaQ + ` WHERE status = 'active'
+			AND is_already_hevc = 0
+			AND probe_error IS NULL
+			AND video_codec IS NOT NULL
+			AND ` + jobExclusionSQL + `
+			AND id IN (` + placeholders + `)`
+
+		rows, err := m.r.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			f, err := scanMedia(rows)
+			if err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out = append(out, *f)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].PredictedSavingsBytes != out[j].PredictedSavingsBytes {
+			return out[i].PredictedSavingsBytes > out[j].PredictedSavingsBytes
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
 }
 
 // resolutionHeightClause returns the predicate for a stats bucket key. Grouped

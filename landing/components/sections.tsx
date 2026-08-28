@@ -14,6 +14,7 @@ import {
   Zap,
 } from "lucide-react";
 import { CopyButton } from "@/components/copy-button";
+import { InsightsPreview } from "@/components/insights-preview";
 import { site } from "@/lib/site";
 
 const features = [
@@ -26,7 +27,7 @@ const features = [
   {
     icon: BarChart3,
     title: "Savings that adapt",
-    body: "Ranks candidates by predicted HEVC savings. Reclaim starts with conservative defaults, then recalculates estimates from your own completed encodes.",
+    body: "Ranks candidates by predicted HEVC savings, starting conservative and recalculating from your own completed encodes. An Insights view tracks the bytes actually reclaimed — and how close the predictions came.",
     accent: "var(--sky)",
   },
   {
@@ -99,6 +100,7 @@ const steps = [
 const does = [
   "Scans mounted library folders directly",
   "Ranks candidates by savings estimates that improve over time",
+  "Measures bytes actually reclaimed and scores its own estimates",
   "Library view for every file with clear eligibility reasons",
   "Fetches TMDB poster art for movies and TV shows (optional)",
   "Helps spot files better re-downloaded than re-encoded",
@@ -484,6 +486,37 @@ export function Throughput() {
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function Insights() {
+  return (
+    <section className="border-b border-line py-20 sm:py-24">
+      <div className="mx-auto max-w-6xl px-5 sm:px-7">
+        <div className="grid items-center gap-10 lg:grid-cols-2">
+          <div>
+            <p className="text-2xs font-bold uppercase tracking-[0.13em] text-brand">
+              Measured results
+            </p>
+            <h2 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">
+              An estimate is a promise. This is the receipt.
+            </h2>
+            <p className="mt-4 text-base leading-relaxed text-muted-fg">
+              Every completed encode is recorded permanently — bytes in, bytes
+              out, how long it took, and what the source codec was before the
+              file was replaced.
+            </p>
+            <p className="mt-3 text-base leading-relaxed text-muted-fg">
+              So Reclaim can show what it actually saved rather than what it
+              hoped to, and grade its own predictions against the outcome. That
+              history survives even if the original file is later deleted.
+            </p>
+          </div>
+
+          <InsightsPreview />
         </div>
       </div>
     </section>

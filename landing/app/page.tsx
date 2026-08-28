@@ -6,6 +6,7 @@ import {
   Features,
   Footer,
   HowItWorks,
+  Insights,
   Install,
   Safety,
   Throughput,
@@ -23,6 +24,7 @@ export default function Page() {
         <Comparison />
         <Install />
         <Throughput />
+        <Insights />
         <CTA />
       </main>
       <Footer />

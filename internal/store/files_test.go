@@ -177,7 +177,7 @@ func TestTVSeasonsAcrossShows_Ranking(t *testing.T) {
 	insert("/tv/The Wire/S01E01.mkv", "The Wire", 1, 3000, 2000, false)
 	insert("/tv/The Wire/S01E02.mkv", "The Wire", 1, 3000, 2000, false)
 
-	bySize, err := s.Media.TVSeasonsAcrossShows(ctx, "", SeasonSortSizeDesc, 50, 0)
+	bySize, err := s.Media.TVSeasonsAcrossShows(ctx, TVGroupFilter{}, SeasonSortSizeDesc, 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func TestTVSeasonsAcrossShows_Ranking(t *testing.T) {
 		t.Fatalf("size_desc first = %+v, want Breaking Bad @ 10000", bySize[0])
 	}
 
-	bySavings, err := s.Media.TVSeasonsAcrossShows(ctx, "", SeasonSortSavingsDesc, 50, 0)
+	bySavings, err := s.Media.TVSeasonsAcrossShows(ctx, TVGroupFilter{}, SeasonSortSavingsDesc, 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestTVSeasonsAcrossShows_Ranking(t *testing.T) {
 		t.Fatalf("savings_desc second = %+v, want Breaking Bad @ 0", bySavings[1])
 	}
 
-	filtered, err := s.Media.TVSeasonsAcrossShows(ctx, "wire", SeasonSortSizeDesc, 50, 0)
+	filtered, err := s.Media.TVSeasonsAcrossShows(ctx, TVGroupFilter{Search: "wire"}, SeasonSortSizeDesc, 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,12 +208,116 @@ func TestTVSeasonsAcrossShows_Ranking(t *testing.T) {
 		t.Fatalf("search 'wire' = %+v, want single The Wire row", filtered)
 	}
 
-	total, err := s.Media.CountTVSeasonsAcrossShows(ctx, "")
+	total, err := s.Media.CountTVSeasonsAcrossShows(ctx, TVGroupFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if total != 2 {
 		t.Fatalf("count = %d, want 2", total)
+	}
+}
+
+// TestTVGroupProgressFilter verifies the grouped browse views can be narrowed to
+// how far through re-encoding each series/season is, and that page and count
+// queries agree.
+func TestTVGroupProgressFilter(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	codec := "h264"
+	insert := func(path, title string, season int, hevc bool, status string) int64 {
+		t.Helper()
+		id, err := s.Media.Insert(ctx, &MediaFile{
+			Path:                  path,
+			LibraryType:           "tv",
+			SizeBytes:             1000,
+			Status:                status,
+			VideoCodec:            &codec,
+			IsAlreadyHEVC:         hevc,
+			PredictedSavingsBytes: 400,
+			SeriesTitle:           &title,
+			SeasonNumber:          &season,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+
+	// Done: every episode already HEVC.
+	insert("/tv/Done/S01E01.mkv", "Done", 1, true, "active")
+	insert("/tv/Done/S01E02.mkv", "Done", 1, true, "active")
+	// Half: one converted, one still eligible.
+	insert("/tv/Half/S01E01.mkv", "Half", 1, true, "active")
+	insert("/tv/Half/S01E02.mkv", "Half", 1, false, "active")
+	// Raw: nothing converted.
+	insert("/tv/Raw/S01E01.mkv", "Raw", 1, false, "active")
+	insert("/tv/Raw/S01E02.mkv", "Raw", 1, false, "active")
+	// Gone: converted on disk but one episode has vanished.
+	insert("/tv/Gone/S01E01.mkv", "Gone", 1, true, "active")
+	insert("/tv/Gone/S01E02.mkv", "Gone", 1, false, "missing")
+
+	titles := func(p TVProgress) []string {
+		t.Helper()
+		rows, err := s.Media.TVSeriesGroups(ctx, TVGroupFilter{Progress: p}, 50, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := make([]string, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, r.Title)
+		}
+		count, err := s.Media.CountTVSeries(ctx, TVGroupFilter{Progress: p})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if int(count) != len(out) {
+			t.Fatalf("progress %q: count = %d, page = %d", p, count, len(out))
+		}
+		return out
+	}
+
+	cases := []struct {
+		progress TVProgress
+		want     []string
+	}{
+		{TVProgressConverted, []string{"Done"}},
+		{TVProgressPartial, []string{"Half"}},
+		{TVProgressUnconverted, []string{"Raw"}},
+		{TVProgressMissing, []string{"Gone"}},
+		{"", []string{"Done", "Gone", "Half", "Raw"}},
+	}
+	for _, tc := range cases {
+		got := titles(tc.progress)
+		if len(got) != len(tc.want) {
+			t.Fatalf("progress %q = %v, want %v", tc.progress, got, tc.want)
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Fatalf("progress %q = %v, want %v", tc.progress, got, tc.want)
+			}
+		}
+	}
+
+	// A season with one converted and one eligible episode is "partial", and the
+	// same filter applies to the cross-show season ranking.
+	seasons, err := s.Media.TVSeasonsAcrossShows(ctx, TVGroupFilter{Progress: TVProgressPartial}, SeasonSortSizeDesc, 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seasons) != 1 || seasons[0].SeriesTitle != "Half" {
+		t.Fatalf("partial seasons = %+v, want single Half row", seasons)
+	}
+	seasonTotal, err := s.Media.CountTVSeasonsAcrossShows(ctx, TVGroupFilter{Progress: TVProgressPartial})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seasonTotal != 1 {
+		t.Fatalf("partial season count = %d, want 1", seasonTotal)
+	}
+
+	if _, err := s.Media.TVSeriesGroups(ctx, TVGroupFilter{Progress: "bogus"}, 50, 0); err == nil {
+		t.Fatal("want error for unknown progress value")
 	}
 }
 

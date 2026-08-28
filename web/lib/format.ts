@@ -210,3 +210,26 @@ export function formatDuration(seconds: number | null | undefined): string {
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
 }
+
+/** formatDayLabel renders a YYYY-MM-DD ledger day as a short axis label. */
+export function formatDayLabel(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  if (!y || !m || !d) return day;
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** formatDayFull renders a YYYY-MM-DD ledger day with its year. */
+export function formatDayFull(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  if (!y || !m || !d) return day;
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -57,6 +58,21 @@ func (s *Server) parseFileFilter(c *echo.Context) store.FileFilter {
 		f.OversizedMinRatio = s.live.OversizeThreshold()
 	}
 	return f
+}
+
+// parseTVGroupFilter reads the grouped-view `progress` query param, rejecting
+// anything the store would not recognise so a stale bookmark fails loudly
+// instead of silently returning the unfiltered library.
+func parseTVGroupFilter(c *echo.Context, search string) (store.TVGroupFilter, error) {
+	f := store.TVGroupFilter{Search: search}
+	switch p := store.TVProgress(c.QueryParam("progress")); p {
+	case "", store.TVProgressConverted, store.TVProgressPartial,
+		store.TVProgressUnconverted, store.TVProgressMissing:
+		f.Progress = p
+	default:
+		return f, fmt.Errorf("progress must be one of converted, partial, unconverted, missing")
+	}
+	return f, nil
 }
 
 func (s *Server) handleFiles(c *echo.Context) error {
@@ -131,12 +147,17 @@ func (s *Server) handleGroupedFiles(c *echo.Context) error {
 		return err
 	}
 
+	group, err := parseTVGroupFilter(c, filter.Search)
+	if err != nil {
+		return badRequest(c, err.Error())
+	}
+
 	ctx := c.Request().Context()
-	rows, err := s.store.Media.TVSeriesGroups(ctx, filter.Search, limit, offset)
+	rows, err := s.store.Media.TVSeriesGroups(ctx, group, limit, offset)
 	if err != nil {
 		return serverError(c, err)
 	}
-	total, err := s.store.Media.CountTVSeries(ctx, filter.Search)
+	total, err := s.store.Media.CountTVSeries(ctx, group)
 	if err != nil {
 		return serverError(c, err)
 	}
@@ -227,13 +248,17 @@ func (s *Server) handleSeasonsRanked(c *echo.Context) error {
 		return err
 	}
 
-	search := strings.TrimSpace(c.QueryParam("search"))
+	group, err := parseTVGroupFilter(c, strings.TrimSpace(c.QueryParam("search")))
+	if err != nil {
+		return badRequest(c, err.Error())
+	}
+
 	ctx := c.Request().Context()
-	rows, err := s.store.Media.TVSeasonsAcrossShows(ctx, search, sort, limit, offset)
+	rows, err := s.store.Media.TVSeasonsAcrossShows(ctx, group, sort, limit, offset)
 	if err != nil {
 		return serverError(c, err)
 	}
-	total, err := s.store.Media.CountTVSeasonsAcrossShows(ctx, search)
+	total, err := s.store.Media.CountTVSeasonsAcrossShows(ctx, group)
 	if err != nil {
 		return serverError(c, err)
 	}

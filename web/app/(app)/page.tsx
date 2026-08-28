@@ -291,7 +291,7 @@ function DashboardContent() {
           </div>
         </div>
 
-        <div className="mt-6 pt-5 border-t border-line-soft grid grid-cols-3 gap-4 max-sm:grid-cols-1">
+        <div className="mt-6 pt-5 border-t border-line-soft grid grid-cols-4 gap-4 max-sm:grid-cols-2">
           <div>
             <div className="text-xs text-muted-fg uppercase tracking-wider font-bold">
               Total files
@@ -320,6 +320,23 @@ function DashboardContent() {
             </div>
             <div className="text-xs text-muted-dim mt-0.5">
               {formatPct(hevcCount, stats.total_files)} of library
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-fg uppercase tracking-wider font-bold">
+              Reclaimed
+            </div>
+            <div className="text-stat font-bold tracking-tight mt-1 text-green tnum">
+              {formatBytes(stats.savings.bytes_saved)}
+            </div>
+            <div className="text-xs text-muted-dim mt-0.5">
+              {stats.savings.files_encoded > 0 ? (
+                <Link href="/insights" className="hover:text-brand">
+                  {formatInt(stats.savings.files_encoded)} encodes done →
+                </Link>
+              ) : (
+                "no encodes yet"
+              )}
             </div>
           </div>
         </div>
@@ -405,12 +422,20 @@ function DashboardContent() {
         </div>
       </div>
 
-      <Link
-        href="/candidates"
-        className="mt-4 text-sm text-brand hover:underline inline-block"
-      >
-        Review candidates →
-      </Link>
+      <div className="mt-4 flex gap-5 flex-wrap">
+        <Link
+          href="/candidates"
+          className="text-sm text-brand hover:underline inline-block"
+        >
+          Review candidates →
+        </Link>
+        <Link
+          href="/insights"
+          className="text-sm text-brand hover:underline inline-block"
+        >
+          See what you've reclaimed →
+        </Link>
+      </div>
     </div>
   );
 }

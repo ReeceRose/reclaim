@@ -2,6 +2,8 @@
 
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { FilterSelect } from "@/components/filter-select";
+import { STATE_OPTIONS } from "@/components/media/candidate-state";
 import { MovieCard } from "@/components/media/movie-card";
 import { MovieRow } from "@/components/media/movie-row";
 import { SeasonRankCard } from "@/components/media/season-rank-card";
@@ -19,7 +21,13 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { parseQueryEnum, useQueryParam } from "@/hooks/use-query-params";
-import { api, type LibrarySeriesGroup, type MediaFile } from "@/lib/api";
+import {
+  api,
+  type CandidateState,
+  type LibrarySeriesGroup,
+  type MediaFile,
+  type TVProgress,
+} from "@/lib/api";
 import { formatInt } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
@@ -28,6 +36,7 @@ import {
   LIBRARY_TYPE,
   MOVIE_SORT,
   PAGE_SIZE,
+  PROGRESS_OPTIONS,
   QUERY_PARAMS,
   SEASON_SORT,
   TV_SORT,
@@ -120,10 +129,12 @@ function ListSkeleton() {
 function TVContent({
   search,
   sort,
+  progress,
   view,
 }: {
   search: string;
   sort: TVSortValue;
+  progress: TVProgress | "";
   view: string;
 }) {
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -138,11 +149,12 @@ function TVContent({
     error,
     refetch,
   } = useInfiniteQuery({
-    queryKey: ["browse", LIBRARY_TYPE.TV, search],
+    queryKey: ["browse", LIBRARY_TYPE.TV, search, progress],
     queryFn: ({ pageParam }: { pageParam: number }) =>
       api.groupedFiles({
         library_type: LIBRARY_TYPE.TV,
         search: search || undefined,
+        progress: progress || undefined,
         limit: PAGE_SIZE,
         offset: pageParam,
       }),
@@ -212,8 +224,8 @@ function TVContent({
         )
       ) : shows.length === 0 ? (
         <div className="text-center py-24 text-muted-dim text-sm">
-          {search
-            ? "No shows match your search."
+          {search || progress
+            ? "No shows match your filters."
             : "No TV shows found. Run a scan to index your library."}
         </div>
       ) : isList ? (
@@ -265,10 +277,12 @@ function TVContent({
 function MoviesContent({
   search,
   sort,
+  state,
   view,
 }: {
   search: string;
   sort: MovieSortValue;
+  state: CandidateState | "";
   view: string;
 }) {
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -283,7 +297,7 @@ function MoviesContent({
     error,
     refetch,
   } = useInfiniteQuery({
-    queryKey: ["browse", LIBRARY_TYPE.MOVIES, search, sort],
+    queryKey: ["browse", LIBRARY_TYPE.MOVIES, search, sort, state],
     queryFn: ({
       pageParam,
     }: {
@@ -293,6 +307,7 @@ function MoviesContent({
         library_type: LIBRARY_TYPE.MOVIES,
         sort,
         search: search || undefined,
+        candidate_state: state || undefined,
         limit: PAGE_SIZE,
         ...pageParam,
       }),
@@ -358,8 +373,8 @@ function MoviesContent({
         )
       ) : movies.length === 0 ? (
         <div className="text-center py-24 text-muted-dim text-sm">
-          {search
-            ? "No movies match your search."
+          {search || state
+            ? "No movies match your filters."
             : "No movies found. Run a scan to index your library."}
         </div>
       ) : isList ? (
@@ -403,10 +418,12 @@ function MoviesContent({
 function SeasonsContent({
   search,
   sort,
+  progress,
   view,
 }: {
   search: string;
   sort: SeasonSortValue;
+  progress: TVProgress | "";
   view: string;
 }) {
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -421,11 +438,12 @@ function SeasonsContent({
     error,
     refetch,
   } = useInfiniteQuery({
-    queryKey: ["browse", BROWSE_TAB.SEASONS, search, sort],
+    queryKey: ["browse", BROWSE_TAB.SEASONS, search, sort, progress],
     queryFn: ({ pageParam }: { pageParam: number }) =>
       api.seasonsRanked({
         sort,
         search: search || undefined,
+        progress: progress || undefined,
         limit: PAGE_SIZE,
         offset: pageParam,
       }),
@@ -491,8 +509,8 @@ function SeasonsContent({
         )
       ) : seasons.length === 0 ? (
         <div className="text-center py-24 text-muted-dim text-sm">
-          {search
-            ? "No seasons match your search."
+          {search || progress
+            ? "No seasons match your filters."
             : "No TV seasons found. Run a scan to index your library."}
         </div>
       ) : isList ? (
@@ -582,6 +600,22 @@ function BrowsePage() {
     SEASON_SORT.SIZE,
   );
 
+  const [progressRaw, setProgress] = useQueryParam(QUERY_PARAMS.PROGRESS);
+  const progress = parseQueryEnum<TVProgress | "">(
+    progressRaw,
+    PROGRESS_OPTIONS.map((o) => o.value),
+    "",
+  );
+
+  const [movieStateRaw, setMovieState] = useQueryParam(
+    QUERY_PARAMS.MOVIE_STATE,
+  );
+  const movieState = parseQueryEnum<CandidateState | "">(
+    movieStateRaw,
+    STATE_OPTIONS.map((o) => o.value),
+    "",
+  );
+
   const [viewRaw, setView] = useQueryParam(QUERY_PARAMS.VIEW, VIEW_MODE.GRID);
   const view = parseQueryEnum(
     viewRaw,
@@ -599,6 +633,7 @@ function BrowsePage() {
 
   const isTV = tab === BROWSE_TAB.TV;
   const isSeasons = tab === BROWSE_TAB.SEASONS;
+  const isMovies = tab === BROWSE_TAB.MOVIES;
   const isList = view === VIEW_MODE.LIST;
   const sortOptions = isSeasons
     ? SEASON_SORT_OPTIONS
@@ -654,7 +689,7 @@ function BrowsePage() {
               }}
               className={cn(
                 "rounded-lg text-xs font-semibold py-2 px-3 transition-colors cursor-pointer",
-                tab === BROWSE_TAB.MOVIES
+                isMovies
                   ? "bg-brand-soft text-brand"
                   : "text-muted-fg hover:text-text",
               )}
@@ -692,6 +727,24 @@ function BrowsePage() {
               ))}
             </SelectContent>
           </Select>
+
+          {isMovies ? (
+            <FilterSelect
+              label="State"
+              value={movieState}
+              options={STATE_OPTIONS}
+              onChange={setMovieState}
+              className="min-w-40"
+            />
+          ) : (
+            <FilterSelect
+              label="Status"
+              value={progress}
+              options={[...PROGRESS_OPTIONS]}
+              onChange={setProgress}
+              className="min-w-44"
+            />
+          )}
 
           <div className="flex-1 relative max-w-xs">
             <svg
@@ -789,14 +842,21 @@ function BrowsePage() {
           <SeasonsContent
             search={debouncedSearch}
             sort={seasonSort}
+            progress={progress}
             view={view}
           />
         ) : isTV ? (
-          <TVContent search={debouncedSearch} sort={tvSort} view={view} />
+          <TVContent
+            search={debouncedSearch}
+            sort={tvSort}
+            progress={progress}
+            view={view}
+          />
         ) : (
           <MoviesContent
             search={debouncedSearch}
             sort={movieSort}
+            state={movieState}
             view={view}
           />
         )}

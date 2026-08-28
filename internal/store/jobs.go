@@ -620,23 +620,24 @@ type LearnedRatio struct {
 }
 
 // LearnedRatios computes the observed mean output/original ratio per source
-// video codec from completed transcode jobs that have both size fields set.
-// Only codecs with at least minSamples jobs are returned. Results are clamped
-// to [learnedRatioMin, learnedRatioMax].
+// video codec from the savings ledger. Only codecs with at least minSamples
+// encodes are returned. Results are clamped to [learnedRatioMin, learnedRatioMax].
+//
+// This reads savings_ledger rather than joining transcode_jobs to media_files
+// because the swap rewrites video_codec to 'hevc', so the post-encode media row
+// no longer knows what the source codec was. Rows backfilled from job history
+// predate the ledger and carry no source codec, so they never contribute.
 func (j *Jobs) LearnedRatios(ctx context.Context, minSamples int) (map[string]LearnedRatio, error) {
 	rows, err := j.r.QueryContext(ctx, `
-		SELECT LOWER(COALESCE(m.video_codec, '')),
+		SELECT LOWER(source_codec),
 		       COUNT(*),
-		       AVG(CAST(tj.output_size_bytes AS REAL) / CAST(tj.original_size_bytes AS REAL))
-		FROM transcode_jobs tj
-		JOIN media_files m ON m.id = tj.media_file_id
-		WHERE tj.status = 'completed'
-		  AND tj.output_size_bytes IS NOT NULL
-		  AND tj.output_size_bytes > 0
-		  AND tj.original_size_bytes > 0
-		  AND m.video_codec IS NOT NULL
-		  AND m.video_codec != ''
-		GROUP BY LOWER(m.video_codec)
+		       AVG(CAST(output_size_bytes AS REAL) / CAST(original_size_bytes AS REAL))
+		FROM savings_ledger
+		WHERE source_codec IS NOT NULL
+		  AND source_codec != ''
+		  AND output_size_bytes > 0
+		  AND original_size_bytes > 0
+		GROUP BY LOWER(source_codec)
 		HAVING COUNT(*) >= ?`,
 		minSamples,
 	)

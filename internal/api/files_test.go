@@ -167,4 +167,38 @@ func TestHandleGroupedFilesSummarizesAllTVFiles(t *testing.T) {
 	if got.FileCount != 2 || got.EligibleCount != 1 || got.PredictedSavingsBytes != 400 {
 		t.Fatalf("unexpected summary: %+v", got)
 	}
+
+	// One of two episodes is done, so the show is partly converted and nothing
+	// else.
+	for _, tc := range []struct {
+		progress string
+		want     int
+	}{
+		{"partial", 1},
+		{"converted", 0},
+		{"unconverted", 0},
+		{"missing", 0},
+	} {
+		w := doReq(h, http.MethodGet, "/api/files/grouped?progress="+tc.progress, nil, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("progress %q: want 200, got %d (%s)", tc.progress, w.Code, w.Body.String())
+		}
+		var page struct {
+			Series     []librarySeriesSummary `json:"series"`
+			TotalCount int                    `json:"total_count"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Series) != tc.want || page.TotalCount != tc.want {
+			t.Fatalf("progress %q: got %d series / total %d, want %d", tc.progress, len(page.Series), page.TotalCount, tc.want)
+		}
+	}
+
+	if w := doReq(h, http.MethodGet, "/api/files/grouped?progress=bogus", nil, nil); w.Code != http.StatusBadRequest {
+		t.Fatalf("bad progress: want 400, got %d (%s)", w.Code, w.Body.String())
+	}
+	if w := doReq(h, http.MethodGet, "/api/seasons?progress=bogus", nil, nil); w.Code != http.StatusBadRequest {
+		t.Fatalf("bad seasons progress: want 400, got %d (%s)", w.Code, w.Body.String())
+	}
 }

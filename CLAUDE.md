@@ -105,7 +105,7 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 3. `store.Open()` — opens SQLite (WAL mode, two pools: 1 writer / 25 readers), runs goose migrations, bootstraps defaults
 4. `config.NewLive(cfg)` — creates the runtime-mutable settings holder (encode window, scan interval, probe concurrency); read by the scanner and worker on every use so PUT `/api/settings` takes effect without a restart
 5. `scanner.New()` + `sc.Start(ctx)` — runs startup scan, starts fsnotify watcher, schedules periodic rescans; `notify.New()` + `nt.Run(ctx)` batches the new candidates it finds
-6. `api.New()` — wires routes on Echo v5; full route list: `/healthz`, `/api/{setup,login,logout,session}`, `/api/{stats,files,candidates}{,/grouped,/grouped/seasons,/grouped/episodes}`, `/api/files/:id`, `/api/scan{,/full}`, `/api/profiles{,/:id}`, `/api/jobs{,/:id/cancel,/:id/force,/:id}`, `/api/events{,/:id}`, `/api/settings{,/credentials,/prune-missing,/notify-test}`, `/api/metadata{,/search,/refresh}`, `/api/ws`
+6. `api.New()` — wires routes on Echo v5; full route list: `/healthz`, `/api/{setup,login,logout,session}`, `/api/{stats,files,candidates}{,/grouped,/grouped/seasons,/grouped/episodes}`, `/api/stats/savings`, `/api/files/:id`, `/api/scan{,/full}`, `/api/profiles{,/:id}`, `/api/jobs{,/:id/cancel,/:id/force,/:id}`, `/api/events{,/:id}`, `/api/settings{,/credentials,/prune-missing,/notify-test}`, `/api/metadata{,/search,/refresh}`, `/api/ws`
 7. `worker.New()` + `wk.Run(ctx)` — encode loop; polls for queued jobs inside the window
 
 ### Package map
@@ -113,7 +113,7 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 | Package | Role |
 |---|---|
 | `internal/config` | Env parsing (`Config`) + runtime-mutable holder (`Live`) |
-| `internal/store` | SQLite access — typed sub-stores: `Media`, `Jobs`, `Profiles`, `Scans`, `Settings`, `Stats`, `Metadata` |
+| `internal/store` | SQLite access — typed sub-stores: `Media`, `Jobs`, `Profiles`, `Scans`, `Settings`, `Stats`, `Metadata`, `Savings` |
 | `internal/scanner` | Walk+ffprobe indexer, fsnotify watcher, rename detection via fingerprint |
 | `internal/worker` | Encode loop: claim job → ffmpeg → verify → atomic swap |
 | `internal/ffprobe` | Thin `ffprobe -v quiet -print_format json -show_streams -show_format` wrapper |
@@ -209,7 +209,53 @@ The hub broadcasts: `job_started`, `job_progress` (with `percent`), `job_complet
 
 `GET /api/files` is the Library view — same filters plus `status` (`active`|`missing`) and `candidate_state` (`candidate`|`already_hevc`|`probe_failed`|`unknown_codec`|`queued`|`completed`|`missing`). Sort options: `path_asc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`.
 
+The Browse page's grouped TV views (`GET /api/files/grouped`, `GET /api/seasons`)
+take a `progress` filter — `converted` | `partial` | `unconverted` | `missing` —
+applied as a `HAVING` clause over the group aggregates, so page and count queries
+agree. The Movies tab has no groups, so it reuses the per-file `candidate_state`
+filter instead.
+
 Pagination: the default `savings_desc` sort uses keyset cursors (`after_savings` + `after_id`) for gap-free infinite scroll over large libraries. All other sorts fall back to `offset` pagination.
+
+### Realized savings ledger
+
+`library_stats` only ever holds *predictions*: `ReplaceWithEncodedTx` zeroes a
+file's `predicted_savings_bytes` and rewrites `video_codec` to `hevc` the moment
+an encode lands, so the library aggregates can say what is left to reclaim but
+never what was actually reclaimed. `savings_ledger` (migration `00015`) is the
+append-only record that fills that gap — one row per completed encode, written
+by `Savings.RecordTx` inside the same `CommitEncodeSwap` transaction as the job
+completion and the `job_completed` event.
+
+The insert runs *before* `ReplaceWithEncodedTx` because it captures the
+pre-encode `video_codec`, dimensions, and duration that the swap destroys. It
+also snapshots the queue-time predictions (`predicted_savings_bytes`,
+`initial_estimated_duration_seconds`) alongside the measured result, which is
+what powers the estimate-accuracy figures. Both completion paths — `replace`
+and the crash-recovery `tryCompletePostSwap` — go through `CommitEncodeSwap`,
+so neither can miss a row. `MarkCompletedTx` guards `verifying → completed`, so
+a replayed commit rolls the whole transaction back rather than double-counting.
+
+The ledger has no foreign key to `media_files` on purpose: `PruneMissing` hard-
+deletes a pruned file's `transcode_jobs` history, and lifetime reclaimed bytes
+must not shrink when a file is later deleted from disk. The migration backfills
+from existing completed jobs, recording a null `source_codec` rather than
+guessing one: the swap has already overwritten it, and while the seed ratio can
+be inverted out of `transcode_jobs.predicted_savings_bytes`, the seed table is
+not injective (`h264` and `avc` both sit at 0.60), so any single codec picked
+back out would be a fabrication. `Savings.ByCodec` groups those rows under
+`unknown` so the buckets still sum to the lifetime total; `LearnedRatios`
+excludes them.
+
+`Jobs.LearnedRatios` reads the ledger rather than joining `transcode_jobs` to
+`media_files`. The old query grouped by the post-encode `media_files.video_codec`,
+which is always `hevc`, so `refineRatioIfReady` could never find the source
+codec's bucket and the savings model never actually refined.
+
+`GET /api/stats` carries a `savings` summary block; `GET /api/stats/savings`
+returns the full report (breakdowns, daily series, top wins, job outcomes) that
+the Insights page renders. Day buckets are shifted by the `TIMEZONE` offset so
+the series matches the clock the UI shows.
 
 ### Encode time estimates
 

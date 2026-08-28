@@ -168,6 +168,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Read side.
 	api.GET("/stats", s.handleStats)
+	api.GET("/stats/savings", s.handleSavings)
 	api.GET("/files", s.handleFiles)
 	api.GET("/files/grouped/episodes", s.handleGroupedFileEpisodes)
 	api.GET("/files/grouped/seasons", s.handleGroupedFileSeasons)

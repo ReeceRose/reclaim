@@ -414,18 +414,73 @@ const tvEligibleExpr = `status = 'active' AND is_already_hevc = 0 AND probe_erro
 			  AND j.status IN ('queued', 'running', 'verifying', 'completed')
 		)`
 
+const (
+	tvFileCountExpr     = `COUNT(*)`
+	tvEligibleCountExpr = `SUM(CASE WHEN ` + tvEligibleExpr + ` THEN 1 ELSE 0 END)`
+	tvMissingCountExpr  = `SUM(CASE WHEN status = 'missing' THEN 1 ELSE 0 END)`
+	tvActiveCountExpr   = `(` + tvFileCountExpr + ` - ` + tvMissingCountExpr + `)`
+)
+
+// TVProgress narrows a grouped TV view to how far through re-encoding the group
+// is. It is evaluated per group (series or season), not per file.
+type TVProgress string
+
+const (
+	// TVProgressConverted keeps groups with nothing left to encode and nothing
+	// missing from disk — the "All converted" badge in the UI.
+	TVProgressConverted TVProgress = "converted"
+	// TVProgressPartial keeps groups where some files are done and some are not.
+	TVProgressPartial TVProgress = "partial"
+	// TVProgressUnconverted keeps groups where no file has been converted yet.
+	TVProgressUnconverted TVProgress = "unconverted"
+	// TVProgressMissing keeps groups holding at least one missing file.
+	TVProgressMissing TVProgress = "missing"
+)
+
+// tvProgressHaving renders a progress filter as a HAVING clause over the group
+// aggregates. An empty progress yields an empty clause.
+func tvProgressHaving(p TVProgress) (string, error) {
+	switch p {
+	case "":
+		return "", nil
+	case TVProgressConverted:
+		return tvEligibleCountExpr + " = 0 AND " + tvMissingCountExpr + " = 0", nil
+	case TVProgressPartial:
+		return tvEligibleCountExpr + " > 0 AND " + tvEligibleCountExpr + " < " + tvActiveCountExpr, nil
+	case TVProgressUnconverted:
+		return tvEligibleCountExpr + " > 0 AND " + tvEligibleCountExpr + " = " + tvActiveCountExpr, nil
+	case TVProgressMissing:
+		return tvMissingCountExpr + " > 0", nil
+	default:
+		return "", fmt.Errorf("unknown progress %q", p)
+	}
+}
+
+// TVGroupFilter narrows the grouped TV browse views.
+type TVGroupFilter struct {
+	Search   string
+	Progress TVProgress
+}
+
 // TVSeriesGroups returns one page of TV series summaries ordered alphabetically.
 // It uses a single GROUP BY query so it is O(1) regardless of library size.
-func (m *Media) TVSeriesGroups(ctx context.Context, search string, limit, offset int) ([]TVSeriesRow, error) {
+func (m *Media) TVSeriesGroups(ctx context.Context, f TVGroupFilter, limit, offset int) ([]TVSeriesRow, error) {
 	if limit <= 0 {
 		limit = defaultFileLimit
 	}
 
 	where := []string{"library_type = 'tv'", "series_title IS NOT NULL", "series_title != ''"}
 	var args []any
-	if s := strings.TrimSpace(search); s != "" {
+	if s := strings.TrimSpace(f.Search); s != "" {
 		where = append(where, "LOWER(series_title) LIKE '%' || LOWER(?) || '%'")
 		args = append(args, s)
+	}
+	having, err := tvProgressHaving(f.Progress)
+	if err != nil {
+		return nil, err
+	}
+	if having != "" {
+		having = " HAVING " + having
 	}
 
 	query := `
@@ -439,7 +494,7 @@ func (m *Media) TVSeriesGroups(ctx context.Context, search string, limit, offset
 			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN predicted_savings_bytes ELSE 0 END) AS predicted_savings_bytes
 		FROM media_files
 		WHERE ` + strings.Join(where, " AND ") + `
-		GROUP BY series_title
+		GROUP BY series_title` + having + `
 		ORDER BY LOWER(series_title)
 		LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
@@ -498,16 +553,23 @@ const (
 // TVSeasonsAcrossShows ranks every (series, season) pair across the whole TV
 // library by total size or predicted savings. One GROUP BY query, so it stays
 // O(1) regardless of library size.
-func (m *Media) TVSeasonsAcrossShows(ctx context.Context, search string, sort TVSeasonSort, limit, offset int) ([]TVSeasonAcrossShowsRow, error) {
+func (m *Media) TVSeasonsAcrossShows(ctx context.Context, f TVGroupFilter, sort TVSeasonSort, limit, offset int) ([]TVSeasonAcrossShowsRow, error) {
 	if limit <= 0 {
 		limit = defaultFileLimit
 	}
 
 	where := []string{"library_type = 'tv'", "series_title IS NOT NULL", "series_title != ''", "season_number IS NOT NULL"}
 	var args []any
-	if s := strings.TrimSpace(search); s != "" {
+	if s := strings.TrimSpace(f.Search); s != "" {
 		where = append(where, "LOWER(series_title) LIKE '%' || LOWER(?) || '%'")
 		args = append(args, s)
+	}
+	having, err := tvProgressHaving(f.Progress)
+	if err != nil {
+		return nil, err
+	}
+	if having != "" {
+		having = " HAVING " + having
 	}
 
 	orderBy := "total_bytes DESC, LOWER(series_title), season_number"
@@ -526,7 +588,7 @@ func (m *Media) TVSeasonsAcrossShows(ctx context.Context, search string, sort TV
 			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN predicted_savings_bytes ELSE 0 END) AS predicted_savings_bytes
 		FROM media_files
 		WHERE ` + strings.Join(where, " AND ") + `
-		GROUP BY series_title, season_number
+		GROUP BY series_title, season_number` + having + `
 		ORDER BY ` + orderBy + `
 		LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
@@ -550,19 +612,26 @@ func (m *Media) TVSeasonsAcrossShows(ctx context.Context, search string, sort TV
 
 // CountTVSeasonsAcrossShows returns the total number of (series, season) pairs
 // matching the search, for pagination.
-func (m *Media) CountTVSeasonsAcrossShows(ctx context.Context, search string) (int64, error) {
+func (m *Media) CountTVSeasonsAcrossShows(ctx context.Context, f TVGroupFilter) (int64, error) {
 	where := []string{"library_type = 'tv'", "series_title IS NOT NULL", "series_title != ''", "season_number IS NOT NULL"}
 	var args []any
-	if s := strings.TrimSpace(search); s != "" {
+	if s := strings.TrimSpace(f.Search); s != "" {
 		where = append(where, "LOWER(series_title) LIKE '%' || LOWER(?) || '%'")
 		args = append(args, s)
+	}
+	having, err := tvProgressHaving(f.Progress)
+	if err != nil {
+		return 0, err
+	}
+	if having != "" {
+		having = " HAVING " + having
 	}
 
 	query := `
 		SELECT COUNT(*) FROM (
 			SELECT 1 FROM media_files
 			WHERE ` + strings.Join(where, " AND ") + `
-			GROUP BY series_title, season_number
+			GROUP BY series_title, season_number` + having + `
 		)`
 
 	var n int64
@@ -635,16 +704,27 @@ func (m *Media) TVShowSeasons(ctx context.Context, seriesTitle string) ([]TVSeas
 	return out, nil
 }
 
-// CountTVSeries returns the total number of distinct TV series matching the search.
-func (m *Media) CountTVSeries(ctx context.Context, search string) (int64, error) {
+// CountTVSeries returns the total number of distinct TV series matching the filter.
+func (m *Media) CountTVSeries(ctx context.Context, f TVGroupFilter) (int64, error) {
 	where := []string{"library_type = 'tv'", "series_title IS NOT NULL", "series_title != ''"}
 	var args []any
-	if s := strings.TrimSpace(search); s != "" {
+	if s := strings.TrimSpace(f.Search); s != "" {
 		where = append(where, "LOWER(series_title) LIKE '%' || LOWER(?) || '%'")
 		args = append(args, s)
 	}
+	having, err := tvProgressHaving(f.Progress)
+	if err != nil {
+		return 0, err
+	}
 
 	query := `SELECT COUNT(DISTINCT series_title) FROM media_files WHERE ` + strings.Join(where, " AND ")
+	if having != "" {
+		query = `SELECT COUNT(*) FROM (
+			SELECT 1 FROM media_files
+			WHERE ` + strings.Join(where, " AND ") + `
+			GROUP BY series_title HAVING ` + having + `
+		)`
+	}
 	var n int64
 	if err := m.r.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
 		return 0, err

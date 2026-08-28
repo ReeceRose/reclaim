@@ -13,7 +13,16 @@ export const QUERY_PARAMS = {
   MOVIE_SORT: "msort",
   SEASON_SORT: "ssort",
   VIEW: "view",
+  PROGRESS: "progress",
+  MOVIE_STATE: "mstate",
 } as const;
+
+export const PROGRESS_OPTIONS = [
+  { value: "converted", label: "Fully converted" },
+  { value: "partial", label: "Partly converted" },
+  { value: "unconverted", label: "Not converted" },
+  { value: "missing", label: "Has missing files" },
+] as const;
 
 export const BROWSE_TAB = {
   TV: "tv",

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/labstack/echo/v5"
 
@@ -59,6 +60,11 @@ func (s *Server) handleStats(c *echo.Context) error {
 		})
 	}
 
+	summary, err := s.store.Savings.Summary(ctx, time.Now().Unix())
+	if err != nil {
+		return serverError(c, err)
+	}
+
 	return c.JSON(http.StatusOK, map[string]any{
 		"total_files":             ov.TotalFiles,
 		"total_bytes":             ov.TotalBytes,
@@ -66,6 +72,7 @@ func (s *Server) handleStats(c *echo.Context) error {
 		"by_codec":                codecs,
 		"by_resolution":           res,
 		"by_library":              libs,
+		"savings":                 toSavingsSummaryDTO(summary, remainingCandidates(ov)),
 	})
 }
 

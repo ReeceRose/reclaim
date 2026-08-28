@@ -105,6 +105,73 @@ export interface LibraryStat {
   predicted_savings_bytes: number;
 }
 
+export interface SavingsSummary {
+  files_encoded: number;
+  original_bytes: number;
+  output_bytes: number;
+  bytes_saved: number;
+  encode_seconds_total: number;
+  compression_ratio: number;
+  files_encoded_7d: number;
+  bytes_saved_7d: number;
+  files_encoded_30d: number;
+  bytes_saved_30d: number;
+  first_completed_at: number | null;
+  last_completed_at: number | null;
+  best_saved_bytes: number;
+  best_path: string;
+  savings_estimate_ratio: number | null;
+  savings_estimate_samples: number;
+  duration_estimate_ratio: number | null;
+  duration_estimate_samples: number;
+  mean_encode_seconds: number | null;
+  bytes_saved_per_encode_hour: number | null;
+  projected_remaining_encode_seconds: number | null;
+  remaining_candidates: number;
+}
+
+export interface SavingsBucket {
+  key: string;
+  files_encoded: number;
+  original_bytes: number;
+  output_bytes: number;
+  bytes_saved: number;
+  compression_ratio: number;
+}
+
+export interface SavingsDay {
+  day: string;
+  files_encoded: number;
+  bytes_saved: number;
+}
+
+export interface SavingsEntry {
+  job_id: number;
+  media_file_id: number;
+  path: string;
+  library_type: string;
+  source_codec: string | null;
+  width: number | null;
+  height: number | null;
+  original_size_bytes: number;
+  output_size_bytes: number;
+  bytes_saved: number;
+  encode_seconds: number | null;
+  completed_at: number;
+}
+
+export interface SavingsReport {
+  summary: SavingsSummary;
+  by_codec: SavingsBucket[];
+  by_library: SavingsBucket[];
+  by_resolution: SavingsBucket[];
+  daily: SavingsDay[];
+  top_wins: SavingsEntry[];
+  recent: SavingsEntry[];
+  job_outcomes: Record<string, number>;
+  days: number;
+}
+
 export interface Stats {
   total_files: number;
   total_bytes: number;
@@ -112,6 +179,7 @@ export interface Stats {
   by_codec: CodecStat[];
   by_resolution: ResolutionStat[];
   by_library: LibraryStat[];
+  savings: SavingsSummary;
 }
 
 export interface MediaFile {
@@ -232,6 +300,9 @@ export interface GroupedFiles {
   series: LibrarySeriesGroup[];
   total_count?: number;
 }
+
+/** TVProgress narrows a grouped TV view by how far through re-encoding it is. */
+export type TVProgress = "converted" | "partial" | "unconverted" | "missing";
 
 export interface RankedSeason {
   series_title: string;
@@ -480,10 +551,17 @@ export const api = {
 
   // Read side
   stats: () => request<Stats>("GET", "/api/stats"),
+  savings: (days?: number) =>
+    request<SavingsReport>("GET", `/api/stats/savings${buildQuery({ days })}`),
   files: (filters: FileFilters & { limit?: number; offset?: number }) =>
     request<FilesPage>("GET", `/api/files${buildQuery(filters)}`),
-  groupedFiles: (filters: FileFilters & { limit?: number; offset?: number }) =>
-    request<GroupedFiles>("GET", `/api/files/grouped${buildQuery(filters)}`),
+  groupedFiles: (
+    filters: FileFilters & {
+      progress?: TVProgress | "";
+      limit?: number;
+      offset?: number;
+    },
+  ) => request<GroupedFiles>("GET", `/api/files/grouped${buildQuery(filters)}`),
   groupedFileEpisodes: (
     filters: FileFilters & {
       series: string;
@@ -504,6 +582,7 @@ export const api = {
   seasonsRanked: (params: {
     sort?: "size_desc" | "savings_desc";
     search?: string;
+    progress?: TVProgress | "";
     limit?: number;
     offset?: number;
   }) => request<RankedSeasons>("GET", `/api/seasons${buildQuery(params)}`),

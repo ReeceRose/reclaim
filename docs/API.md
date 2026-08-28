@@ -143,13 +143,100 @@ Precomputed library overview (O(buckets), not O(files)).
   "by_library": [
     { "library_type": "movies", "file_count": 400, "total_bytes": 5000000000, "predicted_savings_bytes": 1500000000 },
     { "library_type": "tv", "file_count": 834, "total_bytes": 4876543210, "predicted_savings_bytes": 1710000000 }
-  ]
+  ],
+  "savings": {
+    "files_encoded": 47, "bytes_saved": 412000000000, "original_bytes": 980000000000,
+    "output_bytes": 568000000000, "compression_ratio": 0.58, "encode_seconds_total": 154800,
+    "files_encoded_7d": 4, "bytes_saved_7d": 31000000000,
+    "files_encoded_30d": 19, "bytes_saved_30d": 168000000000,
+    "first_completed_at": 1735689600, "last_completed_at": 1756252800,
+    "best_saved_bytes": 24000000000, "best_path": "/movies/Dune (2021)/Dune (2021).mkv",
+    "savings_estimate_ratio": 0.91, "savings_estimate_samples": 40,
+    "duration_estimate_ratio": 1.08, "duration_estimate_samples": 40,
+    "mean_encode_seconds": 3293.6, "bytes_saved_per_encode_hour": 9581395348,
+    "projected_remaining_encode_seconds": 2107904, "remaining_candidates": 640
+  }
 }
 ```
 
 `ratio_source` on each `by_codec` entry is `seed` (shipped rule-of-thumb per
-codec) or `learned` (mean output/original ratio from completed jobs on this
+codec) or `learned` (mean output/original ratio from completed encodes on this
 instance, after ≥10 samples per codec).
+
+The `savings` block reports *realized* savings — measured from completed
+encodes — as opposed to the `predicted_savings_bytes` figures elsewhere in the
+response, which are estimates. `compression_ratio` is output÷original, so 0.58
+means encoded files ended up 58% of their original size. Both
+`*_estimate_ratio` fields are actual÷predicted: a `savings_estimate_ratio`
+below 1 means predictions ran optimistic, and a `duration_estimate_ratio`
+above 1 means encodes took longer than estimated. They are null until at least
+one job carries the relevant queue-time snapshot.
+
+### `GET /api/stats/savings`
+The full realized-savings report backing the Insights page. Reads the
+`savings_ledger`, an append-only row per completed encode.
+
+**Query params**
+
+| Param | Notes |
+|---|---|
+| `days` | Window for the `daily` series, 1–3650. Default `90`. Out-of-range or non-numeric values 400. |
+
+**Response**
+
+```json
+{
+  "summary": { "...": "same shape as the savings block on GET /api/stats" },
+  "by_codec": [
+    { "key": "h264", "files_encoded": 40, "original_bytes": 800000000000,
+      "output_bytes": 460000000000, "bytes_saved": 340000000000, "compression_ratio": 0.575 },
+    { "key": "mpeg2video", "files_encoded": 5, "original_bytes": 120000000000,
+      "output_bytes": 48000000000, "bytes_saved": 72000000000, "compression_ratio": 0.40 },
+    { "key": "unknown", "files_encoded": 2, "original_bytes": 60000000000,
+      "output_bytes": 60000000000, "bytes_saved": 0, "compression_ratio": 1.0 }
+  ],
+  "by_library": [
+    { "key": "movies", "files_encoded": 22, "original_bytes": 600000000000,
+      "output_bytes": 350000000000, "bytes_saved": 250000000000, "compression_ratio": 0.583 }
+  ],
+  "by_resolution": [
+    { "key": "uhd", "files_encoded": 12, "original_bytes": 500000000000,
+      "output_bytes": 280000000000, "bytes_saved": 220000000000, "compression_ratio": 0.56 }
+  ],
+  "daily": [
+    { "day": "2026-08-26", "files_encoded": 2, "bytes_saved": 18000000000 }
+  ],
+  "top_wins": [
+    { "job_id": 91, "media_file_id": 412, "path": "/movies/Dune (2021)/Dune (2021).mkv",
+      "library_type": "movies", "source_codec": "h264", "width": 3840, "height": 2160,
+      "original_size_bytes": 48000000000, "output_size_bytes": 24000000000,
+      "bytes_saved": 24000000000, "encode_seconds": 7200, "completed_at": 1756252800 }
+  ],
+  "recent": [ { "...": "same shape as top_wins, newest first" } ],
+  "job_outcomes": { "completed": 47, "failed": 2, "cancelled": 1 },
+  "days": 90
+}
+```
+
+`day` keys are bucketed in the configured display timezone (`TIMEZONE`), not
+UTC, so the series lines up with the clock the UI renders. Days with no
+encodes are omitted rather than zero-filled.
+
+`source_codec` is captured *before* the encode swaps the file, because the
+swap rewrites `media_files.video_codec` to `hevc` and destroys the original
+value. Rows backfilled from pre-existing job history when the ledger migration
+first ran carry a null `source_codec` for that reason — it is genuinely
+unrecoverable once the swap has happened, and the migration records null rather
+than guessing.
+
+Those rows are grouped under the `unknown` key in `by_codec` (the same
+convention `library_stats` uses), so the buckets always sum to
+`summary.bytes_saved`. They are still excluded from the learned-ratio model,
+which needs a known source codec to be meaningful.
+
+Ledger rows outlive their media file: pruning a missing file deletes its
+`transcode_jobs` history but leaves the ledger intact, so lifetime totals never
+shrink retroactively.
 
 ### `GET /api/candidates`
 One page of ranked re-encode candidates. Excludes files that are already HEVC,
@@ -218,9 +305,23 @@ TV series/season summaries for the Library **By series** view. Movies use the
 paginated `/api/files` endpoint.
 
 **Query params:** same filters as `/api/files` (`library_type`, `video_codec`,
-`height`, `search`, `status`, `candidate_state`), plus `limit` (default 50,
-max 200) and `offset`. Returns an empty `series` list when `library_type=movies`
-(movies use the flat `/api/files` endpoint).
+`height`, `search`, `status`, `candidate_state`), plus `progress` (see below),
+`limit` (default 50, max 200) and `offset`. Returns an empty `series` list when
+`library_type=movies` (movies use the flat `/api/files` endpoint).
+
+`progress` narrows the list by how far through re-encoding each **series** is,
+evaluated over the group's aggregates rather than per file. An unrecognised
+value is a `400`.
+
+| Value | Keeps series where |
+|---|---|
+| `converted` | `eligible_count = 0` and `missing_count = 0` — the "All converted" badge |
+| `partial` | some files are done and some are still eligible |
+| `unconverted` | every non-missing file is still eligible |
+| `missing` | `missing_count > 0` |
+
+"Eligible" is the same gate the savings totals use: active, non-HEVC, probeable,
+known codec, and not already queued/running/verifying/completed.
 
 ```json
 {
@@ -257,9 +358,11 @@ Every `(series, season)` pair across the whole TV library, ranked together — t
 of library size.
 
 **Query params:** `sort` (`size_desc` default | `savings_desc`), `search`
-(series-title substring), `limit` (default 50, max 200), `offset`.
-`savings_desc` counts only eligible (non-HEVC, probeable, not already
-queued/done) episodes, matching the per-series season breakdown.
+(series-title substring), `progress` (same four values as
+`/api/files/grouped`, applied per season instead of per series), `limit`
+(default 50, max 200), `offset`. `savings_desc` counts only eligible (non-HEVC,
+probeable, not already queued/done) episodes, matching the per-series season
+breakdown.
 
 ```json
 {

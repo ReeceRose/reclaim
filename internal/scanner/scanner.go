@@ -634,13 +634,19 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 	// loop above has just stamped this scan's disappearances with their content
 	// identity, so a file deleted and re-acquired between two scans reconciles
 	// here alongside one that was already missing when the scan began.
-	replaced := s.matchReplacements(ctx, newIDs, supersededNew)
-	if len(replaced) > 0 {
-		var net int64
-		for _, r := range replaced {
-			supersededNew[r.newID] = struct{}{}
-			net += r.delta
+	var replaced []replacement
+	var net int64
+	for _, r := range s.matchReplacements(ctx, newIDs, supersededNew) {
+		// Consumed either way: a folded arrival's row no longer exists, so it is
+		// no more an arrival to announce than the surviving half of a supersede.
+		supersededNew[r.newID] = struct{}{}
+		if r.returned {
+			continue
 		}
+		replaced = append(replaced, r)
+		net += r.delta
+	}
+	if len(replaced) > 0 {
 		s.emitFileEvent(ctx, store.EventFileReplaced,
 			replacedEventMessage(len(replaced), net),
 			scanJsonMeta(map[string]any{
@@ -1039,7 +1045,12 @@ func (s *Scanner) probeSingleFile(ctx context.Context, path string) {
 	// belong in the ledger.
 	if cutoff, on := s.replaceCutoff(); on {
 		if r := s.matchReplacement(ctx, id, cutoff); r != nil {
-			s.emitReplacedEvent(ctx, *r)
+			// A returned file is the row the library already had, back under a
+			// new name — neither a replacement to book nor an arrival to
+			// announce.
+			if !r.returned {
+				s.emitReplacedEvent(ctx, *r)
+			}
 			return
 		}
 	}

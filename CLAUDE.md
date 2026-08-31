@@ -191,6 +191,19 @@ never fires. Only the survivor's arrival time separates "the file that just
 replaced this" from "the copy that has sat here for a year", which would
 otherwise book a plain deletion as a replacement.
 
+A match whose two halves are byte-identical is not a replacement at all: the
+same file has come back under a new name — the same release downloaded twice, a
+copy restored from a backup. `matchReplacement` compares fingerprints before
+folding and, when they agree, calls `RecordMove` instead, reviving the original
+row at the new path with its history. The vanished-path reconciliations cannot
+catch these — they compare fingerprints only against rows that are still
+*active*, and the original has been missing for days by the time the file
+returns. `recordReplacementTx` refuses an equal-sized pair for the same reason
+it refuses a zero-byte one: the fold is still right, but a ledger of bytes has
+no entry to make, and a zero row would only make the replacement count disagree
+with the reclaimed and given-back figures it sums (migration `00017` drops the
+rows booked before this).
+
 Either direction resolves to `Media.RecordReplacement`, which shares
 `Media.foldInto` with `Supersede`: the ledger row is written first (it reads
 both rows, and the old one is deleted by the end of the transaction), job

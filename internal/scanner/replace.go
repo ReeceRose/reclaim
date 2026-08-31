@@ -23,6 +23,11 @@ type replacement struct {
 	// is a larger release. Upgrading 1080p h264 to 4K HEVC is a legitimate
 	// replacement that costs disk, and the ledger records it as such.
 	delta int64
+	// returned marks a fold that was not a replacement at all: the arrival was
+	// byte-identical to the row it matched, so the same file has come back
+	// under a new name. Nothing changed hands, so it books no ledger row and
+	// announces nothing — the pair is folded as a move.
+	returned bool
 }
 
 func (s *Scanner) moviesRoot() string {
@@ -103,6 +108,26 @@ func (s *Scanner) matchReplacement(ctx context.Context, newID, cutoff int64) *re
 	}
 	if old.ID == f.ID {
 		return nil
+	}
+
+	// A byte-identical arrival is not a replacement. Re-acquiring the same
+	// release, or restoring a copy from a backup, brings back the very file
+	// that went missing; the fingerprint says so where the size and codec on
+	// their own only hint at it. Folding it as a move revives the original row
+	// at the new path with its job history intact, where booking it as a
+	// replacement would put a 0-byte entry in a ledger of reclaimed bytes and
+	// count a file the library never lost.
+	//
+	// The vanished-path reconciliations cannot catch this: they compare
+	// fingerprints only against rows that are still active, and by the time the
+	// redownload lands the original has been missing for days.
+	if f.Fingerprint != "" && f.Fingerprint == old.Fingerprint {
+		if err := s.store.Media.RecordMove(ctx, old.ID, f.ID, f.Path, key); err != nil {
+			slog.Error("scanner: record return", "from", old.Path, "to", f.Path, "err", err)
+			return nil
+		}
+		slog.Info("scanner: missing file returned", "from", old.Path, "to", f.Path)
+		return &replacement{oldPath: old.Path, newPath: f.Path, newID: f.ID, returned: true}
 	}
 
 	if err := s.store.Media.RecordReplacement(ctx, old.ID, f.ID); err != nil {

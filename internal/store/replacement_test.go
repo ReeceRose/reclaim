@@ -369,3 +369,38 @@ func TestRecordMove_rewritesTheReplaceKey(t *testing.T) {
 		t.Errorf("replace_key = %q, want %q", got.ReplaceKey, newKey)
 	}
 }
+
+// A swap of equal size still folds the two rows together — one file's history
+// belongs on one row — but books nothing: a ledger of reclaimed bytes has no
+// entry to make, and a zero row would only make the replacement count disagree
+// with the reclaimed and given-back figures it sums.
+func TestRecordReplacement_booksNothingForAnEqualSizedSwap(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	old, err := s.Media.insertFile(ctx, testFile{path: "/tv/old.mkv", libraryType: "tv", size: 2400, codec: "h264"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Media.MarkMissing(ctx, old, epKey); err != nil {
+		t.Fatal(err)
+	}
+	newer, err := s.Media.insertFile(ctx, testFile{path: "/tv/new.mkv", libraryType: "tv", size: 2400, codec: "h264"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Media.RecordReplacement(ctx, old, newer); err != nil {
+		t.Fatalf("RecordReplacement: %v", err)
+	}
+
+	if _, err := s.Media.GetByID(ctx, old); !errors.Is(err, ErrNotFound) {
+		t.Errorf("old row survived the fold: err = %v", err)
+	}
+	sum, err := s.Savings.ReplacementSummary(ctx, time.Now().Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Files != 0 {
+		t.Errorf("summary = %+v, want no ledger rows", sum)
+	}
+}

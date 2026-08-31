@@ -38,8 +38,10 @@ func TestMigration16_preservesExistingLedgerRows(t *testing.T) {
 		t.Fatalf("seed v15 ledger row: %v", err)
 	}
 
-	if err := goose.Up(db, "migrations"); err != nil {
-		t.Fatalf("migrate to head: %v", err)
+	// Pinned to 16 rather than head: this test is about what that rebuild does
+	// to an existing ledger, and it rolls the migration back below.
+	if err := goose.UpTo(db, "migrations", 16); err != nil {
+		t.Fatalf("migrate to 16: %v", err)
 	}
 
 	var (

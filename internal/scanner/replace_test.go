@@ -352,3 +352,58 @@ func TestScan_deletingOneOfTwoLongStandingCopiesIsNotAReplacement(t *testing.T) 
 		t.Errorf("booked %d replacement(s) for a plain deletion, want 0", len(entries))
 	}
 }
+
+// Re-acquiring the same release is not a replacement: the identical file comes
+// back under a new name, so the original row is revived at the new path with
+// its history rather than folded into a 0-byte ledger entry.
+func TestScan_identicalRedownloadIsAReturnNotAReplacement(t *testing.T) {
+	root := t.TempDir()
+	movies := filepath.Join(root, "movies")
+	tv := filepath.Join(root, "tv")
+	sc, st := newReplaceScanner(t, movies, tv)
+	ctx := context.Background()
+
+	dir := filepath.Join(tv, "Naked and Afraid", "Season 1")
+	oldPath := filepath.Join(dir, "Naked and Afraid - S01E05 - Smoke Signals.mkv")
+	writeSizedFile(t, oldPath, 4000)
+	if _, err := sc.Scan(ctx, "manual", false); err != nil {
+		t.Fatal(err)
+	}
+	original, err := st.Media.GetByPath(ctx, oldPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Remove(oldPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sc.Scan(ctx, "manual", false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Same bytes, new name — the release the user downloaded a second time.
+	newPath := filepath.Join(dir, "Naked.And.Afraid.S01E05.720p.WEB.H264-JFF.mkv")
+	writeSizedFile(t, newPath, 4000)
+	if _, err := sc.Scan(ctx, "manual", false); err != nil {
+		t.Fatal(err)
+	}
+
+	back, err := st.Media.GetByID(ctx, original.ID)
+	if err != nil {
+		t.Fatalf("the original row should have been revived, not folded away: %v", err)
+	}
+	if back.Path != newPath {
+		t.Errorf("path = %q, want %q", back.Path, newPath)
+	}
+	if back.Status != store.MediaStatusActive {
+		t.Errorf("status = %q, want %q", back.Status, store.MediaStatusActive)
+	}
+
+	entries, err := st.Savings.RecentReplacements(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("booked %d replacement(s) for a file that returned unchanged: %+v", len(entries), entries)
+	}
+}

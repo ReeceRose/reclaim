@@ -326,6 +326,10 @@ function libraryLabel(key: string): string {
 
 // signedBytes renders a delta with an explicit direction, so a replacement that
 // cost space never reads as a saving.
+function plural(n: number, one: string, many: string): string {
+  return `${formatInt(n)} ${n === 1 ? one : many}`;
+}
+
 function signedBytes(n: number): string {
   if (n === 0) return "0 B";
   return `${n > 0 ? "−" : "+"}${formatBytes(Math.abs(n))}`;
@@ -408,19 +412,23 @@ function ReplacementsCard({ report }: { report: ReplacementReport }) {
             <StatTile
               label="Net reclaimed"
               value={signedBytes(s.bytes_delta)}
-              sub={`across ${formatInt(s.files_replaced)} replacements`}
+              sub={`across ${plural(s.files_replaced, "replacement", "replacements")}`}
               tone={s.bytes_delta >= 0 ? "text-brand" : "text-gold"}
             />
             <StatTile
               label="Freed"
               value={formatBytes(s.bytes_reclaimed)}
-              sub={`${formatInt(s.replacements_smaller)} leaner releases`}
+              sub={plural(
+                s.replacements_smaller,
+                "leaner release",
+                "leaner releases",
+              )}
               tone="text-green"
             />
             <StatTile
               label="Given back"
               value={formatBytes(s.bytes_added)}
-              sub={`${formatInt(s.replacements_larger)} upgrades`}
+              sub={plural(s.replacements_larger, "upgrade", "upgrades")}
               tone={s.bytes_added > 0 ? "text-gold" : undefined}
             />
             <StatTile
@@ -650,7 +658,12 @@ function InsightsContent() {
                   <b className="text-text font-semibold">
                     {signedBytes(replacements.bytes_delta)}
                   </b>{" "}
-                  across {formatInt(replacements.files_replaced)} replacements
+                  across{" "}
+                  {plural(
+                    replacements.files_replaced,
+                    "replacement",
+                    "replacements",
+                  )}
                 </>
               )}
               <Badge className="ml-2 text-xs font-bold tracking-widest text-green bg-green-soft border-green-soft rounded-md uppercase">

@@ -354,7 +354,12 @@ const (
 // before the old row is deleted.
 //
 // Rows with a non-positive size on either side are skipped: an unprobed or
-// zero-byte row would contribute a meaningless delta to a lifetime total.
+// zero-byte row would contribute a meaningless delta to a lifetime total. So is
+// a pair of equal size, which reclaims nothing and costs nothing: the fold is
+// still worth performing — the two rows are one file's history — but a ledger
+// of bytes has nothing to say about it, and an entry that moves no total only
+// makes the replacement count disagree with the reclaimed and given-back
+// figures it is meant to sum.
 func recordReplacementTx(ctx context.Context, tx *sql.Tx, oldID, newID int64, matchKind string, at int64) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO savings_ledger (
@@ -369,7 +374,8 @@ func recordReplacementTx(ctx context.Context, tx *sql.Tx, oldID, newID int64, ma
 		       o.duration_seconds, o.size_bytes, n.size_bytes, ?
 		FROM media_files o
 		JOIN media_files n ON n.id = ?
-		WHERE o.id = ? AND o.size_bytes > 0 AND n.size_bytes > 0`,
+		WHERE o.id = ? AND o.size_bytes > 0 AND n.size_bytes > 0
+		  AND o.size_bytes != n.size_bytes`,
 		matchKind, at, newID, oldID,
 	)
 	return err

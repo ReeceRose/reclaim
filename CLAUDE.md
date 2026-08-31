@@ -118,7 +118,7 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 | `internal/worker` | Encode loop: claim job → ffmpeg → verify → atomic swap |
 | `internal/ffprobe` | Thin `ffprobe -v quiet -print_format json -show_streams -show_format` wrapper |
 | `internal/ffmpeg` | Thin `ffmpeg` wrapper with progress parsing |
-| `internal/media` | Fingerprinting (sha256 of size + first/last 64 KB), savings estimation (`savings.go`), and encode-time estimation (`encodetime.go`) |
+| `internal/media` | Fingerprinting (sha256 of size + first/last 64 KB), savings estimation (`savings.go`), encode-time estimation (`encodetime.go`), and content identity for replacement matching (`replacekey.go`) |
 | `internal/jobs` | Pure state machine — legal transitions for the job lifecycle |
 | `internal/api` | Echo v5 HTTP server, WebSocket hub, auth middleware |
 | `internal/startup` | Pre-flight checks (binaries, mounts) |
@@ -141,7 +141,67 @@ A file that vanishes from disk is soft-deleted: `status='missing'`, `missing_sin
 
 Before a vanished file is marked missing, the scanner tries two reconciliations. First fingerprint matching (`GetByFingerprintOtherThan`) — identical bytes at a new path means a rename, handled by `RecordMove` (old row kept, path rewritten). Then, since a re-encode changes the bytes and so can never match a fingerprint, `FindSuperseder`/`Supersede`: a surviving active row in the same directory with the same name up to the final extension (`S07E01.mkv` → `S07E01.mp4`, an out-of-band transcode that changed container) absorbs the old row. Unlike a move, the *new* row survives — it holds the correct probe data — inheriting the old row's `transcode_jobs` while the old row is hard-deleted. The match requires exactly one same-stem candidate (`Movie.mkv` never claims `Movie.2160p.mkv`) and is refused while the old row has a live job. Scans emit one aggregated `file_superseded` event; the watcher emits one per file.
 
-`MISSING_RETENTION` (default `0` = never) drives the post-scan cleanup in `scanner.pruneMissing`: rows past the cutoff are hard-deleted along with their `transcode_jobs` history, skipping files with a `queued`/`running`/`verifying` job. `POST /api/settings/prune-missing` does the same ignoring the cutoff. Both write a `missing_pruned` event. Stats need no adjustment — the contribution left when the row went missing.
+### Delete-and-redownload tracking
+
+The other way a library shrinks is out of band: the user deletes a bloated
+release and downloads a leaner one. `internal/scanner/replace.go` reconciles
+that into a single event with a measured byte delta, rather than leaving an
+unrelated `missing` row and a fresh arrival.
+
+Matching is on **content identity**, not path: `media.ReplaceKey` reduces a file
+to `tv|<title>|s%03d|e%04d` or `movie|<title><year>` (letters and digits only,
+lowercased), so a redownload can change resolution, codec, release group, and
+separators and still match. An underivable identity is `""`, which never matches
+anything — two unparseable files are not thereby the same file. The key is
+stamped on `media_files.replace_key` by `probeAndStore` on every insert and
+re-probe, by `MarkMissing` when a row disappears, by `RecordMove` when a rename
+gives the surviving row a new path (the row that held the correct key is the
+duplicate being deleted, and a rename changes neither size nor mtime, so nothing
+would ever re-probe the file and fix it), and by `Media.BackfillReplaceKeys` at
+boot so an existing library participates without waiting for a full re-probe.
+
+The movie half truncates at the **last release year** (`19xx`/`20xx` as a run of
+exactly four digits, which is what excludes `1080p`, `2160p`, and `x264`), so
+`Inception (2010)`, `Inception (2010) [Bluray-1080p]`, and a folderless
+`Inception.2010.2160p.WEB.x265-GRP.mkv` all key on `inception2010`. Taking the
+*last* year is what lets a title carry one of its own (`2001 A Space Odyssey
+(1968)`). With no year there is nothing dependable to truncate at, so the whole
+first path segment is used — which for a flat, yearless library means two
+releases of one film simply fail to match. That is the deliberate direction:
+guessing where the title stops would fold two unrelated movies into one row.
+
+Both orderings are handled, because both happen:
+- **Delete first** (the manual case, and any scan that sees both halves at
+  once): `scanner.matchReplacements` runs over the scan's inserts *after* the
+  vanished-path loop has stamped this pass's disappearances, and the watcher's
+  `probeSingleFile` runs the same check on each arrival. `Media.FindReplacement`
+  bounds it on `missing_since`.
+- **Import first** (the *arr upgrade case): the remove debounce deliberately
+  trails the probe debounce, so by the time `checkVanishedFile` fires the
+  replacement is already active. `matchArrivedReplacement` searches from that
+  side via `Media.FindActiveReplacement`, bounding it on the candidate's own
+  `media_files.first_seen_at` (migration `00016`, seeded from `last_probed_at`
+  for pre-existing rows).
+
+`REPLACE_LOOKBACK` (default `720h`, `0` = off) is that bound in both directions,
+and the arrival-side half of it is load-bearing rather than cosmetic: a library
+that deliberately keeps two cuts of one title gives both rows the same key, so
+deleting either leaves *exactly one* survivor and the ambiguity guard below
+never fires. Only the survivor's arrival time separates "the file that just
+replaced this" from "the copy that has sat here for a year", which would
+otherwise book a plain deletion as a replacement.
+
+Either direction resolves to `Media.RecordReplacement`, which shares
+`Media.foldInto` with `Supersede`: the ledger row is written first (it reads
+both rows, and the old one is deleted by the end of the transaction), job
+history moves to the survivor, and the old row is hard-deleted. Both refuse
+ambiguity — more than one candidate for the same key returns `ErrNotFound`
+rather than a guess, since a fabricated pair would corrupt a lifetime total —
+and both refuse while the old row has a live job. A matched arrival is
+`Discard`ed from the candidate notifier for the same reason a supersede
+survivor is: it is half of a swap, not an arrival.
+
+`MISSING_RETENTION` (default `0` = never) drives the post-scan cleanup in `scanner.pruneMissing`: rows past the cutoff are hard-deleted along with their `transcode_jobs` history, skipping files with a `queued`/`running`/`verifying` job. `POST /api/settings/prune-missing` does the same ignoring the cutoff. Both write a `missing_pruned` event. Stats need no adjustment — the contribution left when the row went missing. Pruning forfeits any future replacement match for those rows, whatever `REPLACE_LOOKBACK` says.
 
 ### Timezone model
 
@@ -151,7 +211,7 @@ Before a vanished file is marked missing, the scanner tries two reconciliations.
 
 ### Live settings
 
-`config.Live` is a `sync.RWMutex`-guarded struct seeded from env at boot. The scanner and worker read it on each tick, so PUT `/api/settings` takes effect immediately. Settings overrides are in-memory only — a restart re-seeds from env (this includes `missing_retention`, so a retention set in the UI reverts to `MISSING_RETENTION` on restart).
+`config.Live` is a `sync.RWMutex`-guarded struct seeded from env at boot. The scanner and worker read it on each tick, so PUT `/api/settings` takes effect immediately. Settings overrides are in-memory only — a restart re-seeds from env (this includes `missing_retention` and `replace_lookback`, so a value set in the UI reverts to `MISSING_RETENTION` / `REPLACE_LOOKBACK` on restart).
 
 `clock_format` is the exception: it has no env var and is persisted to the `settings` row (`clock_format` column, migration `00013`, `"12h"` default). It is display-only — the API always speaks 24-hour `HH:MM` — and instance-wide, since sessions are single-user. The frontend reads it off the cached settings query via `web/hooks/use-clock-format.ts`, so `formatClock`, `formatZoneClock`, and `windowInfo` all render on the chosen clock.
 
@@ -201,7 +261,7 @@ The frontend uses the **Next.js App Router** (`web/app/`). **Important:** `web/A
 
 ### WebSocket events
 
-The hub broadcasts: `job_started`, `job_progress` (with `percent`), `job_completed`, `job_failed`, `job_cancelled`, `jobs_queued`, `event_created`. The scanner broadcasts `scan_started`, `scan_completed`, and `scan_failed` during scans. The notifier broadcasts `event_created` for its `candidates_added` batches.
+The hub broadcasts: `job_started`, `job_progress` (with `percent`), `job_completed`, `job_failed`, `job_cancelled`, `jobs_queued`, `event_created`. The scanner broadcasts `scan_started`, `scan_completed`, and `scan_failed` during scans, and `event_created` for its `file_superseded` / `file_replaced` reconciliations. The notifier broadcasts `event_created` for its `candidates_added` batches.
 
 ### Candidate pagination & filtering
 
@@ -252,10 +312,27 @@ excludes them.
 which is always `hevc`, so `refineRatioIfReady` could never find the source
 codec's bucket and the savings model never actually refined.
 
-`GET /api/stats` carries a `savings` summary block; `GET /api/stats/savings`
-returns the full report (breakdowns, daily series, top wins, job outcomes) that
-the Insights page renders. Day buckets are shifted by the `TIMEZONE` offset so
-the series matches the clock the UI shows.
+The ledger's `source` column (migration `00016`) widened it from "bytes this
+encoder reclaimed" to "bytes reclaimed by any means": `encode` rows come from
+`Savings.RecordTx`, `replace` rows from `recordReplacementTx` inside the fold
+described under *Delete-and-redownload tracking*. `job_id` went nullable for
+that (partial unique index on non-null, so `RecordTx`'s `INSERT OR IGNORE` stays
+idempotent), and every pre-existing query gained `WHERE source = 'encode'` —
+including `Jobs.LearnedRatios`, where a replacement's size ratio would otherwise
+train the savings model on someone else's encode.
+
+A replacement's delta is signed. An upgrade to a larger release costs disk and
+is recorded as such, so `ReplacementSummary` reports the net alongside
+`BytesReclaimed`/`BytesAdded` rather than a single figure that nets a win
+against a cost.
+
+`GET /api/stats` carries `savings` and `replacements` summary blocks; `GET
+/api/stats/savings` returns the full report (breakdowns, daily series, top wins,
+job outcomes, plus a `replacements` block) that the Insights page renders. The
+encode-side aggregates stay encode-only — they double as the estimate-accuracy
+record, which a replacement has no prediction to be scored against — so the
+Insights headline is `bytes_saved + replacements.bytes_delta`. Day buckets are
+shifted by the `TIMEZONE` offset so the series matches the clock the UI shows.
 
 ### Encode time estimates
 

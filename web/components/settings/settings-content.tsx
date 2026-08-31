@@ -16,7 +16,11 @@ import {
 } from "@/lib/api";
 import { AccountPanel } from "./account-panel";
 import { EncodingPanel } from "./encoding-panel";
-import { LibraryPanel, RETENTION_OPTIONS } from "./library-panel";
+import {
+  LibraryPanel,
+  LOOKBACK_OPTIONS,
+  RETENTION_OPTIONS,
+} from "./library-panel";
 import { MetadataPanel } from "./metadata-panel";
 import { NotificationsPanel } from "./notifications-panel";
 import { DeleteProfileDialog, ProfileDialog } from "./profile-dialog";
@@ -57,6 +61,9 @@ export function SettingsContent() {
   );
   const [missingRetention, setMissingRetention] = useState(
     settings.missing_retention ?? "0",
+  );
+  const [replaceLookback, setReplaceLookback] = useState(
+    settings.replace_lookback ?? "0",
   );
 
   const [notifyEnabled, setNotifyEnabled] = useState(settings.notify_enabled);
@@ -108,6 +115,28 @@ export function SettingsContent() {
     onError: (_err, _value, previous) => {
       setMissingRetention(previous ?? "0");
       toast.error("Failed to save retention period");
+    },
+  });
+
+  const lookbackMutation = useMutation({
+    mutationFn: (value: string) =>
+      api.updateSettings({ replace_lookback: value }),
+    onMutate: (value: string) => {
+      const previous = replaceLookback;
+      setReplaceLookback(value);
+      return previous;
+    },
+    onSuccess: (_data, value) => {
+      toast.success(
+        value === "0"
+          ? "Redownloads will no longer be matched"
+          : `Redownloads will be matched within ${LOOKBACK_OPTIONS.find((o) => o.value === value)?.label ?? value}`,
+      );
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    },
+    onError: (_err, _value, previous) => {
+      setReplaceLookback(previous ?? "0");
+      toast.error("Failed to save the replacement window");
     },
   });
 
@@ -297,6 +326,8 @@ export function SettingsContent() {
         <LibraryPanel
           retention={missingRetention}
           onRetentionChange={(v) => retentionMutation.mutate(v)}
+          replaceLookback={replaceLookback}
+          onReplaceLookbackChange={(v) => lookbackMutation.mutate(v)}
           missing={settings.missing_files}
           onPurge={() => pruneMutation.mutate()}
           isPurging={pruneMutation.isPending}

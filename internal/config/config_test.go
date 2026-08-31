@@ -115,7 +115,7 @@ func TestLive_updateMissingRetention(t *testing.T) {
 	}
 
 	month := "720h"
-	if err := live.Update(nil, nil, nil, nil, nil, nil, &month, nil); err != nil {
+	if err := live.Update(nil, nil, nil, nil, nil, nil, &month, nil, nil); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	if live.MissingRetention() != 720*time.Hour {
@@ -124,7 +124,7 @@ func TestLive_updateMissingRetention(t *testing.T) {
 
 	// A rejected value must leave the holder untouched.
 	bad := "-1h"
-	if err := live.Update(nil, nil, nil, nil, nil, nil, &bad, nil); err == nil {
+	if err := live.Update(nil, nil, nil, nil, nil, nil, &bad, nil, nil); err == nil {
 		t.Fatal("expected error for negative retention")
 	}
 	if live.MissingRetention() != 720*time.Hour {
@@ -132,7 +132,7 @@ func TestLive_updateMissingRetention(t *testing.T) {
 	}
 
 	off := "0"
-	if err := live.Update(nil, nil, nil, nil, nil, nil, &off, nil); err != nil {
+	if err := live.Update(nil, nil, nil, nil, nil, nil, &off, nil, nil); err != nil {
 		t.Fatalf("update to off: %v", err)
 	}
 	if live.MissingRetention() != 0 {
@@ -200,7 +200,7 @@ func TestLiveUpdate_timezone(t *testing.T) {
 	live := NewLive(&Config{Timezone: "UTC", Location: time.UTC})
 
 	tz := "America/New_York"
-	if err := live.Update(nil, nil, nil, nil, nil, nil, nil, &tz); err != nil {
+	if err := live.Update(nil, nil, nil, nil, nil, nil, nil, nil, &tz); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	if live.Timezone() != tz || live.Location().String() != tz {
@@ -208,7 +208,7 @@ func TestLiveUpdate_timezone(t *testing.T) {
 	}
 
 	bad := "Mars/Olympus"
-	if err := live.Update(nil, nil, nil, nil, nil, nil, nil, &bad); err == nil {
+	if err := live.Update(nil, nil, nil, nil, nil, nil, nil, nil, &bad); err == nil {
 		t.Fatal("expected error for unknown zone")
 	}
 	if live.Timezone() != tz {

@@ -43,14 +43,14 @@ func TestStats_incrementalEqualsRecompute(t *testing.T) {
 	}
 
 	// Remove: mark the HEVC file missing.
-	if err := s.Media.MarkMissing(ctx, hevc); err != nil {
+	if err := s.Media.MarkMissing(ctx, hevc, ""); err != nil {
 		t.Fatal(err)
 	}
 
 	// Move: a vanished file matched to a freshly-inserted destination row.
 	moveFrom := add(testFile{path: "/m/old.mkv", size: 6000, codec: "h264", height: 1080, savings: 2400})
 	dst := add(testFile{path: "/m/new.mkv", size: 6000, codec: "h264", height: 1080, savings: 2400})
-	if err := s.Media.RecordMove(ctx, moveFrom, dst, "/m/new.mkv"); err != nil {
+	if err := s.Media.RecordMove(ctx, moveFrom, dst, "/m/new.mkv", ""); err != nil {
 		t.Fatal(err)
 	}
 

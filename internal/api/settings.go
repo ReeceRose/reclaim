@@ -38,6 +38,7 @@ func (s *Server) handleGetSettings(c *echo.Context) error {
 		"probe_concurrency":   s.live.ProbeConcurrency(),
 		"oversize_threshold":  s.live.OversizeThreshold(),
 		"missing_retention":   formatRetention(s.live.MissingRetention()),
+		"replace_lookback":    formatRetention(s.live.ReplaceLookback()),
 		"movies_path":         s.moviesPath,
 		"tv_path":             s.tvPath,
 		"tmdb_configured":     s.tmdbKey != "",
@@ -81,6 +82,7 @@ type settingsRequest struct {
 	ProbeConcurrency  *int     `json:"probe_concurrency"`
 	OversizeThreshold *float64 `json:"oversize_threshold"`
 	MissingRetention  *string  `json:"missing_retention"`
+	ReplaceLookback   *string  `json:"replace_lookback"`
 
 	NotifyEnabled       *bool   `json:"notify_enabled"`
 	NotifyDelaySeconds  *int    `json:"notify_delay_seconds"`
@@ -107,7 +109,8 @@ func (s *Server) handlePutSettings(c *echo.Context) error {
 	}
 	if err := s.live.Update(
 		req.EncodeWindowStart, req.EncodeWindowEnd, req.ScanInterval, req.ScanAnchor,
-		req.ProbeConcurrency, req.OversizeThreshold, req.MissingRetention, req.Timezone,
+		req.ProbeConcurrency, req.OversizeThreshold, req.MissingRetention,
+		req.ReplaceLookback, req.Timezone,
 	); err != nil {
 		return badRequest(c, err.Error())
 	}

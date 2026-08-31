@@ -15,6 +15,7 @@ const (
 	EventOrphanRestored  = "orphan_restored"
 	EventMissingPruned   = "missing_pruned"
 	EventFileSuperseded  = "file_superseded"
+	EventFileReplaced    = "file_replaced"
 	EventCandidatesAdded = "candidates_added"
 )
 

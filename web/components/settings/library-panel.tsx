@@ -29,30 +29,48 @@ export const RETENTION_OPTIONS = [
   { value: "2160h0m0s", label: "90 days" },
 ];
 
+export const LOOKBACK_OPTIONS = [
+  { value: "0", label: "Off" },
+  { value: "168h0m0s", label: "7 days" },
+  { value: "336h0m0s", label: "14 days" },
+  { value: "720h0m0s", label: "30 days" },
+  { value: "2160h0m0s", label: "90 days" },
+  { value: "8760h0m0s", label: "1 year" },
+];
+
 // The backend renders durations via Go's Duration.String(), so "720h0m0s" comes
 // back for a value sent as "720h". Anything unrecognised (a hand-set env var
-// like MISSING_RETENTION=100h) falls back to Never so the select stays valid.
-function normalizeRetention(value: string | undefined): string {
+// like MISSING_RETENTION=100h) falls back to the zero option so the select
+// stays valid.
+function normalizeDuration(
+  value: string | undefined,
+  options: { value: string }[],
+): string {
   if (!value || value === "0" || value === "0s") return "0";
-  return RETENTION_OPTIONS.some((o) => o.value === value) ? value : "0";
+  return options.some((o) => o.value === value) ? value : "0";
 }
 
 export function LibraryPanel({
   retention,
   onRetentionChange,
+  replaceLookback,
+  onReplaceLookbackChange,
   missing,
   onPurge,
   isPurging,
 }: {
   retention: string;
   onRetentionChange: (v: string) => void;
+  replaceLookback: string;
+  onReplaceLookbackChange: (v: string) => void;
   missing: MissingFilesSummary | undefined;
   onPurge: () => void;
   isPurging: boolean;
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const count = missing?.count ?? 0;
-  const selected = normalizeRetention(retention);
+  const selected = normalizeDuration(retention, RETENTION_OPTIONS);
+  const lookback = normalizeDuration(replaceLookback, LOOKBACK_OPTIONS);
 
   return (
     <div
@@ -93,6 +111,45 @@ export function LibraryPanel({
           {selected === "0"
             ? "Missing files are kept indefinitely."
             : "Cleanup runs after each library scan."}
+        </p>
+      </div>
+
+      <div className="mb-4">
+        <LabelWithHelp
+          label="Match redownloads within"
+          help={
+            <>
+              When a file is indexed that is another copy of something already
+              missing — the same episode or movie from a different release —
+              Reclaim pairs the two and records the size difference as reclaimed
+              storage, so deleting a bloated release and grabbing a leaner one
+              counts alongside a re-encode. This is how far back it will look,
+              in both directions: the replacement can arrive before or after the
+              old file goes away, but the other half has to fall inside the
+              window. Longer windows catch slower redownloads but raise the
+              chance of crediting an unrelated re-add — if you keep two cuts of
+              a title side by side, a long window makes deleting one of them
+              look like a replacement of the other. A missing row removed by the
+              cleanup above can no longer be matched.
+            </>
+          }
+        />
+        <Select value={lookback} onValueChange={onReplaceLookbackChange}>
+          <SelectTrigger className="w-40">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {LOOKBACK_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-dim mt-1.5">
+          {lookback === "0"
+            ? "Replacements are not tracked; a deleted file just goes missing."
+            : "Matched pairs show up on Insights and in the activity feed."}
         </p>
       </div>
 

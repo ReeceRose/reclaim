@@ -23,6 +23,7 @@ type Config struct {
 	ProbeConcurrency  int
 	OversizeThreshold float64
 	MissingRetention  time.Duration // 0 = never prune missing rows
+	ReplaceLookback   time.Duration // how far back a missing file may be reclaimed by a redownload; 0 = off
 	DisableAuth       bool
 	ResetAuth         bool
 }
@@ -44,6 +45,7 @@ func Load() (*Config, error) {
 	c.ProbeConcurrency = parseInt("PROBE_CONCURRENCY", "4", &errs)
 	c.OversizeThreshold = parseFloat("OVERSIZE_THRESHOLD", "2.0", &errs)
 	c.MissingRetention = parseRetention("MISSING_RETENTION", "0", &errs)
+	c.ReplaceLookback = parseRetention("REPLACE_LOOKBACK", "720h", &errs)
 
 	c.TMDBKey = os.Getenv("TMDB_API_KEY")
 

@@ -551,7 +551,7 @@ func TestPruneMissingEndpoint(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Media.MarkMissing(ctx, gone); err != nil {
+	if err := st.Media.MarkMissing(ctx, gone, ""); err != nil {
 		t.Fatal(err)
 	}
 

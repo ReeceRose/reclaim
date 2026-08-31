@@ -238,7 +238,7 @@ func TestNotifier_skipsRowsThatStoppedBeingCandidates(t *testing.T) {
 	duplicate := insertCandidate(t, st, renamed, "Show", 1)
 	n.Add(keep, duplicate)
 
-	if err := st.Media.RecordMove(ctx, original, duplicate, renamed); err != nil {
+	if err := st.Media.RecordMove(ctx, original, duplicate, renamed, ""); err != nil {
 		t.Fatalf("record move: %v", err)
 	}
 

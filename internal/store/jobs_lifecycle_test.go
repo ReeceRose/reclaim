@@ -293,7 +293,7 @@ func TestReplaceWithEncodedReactivatesMissingRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert media: %v", err)
 	}
-	if err := st.Media.MarkMissing(ctx, mid); err != nil {
+	if err := st.Media.MarkMissing(ctx, mid, ""); err != nil {
 		t.Fatalf("mark missing: %v", err)
 	}
 

@@ -24,6 +24,7 @@ type Live struct {
 	probeConcurrency  int
 	oversizeThreshold float64
 	missingRetention  time.Duration
+	replaceLookback   time.Duration
 }
 
 // NewLive seeds a Live holder from the immutable boot Config.
@@ -42,6 +43,7 @@ func NewLive(c *Config) *Live {
 		probeConcurrency:  c.ProbeConcurrency,
 		oversizeThreshold: c.OversizeThreshold,
 		missingRetention:  c.MissingRetention,
+		replaceLookback:   c.ReplaceLookback,
 	}
 }
 
@@ -110,10 +112,19 @@ func (l *Live) MissingRetention() time.Duration {
 	return l.missingRetention
 }
 
+// ReplaceLookback is how long after a file goes missing a newly indexed file
+// with the same content identity is still treated as its replacement rather
+// than an unrelated arrival. Zero disables replacement matching entirely.
+func (l *Live) ReplaceLookback() time.Duration {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.replaceLookback
+}
+
 // Update applies validated settings. Any field left nil is unchanged. It
 // validates the whole set before mutating, so a bad value never leaves the
 // holder half-updated.
-func (l *Live) Update(encodeStart, encodeEnd, scanInterval, scanAnchor *string, probeConcurrency *int, oversizeThreshold *float64, missingRetention, timezone *string) error {
+func (l *Live) Update(encodeStart, encodeEnd, scanInterval, scanAnchor *string, probeConcurrency *int, oversizeThreshold *float64, missingRetention, replaceLookback, timezone *string) error {
 	var (
 		start     = l.EncodeWindowStart()
 		end       = l.EncodeWindowEnd()
@@ -122,6 +133,7 @@ func (l *Live) Update(encodeStart, encodeEnd, scanInterval, scanAnchor *string, 
 		conc      = l.ProbeConcurrency()
 		thresh    = l.OversizeThreshold()
 		retention = l.MissingRetention()
+		lookback  = l.ReplaceLookback()
 		tzName    = l.Timezone()
 		loc       = l.Location()
 		err       error
@@ -174,6 +186,11 @@ func (l *Live) Update(encodeStart, encodeEnd, scanInterval, scanAnchor *string, 
 			return fmt.Errorf("missing_retention: %w", err)
 		}
 	}
+	if replaceLookback != nil {
+		if lookback, err = ParseRetentionValue(*replaceLookback); err != nil {
+			return fmt.Errorf("replace_lookback: %w", err)
+		}
+	}
 
 	l.mu.Lock()
 	l.timezone = tzName
@@ -185,6 +202,7 @@ func (l *Live) Update(encodeStart, encodeEnd, scanInterval, scanAnchor *string, 
 	l.probeConcurrency = conc
 	l.oversizeThreshold = thresh
 	l.missingRetention = retention
+	l.replaceLookback = lookback
 	l.mu.Unlock()
 	return nil
 }

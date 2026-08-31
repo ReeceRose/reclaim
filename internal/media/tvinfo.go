@@ -7,7 +7,10 @@ import (
 	"strings"
 )
 
-var seasonEpisodeRe = regexp.MustCompile(`(?i)[._ \-]s(\d{1,3})[._ \-]?e(\d{1,4})`)
+// The token needs a boundary before it so "Episodes01e01" can't match, but that
+// boundary may be the start of the filename: "S01E01.mkv" is a real naming
+// scheme, not just a suffix of a longer release name.
+var seasonEpisodeRe = regexp.MustCompile(`(?i)(?:^|[._ \-])s(\d{1,3})[._ \-]?e(\d{1,4})`)
 var seasonDirRe = regexp.MustCompile(`(?i)^season[ ._]*(\d{1,3})$`)
 
 // ParseTVInfo derives (series title, season, episode) from a TV file path.

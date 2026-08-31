@@ -56,7 +56,7 @@ func TestFindSuperseder_skipsAmbiguousAndMissingCandidates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Media.MarkMissing(ctx, stale); err != nil {
+	if err := s.Media.MarkMissing(ctx, stale, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Media.FindSuperseder(ctx, "/m/a.mkv", gone); !errors.Is(err, ErrNotFound) {
@@ -147,7 +147,7 @@ func TestSupersede_alreadyMissingRowDoesNotDoubleDiscount(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The watcher marked it missing first; the next scan supersedes it.
-	if err := s.Media.MarkMissing(ctx, old); err != nil {
+	if err := s.Media.MarkMissing(ctx, old, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Media.Supersede(ctx, old, replacement); err != nil {

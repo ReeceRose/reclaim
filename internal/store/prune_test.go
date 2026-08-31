@@ -44,7 +44,7 @@ func TestMarkMissing_stampsSinceOnceAndClearsOnReturn(t *testing.T) {
 	}
 
 	before := time.Now().Unix()
-	if err := s.Media.MarkMissing(ctx, id); err != nil {
+	if err := s.Media.MarkMissing(ctx, id, ""); err != nil {
 		t.Fatal(err)
 	}
 	first, err := s.Media.missingSince(ctx, id)
@@ -59,7 +59,7 @@ func TestMarkMissing_stampsSinceOnceAndClearsOnReturn(t *testing.T) {
 	if err := s.Media.backdateMissing(ctx, id, 1000); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Media.MarkMissing(ctx, id); err != nil {
+	if err := s.Media.MarkMissing(ctx, id, ""); err != nil {
 		t.Fatal(err)
 	}
 	again, err := s.Media.missingSince(ctx, id)
@@ -98,7 +98,7 @@ func TestPruneMissing_respectsCutoffAndLiveJobs(t *testing.T) {
 
 	now := time.Now().Unix()
 	for _, id := range []int64{old, recent, queued, encoded} {
-		if err := s.Media.MarkMissing(ctx, id); err != nil {
+		if err := s.Media.MarkMissing(ctx, id, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -164,10 +164,10 @@ func TestPruneMissing_zeroCutoffPurgesAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Media.MarkMissing(ctx, a); err != nil {
+	if err := s.Media.MarkMissing(ctx, a, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Media.MarkMissing(ctx, b); err != nil {
+	if err := s.Media.MarkMissing(ctx, b, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -209,7 +209,7 @@ func TestPruneMissing_leavesStatsUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Media.MarkMissing(ctx, gone); err != nil {
+	if err := s.Media.MarkMissing(ctx, gone, ""); err != nil {
 		t.Fatal(err)
 	}
 

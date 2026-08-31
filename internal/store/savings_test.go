@@ -192,7 +192,7 @@ func TestSavingsLedgerSurvivesPrune(t *testing.T) {
 	if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, 400, "fp-new", 1_700_003_600, "done", ""); err != nil {
 		t.Fatalf("commit: %v", err)
 	}
-	if err := st.Media.MarkMissing(ctx, fileID); err != nil {
+	if err := st.Media.MarkMissing(ctx, fileID, ""); err != nil {
 		t.Fatalf("mark missing: %v", err)
 	}
 	if _, err := st.Media.PruneMissing(ctx, 0); err != nil {

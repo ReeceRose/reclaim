@@ -43,11 +43,15 @@ type SavingsBucket struct {
 	BytesSaved    int64
 }
 
-// SavingsDay is one calendar day of realized savings.
+// SavingsDay is one calendar day of realized savings, split by how the bytes
+// were reclaimed. BytesReplaced is a net delta and may be negative — a
+// redownload that upgrades to a larger release costs space rather than saving it.
 type SavingsDay struct {
-	Day          string
-	FilesEncoded int64
-	BytesSaved   int64
+	Day           string
+	FilesEncoded  int64
+	BytesSaved    int64
+	FilesReplaced int64
+	BytesReplaced int64
 }
 
 // SavingsEntry is a single completed encode as recorded in the ledger.
@@ -131,7 +135,7 @@ func (s *Savings) Summary(ctx context.Context, now int64) (*SavingsSummary, erro
 		  COALESCE(SUM(CASE WHEN estimated_duration_seconds IS NOT NULL AND encode_seconds IS NOT NULL THEN 1 ELSE 0 END), 0),
 		  COALESCE(SUM(CASE WHEN estimated_duration_seconds IS NOT NULL AND encode_seconds IS NOT NULL THEN estimated_duration_seconds ELSE 0 END), 0),
 		  COALESCE(SUM(CASE WHEN estimated_duration_seconds IS NOT NULL AND encode_seconds IS NOT NULL THEN encode_seconds ELSE 0 END), 0)
-		FROM savings_ledger`,
+		FROM savings_ledger WHERE source = 'encode'`,
 		now-7*86400, now-7*86400, now-30*86400, now-30*86400,
 	).Scan(
 		&out.FilesEncoded, &out.OriginalBytes, &out.OutputBytes, &out.BytesSaved,
@@ -147,6 +151,7 @@ func (s *Savings) Summary(ctx context.Context, now int64) (*SavingsSummary, erro
 	err = s.r.QueryRowContext(ctx, `
 		SELECT original_size_bytes - output_size_bytes, path
 		FROM savings_ledger
+		WHERE source = 'encode'
 		ORDER BY original_size_bytes - output_size_bytes DESC, id
 		LIMIT 1`,
 	).Scan(&out.BestSavedBytes, &out.BestPath)
@@ -168,6 +173,7 @@ func (s *Savings) ByCodec(ctx context.Context) ([]SavingsBucket, error) {
 		       COALESCE(SUM(output_size_bytes), 0),
 		       COALESCE(SUM(original_size_bytes - output_size_bytes), 0)
 		FROM savings_ledger
+		WHERE source = 'encode'
 		GROUP BY 1
 		ORDER BY 5 DESC, 1`)
 }
@@ -180,6 +186,7 @@ func (s *Savings) ByLibrary(ctx context.Context) ([]SavingsBucket, error) {
 		       COALESCE(SUM(output_size_bytes), 0),
 		       COALESCE(SUM(original_size_bytes - output_size_bytes), 0)
 		FROM savings_ledger
+		WHERE source = 'encode'
 		GROUP BY library_type
 		ORDER BY 5 DESC, 1`)
 }
@@ -192,6 +199,7 @@ func (s *Savings) ByResolution(ctx context.Context) ([]SavingsBucket, error) {
 		       COALESCE(SUM(output_size_bytes), 0),
 		       COALESCE(SUM(original_size_bytes - output_size_bytes), 0)
 		FROM savings_ledger
+		WHERE source = 'encode'
 		GROUP BY 1
 		ORDER BY 5 DESC, 1`)
 }
@@ -218,8 +226,10 @@ func (s *Savings) buckets(ctx context.Context, q string) ([]SavingsBucket, error
 func (s *Savings) Daily(ctx context.Context, since int64, tzOffsetSeconds int) ([]SavingsDay, error) {
 	rows, err := s.r.QueryContext(ctx, `
 		SELECT date(completed_at + ?, 'unixepoch') AS day,
-		       COUNT(*),
-		       COALESCE(SUM(original_size_bytes - output_size_bytes), 0)
+		       COALESCE(SUM(CASE WHEN source = 'encode' THEN 1 ELSE 0 END), 0),
+		       COALESCE(SUM(CASE WHEN source = 'encode' THEN original_size_bytes - output_size_bytes ELSE 0 END), 0),
+		       COALESCE(SUM(CASE WHEN source = 'replace' THEN 1 ELSE 0 END), 0),
+		       COALESCE(SUM(CASE WHEN source = 'replace' THEN original_size_bytes - output_size_bytes ELSE 0 END), 0)
 		FROM savings_ledger
 		WHERE completed_at >= ?
 		GROUP BY day
@@ -233,7 +243,8 @@ func (s *Savings) Daily(ctx context.Context, since int64, tzOffsetSeconds int) (
 	out := []SavingsDay{}
 	for rows.Next() {
 		var d SavingsDay
-		if err := rows.Scan(&d.Day, &d.FilesEncoded, &d.BytesSaved); err != nil {
+		if err := rows.Scan(&d.Day, &d.FilesEncoded, &d.BytesSaved,
+			&d.FilesReplaced, &d.BytesReplaced); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -259,7 +270,7 @@ func (s *Savings) entries(ctx context.Context, orderBy string, limit int) ([]Sav
 		SELECT job_id, media_file_id, path, library_type, source_codec,
 		       width, height, original_size_bytes, output_size_bytes,
 		       original_size_bytes - output_size_bytes, encode_seconds, completed_at
-		FROM savings_ledger `+orderBy+` LIMIT ?`, limit)
+		FROM savings_ledger WHERE source = 'encode' `+orderBy+` LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -270,6 +281,199 @@ func (s *Savings) entries(ctx context.Context, orderBy string, limit int) ([]Sav
 		if err := rows.Scan(&e.JobID, &e.MediaFileID, &e.Path, &e.LibraryType, &e.SourceCodec,
 			&e.Width, &e.Height, &e.OriginalBytes, &e.OutputBytes,
 			&e.BytesSaved, &e.EncodeSeconds, &e.CompletedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// ReplacementSummary rolls up every recorded replacement — a file deleted and
+// re-acquired out of band rather than re-encoded by the worker.
+//
+// BytesDelta is the net (original - output) and is signed: replacing a 1080p
+// h264 release with a 4K HEVC one is a legitimate replacement that costs disk.
+// Reclaimed and Added split that net into its two halves so the UI can show
+// both instead of a single number that quietly nets a win against a cost.
+type ReplacementSummary struct {
+	Files          int64
+	OriginalBytes  int64
+	OutputBytes    int64
+	BytesDelta     int64
+	BytesReclaimed int64
+	BytesAdded     int64
+	Smaller        int64
+	Larger         int64
+
+	Files7d       int64
+	BytesDelta7d  int64
+	Files30d      int64
+	BytesDelta30d int64
+
+	FirstAt *int64
+	LastAt  *int64
+
+	BestSavedBytes int64
+	BestPath       string
+}
+
+// ReplacementEntry is a single delete-and-reacquire pair as recorded in the ledger.
+type ReplacementEntry struct {
+	MediaFileID  int64
+	Path         string
+	PreviousPath string
+	LibraryType  string
+	MatchKind    string
+	SourceCodec  *string
+	ResultCodec  *string
+	Width        *int
+	Height       *int
+	ResultWidth  *int
+	ResultHeight *int
+	OriginalSize int64
+	OutputSize   int64
+	BytesSaved   int64
+	CompletedAt  int64
+}
+
+// Match kinds recorded on a replacement ledger row, naming which reconciliation
+// found the pair.
+const (
+	// MatchKindSupersede is the same-name-new-container case: the file was
+	// replaced in place and the scanner matched it by path stem.
+	MatchKindSupersede = "supersede"
+	// MatchKindRedownload is the delete-then-reacquire case: the old row had
+	// already gone missing and a later arrival matched it on content identity.
+	MatchKindRedownload = "redownload"
+)
+
+// recordReplacementTx appends a replacement row pairing a vanished media row
+// with the file that replaced it. It runs inside the caller's transaction —
+// always the same one that folds the two media rows together — so a ledger
+// entry can never outlive the reconciliation that justified it, and must run
+// before the old row is deleted.
+//
+// Rows with a non-positive size on either side are skipped: an unprobed or
+// zero-byte row would contribute a meaningless delta to a lifetime total.
+func recordReplacementTx(ctx context.Context, tx *sql.Tx, oldID, newID int64, matchKind string, at int64) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO savings_ledger (
+			source, match_kind, media_file_id, path, previous_path, library_type,
+			source_codec, result_codec, width, height, result_width, result_height,
+			duration_seconds, original_size_bytes, output_size_bytes, completed_at
+		)
+		SELECT 'replace', ?, n.id, n.path, o.path,
+		       COALESCE(NULLIF(n.library_type, ''), o.library_type),
+		       LOWER(NULLIF(o.video_codec, '')), LOWER(NULLIF(n.video_codec, '')),
+		       o.width, o.height, n.width, n.height,
+		       o.duration_seconds, o.size_bytes, n.size_bytes, ?
+		FROM media_files o
+		JOIN media_files n ON n.id = ?
+		WHERE o.id = ? AND o.size_bytes > 0 AND n.size_bytes > 0`,
+		matchKind, at, newID, oldID,
+	)
+	return err
+}
+
+// RecordReplacementTx is the exported form of recordReplacementTx for callers
+// outside this file that already hold a write transaction.
+func (s *Savings) RecordReplacementTx(ctx context.Context, tx *sql.Tx, oldID, newID int64, matchKind string, at int64) error {
+	return recordReplacementTx(ctx, tx, oldID, newID, matchKind, at)
+}
+
+// ReplacementSummary rolls the replacement half of the ledger up. now anchors
+// the rolling 7/30-day windows, as in Summary.
+func (s *Savings) ReplacementSummary(ctx context.Context, now int64) (*ReplacementSummary, error) {
+	out := &ReplacementSummary{}
+	const delta = "original_size_bytes - output_size_bytes"
+	err := s.r.QueryRowContext(ctx, `
+		SELECT
+		  COUNT(*),
+		  COALESCE(SUM(original_size_bytes), 0),
+		  COALESCE(SUM(output_size_bytes), 0),
+		  COALESCE(SUM(`+delta+`), 0),
+		  COALESCE(SUM(CASE WHEN `+delta+` > 0 THEN `+delta+` ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN `+delta+` < 0 THEN -(`+delta+`) ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN `+delta+` > 0 THEN 1 ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN `+delta+` < 0 THEN 1 ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN completed_at >= ? THEN 1 ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN completed_at >= ? THEN `+delta+` ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN completed_at >= ? THEN 1 ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN completed_at >= ? THEN `+delta+` ELSE 0 END), 0),
+		  MIN(completed_at),
+		  MAX(completed_at)
+		FROM savings_ledger WHERE source = 'replace'`,
+		now-7*86400, now-7*86400, now-30*86400, now-30*86400,
+	).Scan(
+		&out.Files, &out.OriginalBytes, &out.OutputBytes, &out.BytesDelta,
+		&out.BytesReclaimed, &out.BytesAdded, &out.Smaller, &out.Larger,
+		&out.Files7d, &out.BytesDelta7d, &out.Files30d, &out.BytesDelta30d,
+		&out.FirstAt, &out.LastAt,
+	)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+
+	err = s.r.QueryRowContext(ctx, `
+		SELECT `+delta+`, previous_path
+		FROM savings_ledger
+		WHERE source = 'replace'
+		ORDER BY `+delta+` DESC, id
+		LIMIT 1`,
+	).Scan(&out.BestSavedBytes, &out.BestPath)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ReplacementsByLibrary groups replacement deltas by library type.
+func (s *Savings) ReplacementsByLibrary(ctx context.Context) ([]SavingsBucket, error) {
+	return s.buckets(ctx, `
+		SELECT library_type, COUNT(*),
+		       COALESCE(SUM(original_size_bytes), 0),
+		       COALESCE(SUM(output_size_bytes), 0),
+		       COALESCE(SUM(original_size_bytes - output_size_bytes), 0)
+		FROM savings_ledger
+		WHERE source = 'replace'
+		GROUP BY library_type
+		ORDER BY 5 DESC, 1`)
+}
+
+// RecentReplacements returns the newest replacement pairs, newest first.
+func (s *Savings) RecentReplacements(ctx context.Context, limit int) ([]ReplacementEntry, error) {
+	return s.replacements(ctx, `ORDER BY completed_at DESC, id DESC`, limit)
+}
+
+// TopReplacements returns the replacements that reclaimed the most bytes,
+// biggest first. Upgrades (a negative delta) sort to the bottom, so a library
+// with nothing but upgrades returns them rather than an empty list.
+func (s *Savings) TopReplacements(ctx context.Context, limit int) ([]ReplacementEntry, error) {
+	return s.replacements(ctx, `ORDER BY original_size_bytes - output_size_bytes DESC, id`, limit)
+}
+
+func (s *Savings) replacements(ctx context.Context, orderBy string, limit int) ([]ReplacementEntry, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	rows, err := s.r.QueryContext(ctx, `
+		SELECT media_file_id, path, COALESCE(previous_path, ''), library_type,
+		       COALESCE(match_kind, ''), source_codec, result_codec,
+		       width, height, result_width, result_height,
+		       original_size_bytes, output_size_bytes,
+		       original_size_bytes - output_size_bytes, completed_at
+		FROM savings_ledger WHERE source = 'replace' `+orderBy+` LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []ReplacementEntry{}
+	for rows.Next() {
+		var e ReplacementEntry
+		if err := rows.Scan(&e.MediaFileID, &e.Path, &e.PreviousPath, &e.LibraryType,
+			&e.MatchKind, &e.SourceCodec, &e.ResultCodec,
+			&e.Width, &e.Height, &e.ResultWidth, &e.ResultHeight,
+			&e.OriginalSize, &e.OutputSize, &e.BytesSaved, &e.CompletedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, e)

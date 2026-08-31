@@ -54,9 +54,11 @@ type savingsBucketDTO struct {
 }
 
 type savingsDayDTO struct {
-	Day          string `json:"day"`
-	FilesEncoded int64  `json:"files_encoded"`
-	BytesSaved   int64  `json:"bytes_saved"`
+	Day           string `json:"day"`
+	FilesEncoded  int64  `json:"files_encoded"`
+	BytesSaved    int64  `json:"bytes_saved"`
+	FilesReplaced int64  `json:"files_replaced"`
+	BytesReplaced int64  `json:"bytes_replaced"`
 }
 
 type savingsEntryDTO struct {
@@ -72,6 +74,93 @@ type savingsEntryDTO struct {
 	BytesSaved    int64   `json:"bytes_saved"`
 	EncodeSeconds *int64  `json:"encode_seconds"`
 	CompletedAt   int64   `json:"completed_at"`
+}
+
+// replacementSummaryDTO is the roll-up of bytes reclaimed by deleting a file
+// and re-acquiring it, rather than by re-encoding it in place.
+type replacementSummaryDTO struct {
+	Files          int64 `json:"files_replaced"`
+	OriginalBytes  int64 `json:"original_bytes"`
+	OutputBytes    int64 `json:"output_bytes"`
+	BytesDelta     int64 `json:"bytes_delta"`
+	BytesReclaimed int64 `json:"bytes_reclaimed"`
+	BytesAdded     int64 `json:"bytes_added"`
+	Smaller        int64 `json:"replacements_smaller"`
+	Larger         int64 `json:"replacements_larger"`
+
+	Files7d       int64 `json:"files_replaced_7d"`
+	BytesDelta7d  int64 `json:"bytes_delta_7d"`
+	Files30d      int64 `json:"files_replaced_30d"`
+	BytesDelta30d int64 `json:"bytes_delta_30d"`
+
+	FirstAt *int64 `json:"first_replaced_at"`
+	LastAt  *int64 `json:"last_replaced_at"`
+
+	BestSavedBytes int64  `json:"best_saved_bytes"`
+	BestPath       string `json:"best_path"`
+}
+
+type replacementEntryDTO struct {
+	MediaFileID  int64   `json:"media_file_id"`
+	Path         string  `json:"path"`
+	PreviousPath string  `json:"previous_path"`
+	LibraryType  string  `json:"library_type"`
+	MatchKind    string  `json:"match_kind"`
+	SourceCodec  *string `json:"source_codec"`
+	ResultCodec  *string `json:"result_codec"`
+	Width        *int    `json:"width"`
+	Height       *int    `json:"height"`
+	ResultWidth  *int    `json:"result_width"`
+	ResultHeight *int    `json:"result_height"`
+	OriginalSize int64   `json:"original_size_bytes"`
+	OutputSize   int64   `json:"output_size_bytes"`
+	BytesSaved   int64   `json:"bytes_saved"`
+	CompletedAt  int64   `json:"completed_at"`
+}
+
+func toReplacementSummaryDTO(r *store.ReplacementSummary) replacementSummaryDTO {
+	return replacementSummaryDTO{
+		Files:          r.Files,
+		OriginalBytes:  r.OriginalBytes,
+		OutputBytes:    r.OutputBytes,
+		BytesDelta:     r.BytesDelta,
+		BytesReclaimed: r.BytesReclaimed,
+		BytesAdded:     r.BytesAdded,
+		Smaller:        r.Smaller,
+		Larger:         r.Larger,
+		Files7d:        r.Files7d,
+		BytesDelta7d:   r.BytesDelta7d,
+		Files30d:       r.Files30d,
+		BytesDelta30d:  r.BytesDelta30d,
+		FirstAt:        r.FirstAt,
+		LastAt:         r.LastAt,
+		BestSavedBytes: r.BestSavedBytes,
+		BestPath:       r.BestPath,
+	}
+}
+
+func toReplacementEntryDTOs(in []store.ReplacementEntry) []replacementEntryDTO {
+	out := make([]replacementEntryDTO, 0, len(in))
+	for _, e := range in {
+		out = append(out, replacementEntryDTO{
+			MediaFileID:  e.MediaFileID,
+			Path:         e.Path,
+			PreviousPath: e.PreviousPath,
+			LibraryType:  e.LibraryType,
+			MatchKind:    e.MatchKind,
+			SourceCodec:  e.SourceCodec,
+			ResultCodec:  e.ResultCodec,
+			Width:        e.Width,
+			Height:       e.Height,
+			ResultWidth:  e.ResultWidth,
+			ResultHeight: e.ResultHeight,
+			OriginalSize: e.OriginalSize,
+			OutputSize:   e.OutputSize,
+			BytesSaved:   e.BytesSaved,
+			CompletedAt:  e.CompletedAt,
+		})
+	}
+	return out
 }
 
 func ratio(num, den int64) float64 {
@@ -166,7 +255,13 @@ func toSavingsSummaryDTO(s *store.SavingsSummary, remainingCandidates int64) sav
 }
 
 // handleSavings returns the full realized-savings report: roll-up, breakdowns,
-// a daily time series, and the largest and most recent wins.
+// a daily time series, and the largest and most recent wins — for encodes, and
+// separately for replacements (files deleted and re-acquired out of band).
+//
+// The two are reported side by side rather than merged. They reclaim the same
+// bytes but answer different questions: the encode figures are also the
+// accuracy record for the savings and duration models, which a replacement has
+// no prediction to be scored against.
 func (s *Server) handleSavings(c *echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -230,8 +325,31 @@ func (s *Server) handleSavings(c *echo.Context) error {
 		outcomes[st] = n
 	}
 
+	replacements, err := s.store.Savings.ReplacementSummary(ctx, now.Unix())
+	if err != nil {
+		return serverError(c, err)
+	}
+	replacementsByLibrary, err := s.store.Savings.ReplacementsByLibrary(ctx)
+	if err != nil {
+		return serverError(c, err)
+	}
+	recentReplacements, err := s.store.Savings.RecentReplacements(ctx, 10)
+	if err != nil {
+		return serverError(c, err)
+	}
+	topReplacements, err := s.store.Savings.TopReplacements(ctx, 10)
+	if err != nil {
+		return serverError(c, err)
+	}
+
 	return c.JSON(http.StatusOK, map[string]any{
-		"summary":       toSavingsSummaryDTO(summary, remaining),
+		"summary": toSavingsSummaryDTO(summary, remaining),
+		"replacements": map[string]any{
+			"summary":    toReplacementSummaryDTO(replacements),
+			"by_library": toSavingsBucketDTOs(replacementsByLibrary),
+			"recent":     toReplacementEntryDTOs(recentReplacements),
+			"top":        toReplacementEntryDTOs(topReplacements),
+		},
 		"by_codec":      toSavingsBucketDTOs(byCodec),
 		"by_library":    toSavingsBucketDTOs(byLibrary),
 		"by_resolution": toSavingsBucketDTOs(byResolution),
@@ -246,7 +364,13 @@ func (s *Server) handleSavings(c *echo.Context) error {
 func toSavingsDayDTOs(in []store.SavingsDay) []savingsDayDTO {
 	out := make([]savingsDayDTO, 0, len(in))
 	for _, d := range in {
-		out = append(out, savingsDayDTO{Day: d.Day, FilesEncoded: d.FilesEncoded, BytesSaved: d.BytesSaved})
+		out = append(out, savingsDayDTO{
+			Day:           d.Day,
+			FilesEncoded:  d.FilesEncoded,
+			BytesSaved:    d.BytesSaved,
+			FilesReplaced: d.FilesReplaced,
+			BytesReplaced: d.BytesReplaced,
+		})
 	}
 	return out
 }

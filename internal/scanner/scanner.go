@@ -106,6 +106,11 @@ type Scanner struct {
 	// post-scan cleanup hard-deletes it. Zero disables the cleanup.
 	missingRetentionFn func() time.Duration
 
+	// replaceLookbackFn returns how long after a file goes missing a newly
+	// indexed copy of the same content still counts as its replacement. Zero
+	// disables replacement matching.
+	replaceLookbackFn func() time.Duration
+
 	// probe bounds concurrent ffprobe subprocesses across every probe entry point
 	// (walk, fsnotify watcher, scheduled/manual scans). Capacity comes from the
 	// live config when wired via WithLiveConfig. The limit exists to spare the
@@ -168,12 +173,13 @@ type liveScanConfig interface {
 	ScanAnchor() string
 	ProbeConcurrency() int
 	MissingRetention() time.Duration
+	ReplaceLookback() time.Duration
 	Location() *time.Location
 }
 
 // WithLiveConfig backs the scheduled-rescan interval, anchor, timezone, probe
-// concurrency, and missing-file retention with the live config so PUT
-// /api/settings takes effect without a restart.
+// concurrency, missing-file retention, and replacement lookback with the live
+// config so PUT /api/settings takes effect without a restart.
 func WithLiveConfig(live liveScanConfig) Option {
 	return func(s *Scanner) {
 		s.scanIntervalFn = live.ScanInterval
@@ -181,6 +187,7 @@ func WithLiveConfig(live liveScanConfig) Option {
 		s.locationFn = live.Location
 		s.probe.capFn = live.ProbeConcurrency
 		s.missingRetentionFn = live.MissingRetention
+		s.replaceLookbackFn = live.ReplaceLookback
 	}
 }
 
@@ -222,6 +229,7 @@ func New(st *store.Store, cfg *config.Config, opts ...Option) (*Scanner, error) 
 	}
 	bootProbeConcurrency := cfg.ProbeConcurrency
 	bootMissingRetention := cfg.MissingRetention
+	bootReplaceLookback := cfg.ReplaceLookback
 	s := &Scanner{
 		store: st,
 		roots: map[string]string{
@@ -249,6 +257,9 @@ func New(st *store.Store, cfg *config.Config, opts ...Option) (*Scanner, error) 
 	}
 	if s.missingRetentionFn == nil {
 		s.missingRetentionFn = func() time.Duration { return bootMissingRetention }
+	}
+	if s.replaceLookbackFn == nil {
+		s.replaceLookbackFn = func() time.Duration { return bootReplaceLookback }
 	}
 	if s.locationFn == nil {
 		bootLocation := cfg.Location
@@ -512,7 +523,7 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 		if rec.Fingerprint != "" {
 			ni, wasInserted := newlyInserted[rec.Fingerprint]
 			if wasInserted {
-				if merr := s.store.Media.RecordMove(ctx, rec.ID, ni.id, ni.path); merr != nil {
+				if merr := s.store.Media.RecordMove(ctx, rec.ID, ni.id, ni.path, s.replaceKeyFor(ni.path, s.libraryTypeFor(ni.path))); merr != nil {
 					slog.Error("scanner: record move", "from", path, "to", ni.path, "err", merr)
 					atomic.AddInt64(&errs, 1)
 				} else {
@@ -526,7 +537,7 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 			// previous scan (e.g. watcher probed it before this diff ran).
 			newFile, ferr := s.store.Media.GetByFingerprintOtherThan(ctx, rec.Fingerprint, rec.ID)
 			if ferr == nil {
-				if merr := s.store.Media.RecordMove(ctx, rec.ID, newFile.ID, newFile.Path); merr != nil {
+				if merr := s.store.Media.RecordMove(ctx, rec.ID, newFile.ID, newFile.Path, s.replaceKeyFor(newFile.Path, newFile.LibraryType)); merr != nil {
 					slog.Error("scanner: record move (db lookup)", "from", path, "to", newFile.Path, "err", merr)
 					atomic.AddInt64(&errs, 1)
 				} else {
@@ -548,7 +559,7 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 			continue
 		}
 
-		if merr := s.store.Media.MarkMissing(ctx, rec.ID); merr != nil {
+		if merr := s.store.Media.MarkMissing(ctx, rec.ID, s.replaceKeyFor(path, s.libraryTypeFor(path))); merr != nil {
 			slog.Error("scanner: mark missing", "path", path, "err", merr)
 			atomic.AddInt64(&errs, 1)
 		} else {
@@ -619,8 +630,29 @@ func (s *Scanner) scan(ctx context.Context, trigger string, force bool) (*store.
 		}))
 	}
 
-	// Queued after the reconciliation loop so renames and container swaps have
-	// already been folded away — what's left is genuinely new.
+	// Delete-and-redownload pairs, matched from the arrival side: the vanished
+	// loop above has just stamped this scan's disappearances with their content
+	// identity, so a file deleted and re-acquired between two scans reconciles
+	// here alongside one that was already missing when the scan began.
+	replaced := s.matchReplacements(ctx, newIDs, supersededNew)
+	if len(replaced) > 0 {
+		var net int64
+		for _, r := range replaced {
+			supersededNew[r.newID] = struct{}{}
+			net += r.delta
+		}
+		s.emitFileEvent(ctx, store.EventFileReplaced,
+			replacedEventMessage(len(replaced), net),
+			scanJsonMeta(map[string]any{
+				"scan_run_id": runID,
+				"replaced":    len(replaced),
+				"bytes_delta": net,
+				"trigger":     "scan",
+			}))
+	}
+
+	// Queued after the reconciliation loop so renames, container swaps, and
+	// replacements have already been folded away — what's left is genuinely new.
 	s.queueCandidateNotice(ctx, runID, newIDs, supersededNew)
 
 	// Cleanup runs after the scan event so the two read in order in the activity
@@ -716,6 +748,8 @@ func (s *Scanner) probeAndStore(
 		ProbeError:  probeErr,
 		Status:      store.MediaStatusActive,
 	}
+
+	f.ReplaceKey = s.replaceKeyFor(path, libraryType)
 
 	if libraryType == store.LibraryTypeTV {
 		title, season, _ := media.ParseTVInfo(path, s.tvRoot())
@@ -869,10 +903,15 @@ func (s *Scanner) Start(ctx context.Context) {
 	defer timer.Stop()
 
 	// Initial scan on startup. Backfill series metadata first so the browse
-	// page shows all TV shows immediately, even for files not yet re-probed.
+	// page shows all TV shows immediately, even for files not yet re-probed,
+	// and content identities so an existing library can match replacements
+	// without waiting for a full re-probe of every row.
 	go func() {
 		if err := s.store.Media.BackfillSeriesMeta(ctx, s.tvRoot()); err != nil {
 			slog.Warn("scanner: series meta backfill failed", "err", err)
+		}
+		if err := s.store.Media.BackfillReplaceKeys(ctx, s.tvRoot(), s.moviesRoot()); err != nil {
+			slog.Warn("scanner: replace key backfill failed", "err", err)
 		}
 		if _, err := s.Scan(ctx, TriggerStartup, false); err != nil {
 			if errors.Is(err, ErrScanInProgress) {
@@ -990,9 +1029,24 @@ func (s *Scanner) probeSingleFile(ctx context.Context, path string) {
 	lt := s.libraryTypeFor(path)
 	_, id, isNew := s.probeAndStore(ctx, path, lt, info.Size(), info.ModTime().Unix(), rec)
 
+	if !isNew || id <= 0 {
+		return
+	}
+
+	// An import can be the second half of a delete-and-redownload the watcher
+	// saw the first half of days ago. Check before announcing: if it is, the
+	// file is a replacement rather than an arrival, and the reclaimed bytes
+	// belong in the ledger.
+	if cutoff, on := s.replaceCutoff(); on {
+		if r := s.matchReplacement(ctx, id, cutoff); r != nil {
+			s.emitReplacedEvent(ctx, *r)
+			return
+		}
+	}
+
 	// A file the watcher sees for the first time is an arrival — a Sonarr/Radarr
 	// import, a manual copy. The notifier decides whether it is worth announcing.
-	if isNew && id > 0 && s.notifier != nil {
+	if s.notifier != nil {
 		s.notifier.Add(id)
 	}
 }
@@ -1019,7 +1073,7 @@ func (s *Scanner) checkVanishedFile(ctx context.Context, path string) {
 	if f.Fingerprint != "" {
 		newFile, err := s.store.Media.GetByFingerprintOtherThan(ctx, f.Fingerprint, f.ID)
 		if err == nil {
-			if merr := s.store.Media.RecordMove(ctx, f.ID, newFile.ID, newFile.Path); merr != nil {
+			if merr := s.store.Media.RecordMove(ctx, f.ID, newFile.ID, newFile.Path, s.replaceKeyFor(newFile.Path, newFile.LibraryType)); merr != nil {
 				slog.Error("scanner: watcher record move", "from", path, "to", newFile.Path, "err", merr)
 			}
 			return
@@ -1044,7 +1098,17 @@ func (s *Scanner) checkVanishedFile(ctx context.Context, path string) {
 		return
 	}
 
-	if merr := s.store.Media.MarkMissing(ctx, f.ID); merr != nil {
+	// The import may have landed before the delete: an upgrade replaces the file
+	// under a new name and only then removes the old one, and the remove
+	// debounce deliberately trails the probe debounce, so by now the replacement
+	// is usually already indexed and active. Matching from this side is what
+	// catches that ordering — the arrival-side check ran before this row went
+	// missing and found nothing.
+	if r := s.matchArrivedReplacement(ctx, f); r != nil {
+		return
+	}
+
+	if merr := s.store.Media.MarkMissing(ctx, f.ID, s.replaceKeyFor(path, f.LibraryType)); merr != nil {
 		slog.Error("scanner: watcher mark missing", "path", path, "err", merr)
 	}
 }
@@ -1163,13 +1227,18 @@ func (s *Scanner) supersede(ctx context.Context, path string, oldID int64) *stor
 // emitSupersededEvent logs a supersede batch to the audit feed and pushes it to
 // connected clients.
 func (s *Scanner) emitSupersededEvent(ctx context.Context, msg, meta string) {
-	eventID, err := s.store.Events.Insert(ctx, store.EventFileSuperseded, store.SeverityInfo, msg, meta)
+	s.emitFileEvent(ctx, store.EventFileSuperseded, msg, meta)
+}
+
+// emitFileEvent writes one reconciliation event and broadcasts it.
+func (s *Scanner) emitFileEvent(ctx context.Context, eventType, msg, meta string) {
+	eventID, err := s.store.Events.Insert(ctx, eventType, store.SeverityInfo, msg, meta)
 	if err != nil {
-		slog.Error("scanner: supersede event", "err", err)
+		slog.Error("scanner: reconciliation event", "type", eventType, "err", err)
 		return
 	}
 	if s.hub != nil {
-		s.hub.Broadcast("event_created", eventBroadcast(eventID, store.EventFileSuperseded, store.SeverityInfo, msg, meta))
+		s.hub.Broadcast("event_created", eventBroadcast(eventID, eventType, store.SeverityInfo, msg, meta))
 	}
 }
 

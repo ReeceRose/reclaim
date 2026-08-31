@@ -7,7 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type SavingsBucket, type SavingsDay } from "@/lib/api";
+import {
+  api,
+  type ReplacementEntry,
+  type ReplacementReport,
+  type SavingsBucket,
+  type SavingsDay,
+} from "@/lib/api";
 import { CODEC_COLORS, codecCSSColor } from "@/lib/codec";
 import {
   baseName,
@@ -24,7 +30,13 @@ import {
 
 const RANGES = [30, 90, 365] as const;
 
-type Point = { day: string; delta: number; cumulative: number };
+type Point = {
+  day: string;
+  encoded: number;
+  replaced: number;
+  delta: number;
+  cumulative: number;
+};
 
 function dayKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -33,11 +45,14 @@ function dayKey(d: Date): string {
 function buildSeries(
   daily: SavingsDay[],
   days: number,
-  lifetimeSaved: number,
+  lifetimeReclaimed: number,
 ): Point[] {
-  const byDay = new Map(daily.map((d) => [d.day, d.bytes_saved]));
-  const inWindow = daily.reduce((a, d) => a + d.bytes_saved, 0);
-  let running = Math.max(0, lifetimeSaved - inWindow);
+  const byDay = new Map(daily.map((d) => [d.day, d]));
+  const inWindow = daily.reduce(
+    (a, d) => a + d.bytes_saved + d.bytes_replaced,
+    0,
+  );
+  let running = Math.max(0, lifetimeReclaimed - inWindow);
 
   const out: Point[] = [];
   const today = new Date();
@@ -48,9 +63,17 @@ function buildSeries(
       today.getDate() - i,
     );
     const key = dayKey(dt);
-    const delta = byDay.get(key) ?? 0;
-    running += delta;
-    out.push({ day: key, delta, cumulative: running });
+    const row = byDay.get(key);
+    const encoded = row?.bytes_saved ?? 0;
+    const replaced = row?.bytes_replaced ?? 0;
+    running += encoded + replaced;
+    out.push({
+      day: key,
+      encoded,
+      replaced,
+      delta: encoded + replaced,
+      cumulative: running,
+    });
   }
   return out;
 }
@@ -192,10 +215,19 @@ function SavingsChart({ series }: { series: Point[] }) {
               {formatDayFull(active.day)}
             </b>{" "}
             · total {formatBytes(active.cumulative)}
-            {active.delta > 0 && (
+            {active.encoded > 0 && (
               <span className="text-brand">
                 {" "}
-                · +{formatBytes(active.delta)} that day
+                · +{formatBytes(active.encoded)} encoded
+              </span>
+            )}
+            {active.replaced !== 0 && (
+              <span
+                className={active.replaced > 0 ? "text-green" : "text-gold"}
+              >
+                {" "}
+                · {active.replaced > 0 ? "+" : "−"}
+                {formatBytes(Math.abs(active.replaced))} replaced
               </span>
             )}
           </div>
@@ -285,6 +317,151 @@ function BucketBars({
   );
 }
 
+// libraryLabel names a library_type bucket for display.
+function libraryLabel(key: string): string {
+  if (key === "tv") return "TV";
+  if (key === "movies") return "Movies";
+  return key;
+}
+
+// signedBytes renders a delta with an explicit direction, so a replacement that
+// cost space never reads as a saving.
+function signedBytes(n: number): string {
+  if (n === 0) return "0 B";
+  return `${n > 0 ? "−" : "+"}${formatBytes(Math.abs(n))}`;
+}
+
+function ReplacementRow({ r }: { r: ReplacementEntry }) {
+  const gained = r.bytes_saved > 0;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 border border-line rounded-xl bg-surface">
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium truncate">
+          {baseName(r.path) || "(removed)"}
+        </div>
+        <div className="text-xs text-muted-dim truncate">
+          replaced {baseName(r.previous_path) || "(unknown)"}
+        </div>
+        <div className="text-xs text-muted-dim tnum">
+          {formatBytes(r.original_size_bytes)} →{" "}
+          {formatBytes(r.output_size_bytes)} · {relativeTime(r.completed_at)}
+        </div>
+      </div>
+      {r.source_codec && (
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Badge
+            className={`font-mono text-xs rounded-lg font-semibold ${CODEC_COLORS[r.source_codec] ?? "text-slate"}`}
+            style={{
+              borderColor: `color-mix(in srgb, ${codecCSSColor(r.source_codec)} 30%, transparent)`,
+              background: `color-mix(in srgb, ${codecCSSColor(r.source_codec)} 10%, transparent)`,
+            }}
+          >
+            {r.source_codec}
+          </Badge>
+          <span className="text-muted-dim text-xs">→</span>
+          <Badge
+            className={`font-mono text-xs rounded-lg font-semibold ${CODEC_COLORS[r.result_codec ?? ""] ?? "text-slate"}`}
+            style={{
+              borderColor: `color-mix(in srgb, ${codecCSSColor(r.result_codec ?? "")} 30%, transparent)`,
+              background: `color-mix(in srgb, ${codecCSSColor(r.result_codec ?? "")} 10%, transparent)`,
+            }}
+          >
+            {r.result_codec ?? "?"}
+          </Badge>
+        </div>
+      )}
+      <div
+        className={`text-sm font-semibold tnum shrink-0 ${gained ? "text-brand" : "text-gold"}`}
+      >
+        {signedBytes(r.bytes_saved)}
+      </div>
+    </div>
+  );
+}
+
+function ReplacementsCard({ report }: { report: ReplacementReport }) {
+  const s = report.summary;
+  return (
+    <div
+      className="border border-line rounded-lg p-5"
+      style={{ background: "var(--surface)" }}
+    >
+      <div className="flex items-baseline justify-between gap-3 flex-wrap mb-4">
+        <div className="text-xs uppercase tracking-widest text-muted-fg font-bold">
+          Replaced, not encoded
+        </div>
+        <div className="text-2xs text-muted-dim">
+          files deleted and re-acquired elsewhere
+        </div>
+      </div>
+
+      {s.files_replaced === 0 ? (
+        <div className="text-sm text-muted-dim">
+          Nothing recorded yet. When a file disappears and another copy of the
+          same episode or movie is indexed later, Reclaim pairs the two and
+          books the size difference here — so deleting a bloated release and
+          grabbing a leaner one counts toward the same total as a re-encode.
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-4 gap-4 max-sm:grid-cols-2">
+            <StatTile
+              label="Net reclaimed"
+              value={signedBytes(s.bytes_delta)}
+              sub={`across ${formatInt(s.files_replaced)} replacements`}
+              tone={s.bytes_delta >= 0 ? "text-brand" : "text-gold"}
+            />
+            <StatTile
+              label="Freed"
+              value={formatBytes(s.bytes_reclaimed)}
+              sub={`${formatInt(s.replacements_smaller)} leaner releases`}
+              tone="text-green"
+            />
+            <StatTile
+              label="Given back"
+              value={formatBytes(s.bytes_added)}
+              sub={`${formatInt(s.replacements_larger)} upgrades`}
+              tone={s.bytes_added > 0 ? "text-gold" : undefined}
+            />
+            <StatTile
+              label="Biggest win"
+              value={formatBytes(s.best_saved_bytes)}
+              sub={s.best_path ? baseName(s.best_path) : undefined}
+            />
+          </div>
+
+          {report.by_library.length > 0 && (
+            <div className="flex flex-wrap gap-x-6 gap-y-1 mt-4 pt-4 border-t border-line-soft text-xs text-muted-fg tnum">
+              {report.by_library.map((b) => (
+                <span key={b.key}>
+                  {libraryLabel(b.key)}: {signedBytes(b.bytes_saved)} over{" "}
+                  {formatInt(b.files_encoded)}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {report.recent.length > 0 && (
+            <div className="mt-5 pt-5 border-t border-line-soft">
+              <div className="text-xs uppercase tracking-widest text-muted-fg font-bold mb-3">
+                Recent replacements
+              </div>
+              <div className="flex flex-col gap-2.5">
+                {report.recent.slice(0, 6).map((r) => (
+                  <ReplacementRow
+                    key={`${r.media_file_id}-${r.completed_at}`}
+                    r={r}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function StatTile({
   label,
   value,
@@ -366,12 +543,13 @@ function EmptyState() {
       </div>
       <div>
         <div className="text-base font-semibold text-text">
-          No completed encodes yet
+          Nothing reclaimed yet
         </div>
         <div className="text-sm text-muted-dim mt-1 max-w-sm">
-          Once a queued re-encode finishes, Reclaim records exactly how many
-          bytes it reclaimed and this page fills in with real numbers instead of
-          estimates.
+          Reclaim measures two things here: bytes freed by a completed
+          re-encode, and bytes freed by deleting a file and re-acquiring a
+          leaner copy of it. As soon as either happens, this page fills in with
+          real numbers instead of estimates.
         </div>
       </div>
       <Link
@@ -401,18 +579,26 @@ function InsightsContent() {
   });
 
   const summary = report.summary;
+  const replacements = report.replacements.summary;
+
+  // The headline is bytes reclaimed by any means. Replacements are netted in
+  // signed, so a run of 4K upgrades pulls the number down rather than being
+  // quietly dropped.
+  const totalReclaimed = summary.bytes_saved + replacements.bytes_delta;
 
   const series = useMemo(
-    () => buildSeries(report.daily, report.days, summary.bytes_saved),
-    [report, summary.bytes_saved],
+    () => buildSeries(report.daily, report.days, totalReclaimed),
+    [report, totalReclaimed],
   );
 
-  if (summary.files_encoded === 0) return <EmptyState />;
+  if (summary.files_encoded === 0 && replacements.files_replaced === 0) {
+    return <EmptyState />;
+  }
 
   const savingsAccuracy = summary.savings_estimate_ratio;
   const durationAccuracy = summary.duration_estimate_ratio;
   const libraryTotal = stats.total_bytes;
-  const originalLibrary = libraryTotal + summary.bytes_saved;
+  const originalLibrary = libraryTotal + totalReclaimed;
 
   return (
     <div
@@ -451,14 +637,22 @@ function InsightsContent() {
               className="text-5xl sm:text-hero font-extrabold leading-none tracking-tight text-brand"
               style={{ textShadow: "0 4px 26px var(--brand-soft)" }}
             >
-              {formatBytes(summary.bytes_saved, 1).replace(" ", "")}
+              {formatBytes(totalReclaimed, 1).replace(" ", "")}
             </div>
             <div className="text-sm text-muted-fg mt-2">
-              across{" "}
               <b className="text-text font-semibold">
-                {formatInt(summary.files_encoded)} completed encodes
+                {formatBytes(summary.bytes_saved)}
               </b>{" "}
-              · {formatBytes(summary.bytes_saved_30d)} in the last 30 days
+              across {formatInt(summary.files_encoded)} encodes
+              {replacements.files_replaced > 0 && (
+                <>
+                  {" · "}
+                  <b className="text-text font-semibold">
+                    {signedBytes(replacements.bytes_delta)}
+                  </b>{" "}
+                  across {formatInt(replacements.files_replaced)} replacements
+                </>
+              )}
               <Badge className="ml-2 text-xs font-bold tracking-widest text-green bg-green-soft border-green-soft rounded-md uppercase">
                 measured
               </Badge>
@@ -671,6 +865,10 @@ function InsightsContent() {
           </div>
         )}
       </div>
+
+      <div className="mt-5">
+        <ReplacementsCard report={report.replacements} />
+      </div>
     </div>
   );
 }
@@ -680,7 +878,7 @@ export default function Page() {
     <div className="flex flex-col min-w-0">
       <PageHeader
         title="Insights"
-        subtitle="What re-encoding has actually reclaimed, measured from completed jobs."
+        subtitle="What your library has actually given back — measured from completed encodes and from files you replaced."
       />
       <Suspense fallback={<InsightsSkeleton />}>
         <InsightsContent />

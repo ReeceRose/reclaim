@@ -37,6 +37,7 @@ type testFile struct {
 	oversize    float64
 	probeErr    string // non-empty → set probe_error
 	status      string // "" → "active"
+	replaceKey  string
 }
 
 func (tf testFile) toMedia() *MediaFile {
@@ -50,6 +51,7 @@ func (tf testFile) toMedia() *MediaFile {
 		PredictedSavingsBytes: tf.savings,
 		OversizeRatio:         tf.oversize,
 		Status:                orDefault(tf.status, "active"),
+		ReplaceKey:            tf.replaceKey,
 	}
 	if tf.codec != "" {
 		c := tf.codec

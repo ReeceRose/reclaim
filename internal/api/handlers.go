@@ -60,7 +60,12 @@ func (s *Server) handleStats(c *echo.Context) error {
 		})
 	}
 
-	summary, err := s.store.Savings.Summary(ctx, time.Now().Unix())
+	now := time.Now().Unix()
+	summary, err := s.store.Savings.Summary(ctx, now)
+	if err != nil {
+		return serverError(c, err)
+	}
+	replacements, err := s.store.Savings.ReplacementSummary(ctx, now)
 	if err != nil {
 		return serverError(c, err)
 	}
@@ -73,6 +78,7 @@ func (s *Server) handleStats(c *echo.Context) error {
 		"by_resolution":           res,
 		"by_library":              libs,
 		"savings":                 toSavingsSummaryDTO(summary, remainingCandidates(ov)),
+		"replacements":            toReplacementSummaryDTO(replacements),
 	})
 }
 
@@ -82,10 +88,10 @@ func (s *Server) handleCandidates(c *echo.Context) error {
 	q := store.CandidateQuery{
 		Sort: store.CandidateSort(defaultStr(c.QueryParam("sort"), string(store.SortSavingsDesc))),
 		Filter: store.CandidateFilter{
-			LibraryType:    c.QueryParam("library_type"),
-			VideoCodec:     c.QueryParam("video_codec"),
+			LibraryType: c.QueryParam("library_type"),
+			VideoCodec:  c.QueryParam("video_codec"),
 			Height:      c.QueryParam("height"),
-			Search:         c.QueryParam("search"),
+			Search:      c.QueryParam("search"),
 		},
 	}
 

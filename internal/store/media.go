@@ -35,6 +35,11 @@ type MediaFile struct {
 	Status                string
 	SeriesTitle           *string
 	SeasonNumber          *int
+	// ReplaceKey is the file's content identity — which episode or movie it is,
+	// independent of the release providing it. Computed by the scanner (the only
+	// layer that knows the library roots) and matched against when a file is
+	// deleted and re-acquired. Empty means unidentifiable, which never matches.
+	ReplaceKey string
 }
 
 type Media struct {
@@ -62,13 +67,13 @@ func (m *Media) Insert(ctx context.Context, f *MediaFile) (int64, error) {
 			video_codec, video_codec_profile, width, height, duration_seconds,
 			bitrate_kbps, audio_codec, audio_channels, container_format,
 			is_already_hevc, predicted_savings_bytes, oversize_ratio, last_probed_at, probe_error, status,
-			series_title, season_number
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			series_title, season_number, replace_key, first_seen_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		f.Path, f.LibraryType, f.SizeBytes, f.Mtime, f.Fingerprint,
 		f.VideoCodec, f.VideoCodecProfile, f.Width, f.Height, f.DurationSeconds,
 		f.BitrateKbps, f.AudioCodec, f.AudioChannels, f.ContainerFormat,
 		btoi(f.IsAlreadyHEVC), f.PredictedSavingsBytes, f.OversizeRatio, f.LastProbedAt, f.ProbeError, f.Status,
-		f.SeriesTitle, f.SeasonNumber,
+		f.SeriesTitle, f.SeasonNumber, f.ReplaceKey, time.Now().Unix(),
 	)
 	if err != nil {
 		return 0, err
@@ -115,7 +120,7 @@ func (m *Media) UpdateProbe(ctx context.Context, f *MediaFile) error {
 			container_format = ?, is_already_hevc = ?, predicted_savings_bytes = ?,
 			oversize_ratio = ?, last_probed_at = ?, probe_error = ?, status = ?,
 			missing_since = CASE WHEN ? = 'missing' THEN COALESCE(missing_since, ?) END,
-			series_title = ?, season_number = ?
+			series_title = ?, season_number = ?, replace_key = ?
 		WHERE id = ?`,
 		f.SizeBytes, f.Mtime, f.Fingerprint,
 		f.VideoCodec, f.VideoCodecProfile, f.Width, f.Height,
@@ -123,7 +128,7 @@ func (m *Media) UpdateProbe(ctx context.Context, f *MediaFile) error {
 		f.ContainerFormat, btoi(f.IsAlreadyHEVC), f.PredictedSavingsBytes,
 		f.OversizeRatio, f.LastProbedAt, f.ProbeError, f.Status,
 		f.Status, time.Now().Unix(),
-		f.SeriesTitle, f.SeasonNumber, f.ID,
+		f.SeriesTitle, f.SeasonNumber, f.ReplaceKey, f.ID,
 	); err != nil {
 		return err
 	}
@@ -134,7 +139,19 @@ func (m *Media) UpdateProbe(ctx context.Context, f *MediaFile) error {
 	return tx.Commit()
 }
 
-func (m *Media) MarkMissing(ctx context.Context, id int64) error {
+// MarkMissing soft-deletes a row and re-stamps replaceKey on it — the content
+// identity (show/season/episode, or movie) of the file that vanished, computed
+// by the caller, which is the only layer that knows the library roots.
+//
+// The key is already on the row by this point, written at insert or re-probe by
+// probeAndStore, or by BackfillReplaceKeys for a library indexed before the
+// column existed. It is refreshed here anyway because this is the last moment
+// the file's identity can be recorded: the missing side of a delete-and-
+// redownload is matched by key alone, and the row will never be probed again.
+//
+// An empty key means "unidentifiable" and is stored as such — FindReplacement
+// never matches on it.
+func (m *Media) MarkMissing(ctx context.Context, id int64, replaceKey string) error {
 	tx, err := m.w.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -156,8 +173,8 @@ func (m *Media) MarkMissing(ctx context.Context, id int64) error {
 	// COALESCE keeps the original disappearance time: repeated marks (a watcher
 	// event followed by a scan diff) must not restart the retention clock.
 	if _, err := tx.ExecContext(ctx,
-		"UPDATE media_files SET status = 'missing', missing_since = COALESCE(missing_since, ?) WHERE id = ?",
-		time.Now().Unix(), id,
+		"UPDATE media_files SET status = 'missing', missing_since = COALESCE(missing_since, ?), replace_key = ? WHERE id = ?",
+		time.Now().Unix(), replaceKey, id,
 	); err != nil {
 		return err
 	}
@@ -385,6 +402,27 @@ func (m *Media) FindSuperseder(ctx context.Context, oldPath string, excludeID in
 // Returns ErrJobInFlight when oldID still has a queued, running, or verifying
 // job — the worker may be mid-swap on a file that only looks absent.
 func (m *Media) Supersede(ctx context.Context, oldID, newID int64) error {
+	return m.foldInto(ctx, oldID, newID, MatchKindSupersede)
+}
+
+// RecordReplacement folds a row that went missing into the file that later
+// arrived to replace it — the delete-and-redownload half of the same
+// reconciliation Supersede performs for in-place container swaps. The two
+// differ only in how the pair was matched (path stem vs content identity),
+// which is what the ledger's match_kind records.
+func (m *Media) RecordReplacement(ctx context.Context, oldID, newID int64) error {
+	return m.foldInto(ctx, oldID, newID, MatchKindRedownload)
+}
+
+// foldInto is the shared body of Supersede and RecordReplacement: the old row's
+// byte delta is booked to the savings ledger, its job history moves to the
+// survivor, and it is hard-deleted.
+//
+// The ledger insert must come first — it reads both rows, and the old one is
+// gone by the end of this transaction. Because it is the same transaction, a
+// failed fold leaves no orphan ledger row, and lifetime reclaimed bytes can
+// never disagree with what the library actually holds.
+func (m *Media) foldInto(ctx context.Context, oldID, newID int64, matchKind string) error {
 	tx, err := m.w.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -411,6 +449,10 @@ func (m *Media) Supersede(ctx context.Context, oldID, newID int64) error {
 		return err
 	}
 
+	if err := recordReplacementTx(ctx, tx, oldID, newID, matchKind, time.Now().Unix()); err != nil {
+		return err
+	}
+
 	if _, err := tx.ExecContext(ctx,
 		"UPDATE transcode_jobs SET media_file_id = ? WHERE media_file_id = ?", newID, oldID,
 	); err != nil {
@@ -422,10 +464,88 @@ func (m *Media) Supersede(ctx context.Context, oldID, newID int64) error {
 	return tx.Commit()
 }
 
+// FindActiveReplacement returns the single active row that shares key with a
+// file that has just vanished — the other ordering of a delete-and-redownload,
+// where the new release was imported before the old file was removed. since is
+// the same lookback cutoff FindReplacement takes, applied here to the
+// candidate's arrival rather than to the disappearance.
+//
+// That bound is what keeps an ordinary deletion from being read as a
+// replacement. A library that deliberately keeps two copies of one title — a
+// 1080p and a 4K cut side by side — has two rows on a single key, so deleting
+// either leaves exactly one survivor and the ambiguity guard never fires. Only
+// the survivor's own arrival time separates "the file that just replaced this"
+// from "the copy that has been sitting here for a year".
+//
+// Like FindReplacement it refuses ambiguity, for the same reason: crediting one
+// of several candidates would put a fabricated delta in a lifetime total.
+func (m *Media) FindActiveReplacement(ctx context.Context, key string, excludeID, since int64) (*MediaFile, error) {
+	if key == "" {
+		return nil, ErrNotFound
+	}
+	return m.oneByReplaceKey(ctx, mediaQ+`
+		WHERE replace_key = ? AND status = 'active' AND id != ?
+		  AND COALESCE(first_seen_at, 0) >= ?
+		LIMIT 2`, key, excludeID, since)
+}
+
+// FindReplacement returns the single missing row whose content identity matches
+// key — the file a newly indexed arrival is replacing. since bounds how far
+// back a disappearance may have happened to still count as a replacement.
+//
+// It returns ErrNotFound when there is no match, and also when there is more
+// than one: two missing copies of the same episode give no basis for choosing
+// which one the arrival replaces, and guessing would book a fabricated delta to
+// a lifetime total. An empty key never matches.
+func (m *Media) FindReplacement(ctx context.Context, key string, since int64) (*MediaFile, error) {
+	if key == "" {
+		return nil, ErrNotFound
+	}
+	return m.oneByReplaceKey(ctx, mediaQ+`
+		WHERE replace_key = ? AND status = 'missing' AND COALESCE(missing_since, 0) >= ?
+		LIMIT 2`, key, since)
+}
+
+// oneByReplaceKey runs a two-row lookup and insists on exactly one result,
+// returning ErrNotFound for both none and several.
+func (m *Media) oneByReplaceKey(ctx context.Context, q string, args ...any) (*MediaFile, error) {
+	rows, err := m.r.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var match *MediaFile
+	for rows.Next() {
+		f, err := scanMedia(rows)
+		if err != nil {
+			return nil, err
+		}
+		if match != nil {
+			return nil, ErrNotFound
+		}
+		match = f
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if match == nil {
+		return nil, ErrNotFound
+	}
+	return match, nil
+}
+
 // RecordMove updates keepID's path to newPath and deletes mergeID in a single
 // transaction. Job history on keepID is preserved; mergeID is the duplicate row
 // the scanner inserted for the renamed destination path.
-func (m *Media) RecordMove(ctx context.Context, keepID, mergeID int64, newPath string) error {
+//
+// replaceKey is newPath's content identity, computed by the caller. It has to
+// be rewritten along with the path: the surviving row is the *old* one, so it
+// still carries the identity of where the file used to live, while the row that
+// held the correct one is the duplicate being deleted here. Leaving it stale
+// would outlast the move indefinitely — a rename changes neither size nor
+// mtime, so nothing re-probes the file and nothing else would ever correct it.
+func (m *Media) RecordMove(ctx context.Context, keepID, mergeID int64, newPath, replaceKey string) error {
 	tx, err := m.w.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -465,8 +585,8 @@ func (m *Media) RecordMove(ctx context.Context, keepID, mergeID int64, newPath s
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		"UPDATE media_files SET path = ?, status = 'active', missing_since = NULL WHERE id = ?",
-		newPath, keepID,
+		"UPDATE media_files SET path = ?, replace_key = ?, status = 'active', missing_since = NULL WHERE id = ?",
+		newPath, replaceKey, keepID,
 	); err != nil {
 		return err
 	}
@@ -578,7 +698,7 @@ const mediaQ = `
 		video_codec, video_codec_profile, width, height, duration_seconds,
 		bitrate_kbps, audio_codec, audio_channels, container_format,
 		is_already_hevc, predicted_savings_bytes, oversize_ratio, last_probed_at, probe_error, status,
-		series_title, season_number
+		series_title, season_number, replace_key
 	FROM media_files`
 
 func scanMedia(s rowScanner) (*MediaFile, error) {
@@ -589,7 +709,7 @@ func scanMedia(s rowScanner) (*MediaFile, error) {
 		&f.VideoCodec, &f.VideoCodecProfile, &f.Width, &f.Height, &f.DurationSeconds,
 		&f.BitrateKbps, &f.AudioCodec, &f.AudioChannels, &f.ContainerFormat,
 		&isHEVC, &f.PredictedSavingsBytes, &f.OversizeRatio, &f.LastProbedAt, &f.ProbeError, &f.Status,
-		&f.SeriesTitle, &f.SeasonNumber,
+		&f.SeriesTitle, &f.SeasonNumber, &f.ReplaceKey,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -657,6 +777,67 @@ func (m *Media) BackfillSeriesMeta(ctx context.Context, tvPath string) error {
 			seasonPtr = &season
 		}
 		if _, err := stmt.ExecContext(ctx, titlePtr, seasonPtr, r.id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// BackfillReplaceKeys populates replace_key for rows indexed before the column
+// existed. Without it the reverse match — a file vanishing after its
+// replacement was already imported — would not work on an existing library
+// until every row happened to be re-probed.
+//
+// Rows whose identity cannot be derived are written as ” and then skipped on
+// the next run by the same predicate that skips already-keyed rows, so this
+// does not re-walk the unparseable tail of the library on every boot.
+func (m *Media) BackfillReplaceKeys(ctx context.Context, tvRoot, moviesRoot string) error {
+	rows, err := m.r.QueryContext(ctx,
+		"SELECT id, path, library_type FROM media_files WHERE replace_key = '' AND last_keyed_at IS NULL",
+	)
+	if err != nil {
+		return err
+	}
+	type row struct {
+		id          int64
+		path        string
+		libraryType string
+	}
+	var pending []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.path, &r.libraryType); err != nil {
+			rows.Close()
+			return err
+		}
+		pending = append(pending, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+
+	tx, err := m.w.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx,
+		"UPDATE media_files SET replace_key = ?, last_keyed_at = ? WHERE id = ?",
+	)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	now := time.Now().Unix()
+	for _, r := range pending {
+		key := media.ReplaceKey(r.path, r.libraryType, tvRoot, moviesRoot)
+		if _, err := stmt.ExecContext(ctx, key, now, r.id); err != nil {
 			return err
 		}
 	}

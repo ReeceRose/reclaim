@@ -155,6 +155,10 @@ Precomputed library overview (O(buckets), not O(files)).
     "duration_estimate_ratio": 1.08, "duration_estimate_samples": 40,
     "mean_encode_seconds": 3293.6, "bytes_saved_per_encode_hour": 9581395348,
     "projected_remaining_encode_seconds": 2107904, "remaining_candidates": 640
+  },
+  "replacements": {
+    "files_replaced": 12, "bytes_delta": 35000000000,
+    "...": "same shape as replacements.summary on GET /api/stats/savings"
   }
 }
 ```
@@ -172,9 +176,20 @@ below 1 means predictions ran optimistic, and a `duration_estimate_ratio`
 above 1 means encodes took longer than estimated. They are null until at least
 one job carries the relevant queue-time snapshot.
 
+The `replacements` block is the same measurement for storage reclaimed *without*
+encoding — a file deleted and re-acquired as a leaner release. It is reported
+separately rather than folded into `savings` because the encode figures double
+as the accuracy record for the savings and duration models, which a replacement
+has no prediction to be scored against. Lifetime reclaimed storage is
+`savings.bytes_saved + replacements.bytes_delta`. See § `GET /api/stats/savings`
+for the full field list.
+
 ### `GET /api/stats/savings`
 The full realized-savings report backing the Insights page. Reads the
-`savings_ledger`, an append-only row per completed encode.
+`savings_ledger`, which holds an append-only row per reclaim: one per completed
+encode (`source: "encode"`), and one per file deleted and re-acquired out of
+band (`source: "replace"`). The two are reported side by side rather than
+merged — see the `replacements` block below.
 
 **Query params**
 
@@ -204,7 +219,8 @@ The full realized-savings report backing the Insights page. Reads the
       "output_bytes": 280000000000, "bytes_saved": 220000000000, "compression_ratio": 0.56 }
   ],
   "daily": [
-    { "day": "2026-08-26", "files_encoded": 2, "bytes_saved": 18000000000 }
+    { "day": "2026-08-26", "files_encoded": 2, "bytes_saved": 18000000000,
+      "files_replaced": 1, "bytes_replaced": 4000000000 }
   ],
   "top_wins": [
     { "job_id": 91, "media_file_id": 412, "path": "/movies/Dune (2021)/Dune (2021).mkv",
@@ -213,6 +229,32 @@ The full realized-savings report backing the Insights page. Reads the
       "bytes_saved": 24000000000, "encode_seconds": 7200, "completed_at": 1756252800 }
   ],
   "recent": [ { "...": "same shape as top_wins, newest first" } ],
+  "replacements": {
+    "summary": {
+      "files_replaced": 12, "original_bytes": 96000000000, "output_bytes": 61000000000,
+      "bytes_delta": 35000000000, "bytes_reclaimed": 38000000000, "bytes_added": 3000000000,
+      "replacements_smaller": 11, "replacements_larger": 1,
+      "files_replaced_7d": 3, "bytes_delta_7d": 9000000000,
+      "files_replaced_30d": 8, "bytes_delta_30d": 24000000000,
+      "first_replaced_at": 1753660800, "last_replaced_at": 1756252800,
+      "best_saved_bytes": 9000000000,
+      "best_path": "/tv/Severance/Season 1/Severance.S01E01.1080p.x264.mkv"
+    },
+    "by_library": [
+      { "key": "tv", "files_encoded": 9, "original_bytes": 60000000000,
+        "output_bytes": 34000000000, "bytes_saved": 26000000000, "compression_ratio": 0.566 }
+    ],
+    "recent": [
+      { "media_file_id": 812, "path": "/tv/Severance/Season 1/Severance.S01E01.1080p.x265-NEW.mkv",
+        "previous_path": "/tv/Severance/Season 1/Severance.S01E01.1080p.x264.mkv",
+        "library_type": "tv", "match_kind": "redownload",
+        "source_codec": "h264", "result_codec": "hevc",
+        "width": 1920, "height": 1080, "result_width": 1920, "result_height": 1080,
+        "original_size_bytes": 6000000000, "output_size_bytes": 2500000000,
+        "bytes_saved": 3500000000, "completed_at": 1756252800 }
+    ],
+    "top": [ { "...": "same shape as recent, biggest reclaim first" } ]
+  },
   "job_outcomes": { "completed": 47, "failed": 2, "cancelled": 1 },
   "days": 90
 }
@@ -233,6 +275,33 @@ Those rows are grouped under the `unknown` key in `by_codec` (the same
 convention `library_stats` uses), so the buckets always sum to
 `summary.bytes_saved`. They are still excluded from the learned-ratio model,
 which needs a known source codec to be meaningful.
+
+#### Replacements
+
+`summary`, `by_codec`, `by_library`, `by_resolution`, `top_wins`, and `recent`
+are **encode-only**; everything about a replacement lives under `replacements`.
+Lifetime reclaimed storage is therefore `summary.bytes_saved +
+replacements.summary.bytes_delta`, which is what the Insights headline renders.
+
+`bytes_delta` is signed. Replacing a 1080p h264 release with a 4K HEVC one is a
+legitimate replacement that *costs* disk, and the ledger records the cost rather
+than dropping it. `bytes_reclaimed` and `bytes_added` split the net into its two
+halves (both non-negative) so neither is hidden inside the other, and
+`replacements_smaller` / `replacements_larger` count each side.
+
+`match_kind` names the reconciliation that found the pair:
+- `redownload` — the old row had already gone `missing`, and a later arrival
+  matched it on content identity (show/season/episode, or movie folder). This is
+  the delete-and-re-acquire case, bounded by `replace_lookback`.
+- `supersede` — the file was replaced in place under the same name with a
+  different extension, matched by path stem.
+
+`source_codec` / `width` / `height` describe the file that was replaced;
+`result_codec` / `result_width` / `result_height` describe the one that replaced
+it. A replacement has no prediction to be scored against, so it never
+contributes to the estimate-accuracy figures in `summary`, and it is excluded
+from the learned-ratio model — another release's size ratio says nothing about
+what this encoder achieves at this CRF.
 
 Ledger rows outlive their media file: pruning a missing file deletes its
 `transcode_jobs` history but leaves the ledger intact, so lifetime totals never
@@ -566,7 +635,7 @@ Newest first. Keyset-paginated via `after_id`.
 
 **Query params:** `limit` (default 50, max 200), `after_id`, `severity` (`info`/`warn`/`error`),
 `type` (e.g. `job_completed`, `job_failed`, `job_cancelled`, `scan_completed`, `orphan_restored`,
-`missing_pruned`, `file_superseded`, `candidates_added`).
+`missing_pruned`, `file_superseded`, `file_replaced`, `candidates_added`).
 
 A `candidates_added` event covers **one title** — a single TV series (across however many of its
 seasons arrived) or a single movie. Its metadata carries `title`, `library_type`, `count`,
@@ -615,6 +684,7 @@ which are persisted to the `settings` row and therefore survive restarts.
   "probe_concurrency": 4,
   "oversize_threshold": 2.0,
   "missing_retention": "720h0m0s",
+  "replace_lookback": "720h0m0s",
   "movies_path": "/media/movies",
   "tv_path": "/media/tv",
   "tmdb_configured": true,
@@ -641,6 +711,11 @@ to `"12h"`; unlike the other fields it is stored in the DB rather than in `confi
 `oversize_threshold` (> 1) is the bitrate multiple at or above which a file is flagged oversized.
 `missing_retention` is how long a file that vanished from disk is kept as a `missing` row before
 the post-scan cleanup deletes it; `"0"` means never prune (the default, from `MISSING_RETENTION`).
+`replace_lookback` is how far back the scanner looks when a newly indexed file turns out to be
+another copy of something already `missing`; a match folds the two rows together and books the
+size difference to the savings ledger. `"0"` disables replacement matching (default `720h`, from
+`REPLACE_LOOKBACK`). It interacts with `missing_retention`: a row the cleanup has already pruned
+can no longer be matched, however long this window is.
 `missing_files` summarizes the rows currently soft-deleted — `oldest_since` is a Unix timestamp,
 and both it and `size_bytes` are `0` when `count` is `0`.
 The `notify_*` fields configure new-candidate notifications — see § Notifications.
@@ -651,13 +726,13 @@ Any subset of the mutable fields. Validated as a set before applying.
 { "timezone": "America/New_York", "clock_format": "24h",
   "encode_window_start": "01:00", "encode_window_end": "07:00",
   "scan_interval": "12h", "probe_concurrency": 8, "oversize_threshold": 2.5,
-  "missing_retention": "720h",
+  "missing_retention": "720h", "replace_lookback": "720h",
   "notify_enabled": true, "notify_delay_seconds": 900,
   "notify_webhook_url": "https://discord.com/api/webhooks/…",
   "notify_webhook_format": "discord" }
 ```
 - `200` → the full settings object (same shape as GET)
-- `400` → invalid value (e.g. `encode_window_start: "99:99"`, non-positive interval/concurrency, `oversize_threshold ≤ 1`, unparseable/negative `missing_retention`, a `timezone` that is not a loadable IANA name, a `clock_format` other than `"12h"`/`"24h"`, a `notify_webhook_url` that is not absolute http(s), a `notify_webhook_format` outside the four known values, a `notify_delay_seconds` outside `0…86400`)
+- `400` → invalid value (e.g. `encode_window_start: "99:99"`, non-positive interval/concurrency, `oversize_threshold ≤ 1`, unparseable/negative `missing_retention` or `replace_lookback`, a `timezone` that is not a loadable IANA name, a `clock_format` other than `"12h"`/`"24h"`, a `notify_webhook_url` that is not absolute http(s), a `notify_webhook_format` outside the four known values, a `notify_delay_seconds` outside `0…86400`)
 
 Every value is validated before anything is applied, so a rejected field leaves `clock_format`
 unwritten even though it persists to a different place than the live knobs. A request carrying

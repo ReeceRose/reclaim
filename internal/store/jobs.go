@@ -627,13 +627,19 @@ type LearnedRatio struct {
 // because the swap rewrites video_codec to 'hevc', so the post-encode media row
 // no longer knows what the source codec was. Rows backfilled from job history
 // predate the ledger and carry no source codec, so they never contribute.
+//
+// Replacement rows are excluded. They share the table but not the meaning: the
+// size ratio between a deleted release and the one downloaded to replace it
+// says nothing about what this encoder achieves at this CRF, and folding it in
+// would train the savings model on someone else's encode.
 func (j *Jobs) LearnedRatios(ctx context.Context, minSamples int) (map[string]LearnedRatio, error) {
 	rows, err := j.r.QueryContext(ctx, `
 		SELECT LOWER(source_codec),
 		       COUNT(*),
 		       AVG(CAST(output_size_bytes AS REAL) / CAST(original_size_bytes AS REAL))
 		FROM savings_ledger
-		WHERE source_codec IS NOT NULL
+		WHERE source = 'encode'
+		  AND source_codec IS NOT NULL
 		  AND source_codec != ''
 		  AND output_size_bytes > 0
 		  AND original_size_bytes > 0

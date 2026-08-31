@@ -143,6 +143,8 @@ export interface SavingsDay {
   day: string;
   files_encoded: number;
   bytes_saved: number;
+  files_replaced: number;
+  bytes_replaced: number;
 }
 
 export interface SavingsEntry {
@@ -160,6 +162,56 @@ export interface SavingsEntry {
   completed_at: number;
 }
 
+/**
+ * Bytes reclaimed by deleting a file and re-acquiring it rather than
+ * re-encoding it. bytes_delta is signed: a replacement that upgrades to a
+ * larger release costs space, and bytes_reclaimed / bytes_added split the net
+ * into its two halves so neither is hidden inside the other.
+ */
+export interface ReplacementSummary {
+  files_replaced: number;
+  original_bytes: number;
+  output_bytes: number;
+  bytes_delta: number;
+  bytes_reclaimed: number;
+  bytes_added: number;
+  replacements_smaller: number;
+  replacements_larger: number;
+  files_replaced_7d: number;
+  bytes_delta_7d: number;
+  files_replaced_30d: number;
+  bytes_delta_30d: number;
+  first_replaced_at: number | null;
+  last_replaced_at: number | null;
+  best_saved_bytes: number;
+  best_path: string;
+}
+
+export interface ReplacementEntry {
+  media_file_id: number;
+  path: string;
+  previous_path: string;
+  library_type: string;
+  match_kind: string;
+  source_codec: string | null;
+  result_codec: string | null;
+  width: number | null;
+  height: number | null;
+  result_width: number | null;
+  result_height: number | null;
+  original_size_bytes: number;
+  output_size_bytes: number;
+  bytes_saved: number;
+  completed_at: number;
+}
+
+export interface ReplacementReport {
+  summary: ReplacementSummary;
+  by_library: SavingsBucket[];
+  recent: ReplacementEntry[];
+  top: ReplacementEntry[];
+}
+
 export interface SavingsReport {
   summary: SavingsSummary;
   by_codec: SavingsBucket[];
@@ -168,6 +220,7 @@ export interface SavingsReport {
   daily: SavingsDay[];
   top_wins: SavingsEntry[];
   recent: SavingsEntry[];
+  replacements: ReplacementReport;
   job_outcomes: Record<string, number>;
   days: number;
 }
@@ -180,6 +233,7 @@ export interface Stats {
   by_resolution: ResolutionStat[];
   by_library: LibraryStat[];
   savings: SavingsSummary;
+  replacements: ReplacementSummary;
 }
 
 export interface MediaFile {
@@ -390,6 +444,7 @@ export interface Settings {
   probe_concurrency: number;
   oversize_threshold: number;
   missing_retention: string;
+  replace_lookback: string;
   movies_path: string;
   tv_path: string;
   tmdb_configured?: boolean;
@@ -481,6 +536,7 @@ export interface AppEvent {
     | "orphan_restored"
     | "missing_pruned"
     | "file_superseded"
+    | "file_replaced"
     | "candidates_added";
   severity: "info" | "warn" | "error";
   message: string;
@@ -669,6 +725,7 @@ export const api = {
         | "probe_concurrency"
         | "oversize_threshold"
         | "missing_retention"
+        | "replace_lookback"
         | "notify_enabled"
         | "notify_delay_seconds"
         | "notify_webhook_url"

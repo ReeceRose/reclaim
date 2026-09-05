@@ -33,7 +33,7 @@ const features = [
   {
     icon: Eye,
     title: "Browse every file",
-    body: "The Library view shows all scanned files, including already-HEVC, skipped, and missing items, with a clear reason each one is or isn't a candidate.",
+    body: "The Library view shows all scanned files, including already-HEVC, skipped, and missing items, with a clear reason each one is or isn't a candidate. Pick which columns you see and drag them into the order you want.",
     accent: "var(--green)",
   },
   {

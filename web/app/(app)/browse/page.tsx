@@ -2,14 +2,20 @@
 
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  MOVIE_COLUMNS,
+  MOVIES_TABLE_ID,
+} from "@/components/browse/movie-columns";
 import { FilterSelect } from "@/components/filter-select";
 import { STATE_OPTIONS } from "@/components/media/candidate-state";
 import { MovieCard } from "@/components/media/movie-card";
-import { MovieRow } from "@/components/media/movie-row";
+import { MOVIE_ROW_CLASS, MovieRow } from "@/components/media/movie-row";
 import { SeasonRankCard } from "@/components/media/season-rank-card";
 import { SeasonRankRow } from "@/components/media/season-rank-row";
 import { ShowCard } from "@/components/media/show-card";
 import { ShowRow } from "@/components/media/show-row";
+import { ColumnHeaders } from "@/components/table/column-cells";
+import { ColumnOptions } from "@/components/table/column-options";
 import { Input } from "@/components/ui/input";
 import { QueryErrorState } from "@/components/ui/query-error-state";
 import {
@@ -21,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { parseQueryEnum, useQueryParam } from "@/hooks/use-query-params";
+import { useTableColumns } from "@/hooks/use-table-columns";
 import {
   api,
   type CandidateState,
@@ -286,6 +293,7 @@ function MoviesContent({
   view: string;
 }) {
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const table = useTableColumns(MOVIES_TABLE_ID, MOVIE_COLUMNS);
 
   const {
     data,
@@ -352,11 +360,16 @@ function MoviesContent({
 
   return (
     <>
-      <div className="text-xs text-muted-dim mb-4">
-        {isLoading && movies.length === 0 ? (
-          <Skeleton className="h-3 w-20" />
-        ) : (
-          `${formatInt(totalCount ?? movies.length)} movies`
+      <div className="flex items-center justify-between gap-3 mb-4 min-h-8">
+        <div className="text-xs text-muted-dim">
+          {isLoading && movies.length === 0 ? (
+            <Skeleton className="h-3 w-20" />
+          ) : (
+            `${formatInt(totalCount ?? movies.length)} movies`
+          )}
+        </div>
+        {isList && (
+          <ColumnOptions table={table} variant="ghost" className="h-7" />
         )}
       </div>
 
@@ -380,17 +393,20 @@ function MoviesContent({
       ) : isList ? (
         <div className="bg-surface border border-line rounded-xl overflow-hidden">
           <div
-            className="grid items-center gap-3 px-4 py-2 border-b border-line text-xs uppercase tracking-wider text-muted-dim font-bold"
-            style={{ gridTemplateColumns: "1fr auto auto auto auto" }}
+            className={cn(
+              MOVIE_ROW_CLASS,
+              "py-2 border-b border-line text-xs uppercase tracking-wider text-muted-dim font-bold",
+            )}
           >
-            <span>Title</span>
-            <span>Codec</span>
-            <span className="hidden sm:inline">Res</span>
-            <span className="hidden md:inline">Size</span>
-            <span className="w-24 text-right">Savings</span>
+            <ColumnHeaders columns={table.columns} />
           </div>
           {movies.map((f: MediaFile) => (
-            <MovieRow key={f.id} file={f} href={BROWSE_ROUTES.MOVIE(f.id)} />
+            <MovieRow
+              key={f.id}
+              file={f}
+              columns={table.columns}
+              href={BROWSE_ROUTES.MOVIE(f.id)}
+            />
           ))}
         </div>
       ) : (

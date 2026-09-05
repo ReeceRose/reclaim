@@ -1,32 +1,33 @@
 "use client";
 
 import Link from "next/link";
+import { ColumnCells } from "@/components/table/column-cells";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { IdToggleHandler } from "@/hooks/use-id-selection";
 import type { MediaFile } from "@/lib/api";
-import { baseName, dirName, formatBytes, resolutionLabel } from "@/lib/format";
+import type { ColumnDef } from "@/lib/table-columns";
 import { cn } from "@/lib/utils";
-import { isQueueable, queueBlockReason, StateBadge } from "./candidate-state";
-import { CodecBadge } from "./codec-badge";
-import { OversizeBadge } from "./oversize-badge";
+import { isQueueable, queueBlockReason } from "./candidate-state";
 
-export function MediaFlatRow({
+export const FLAT_ROW_CLASS = "flex items-center gap-2 pr-3 sm:pr-4";
+
+export function MediaFlatRow<S extends string>({
   item,
   index,
   orderedIds,
+  columns,
   selected,
   onToggle,
   href,
-  showState = false,
   gateSelection = false,
 }: {
   item: MediaFile;
   index: number;
   orderedIds: readonly number[];
+  columns: readonly ColumnDef<MediaFile, S>[];
   selected: boolean;
   onToggle: IdToggleHandler;
   href: string;
-  showState?: boolean;
   gateSelection?: boolean;
 }) {
   const queueable = !gateSelection || isQueueable(item);
@@ -34,7 +35,8 @@ export function MediaFlatRow({
   return (
     <div
       className={cn(
-        "relative flex items-center gap-0 border-b border-line-soft hover:bg-surface-2 transition-colors",
+        FLAT_ROW_CLASS,
+        "relative border-b border-line-soft hover:bg-surface-2 transition-colors",
         selected && "bg-brand-soft",
         missing && "opacity-70",
       )}
@@ -47,8 +49,8 @@ export function MediaFlatRow({
         aria-hidden
       />
       <div
-        className="relative z-10 w-14 flex justify-center shrink-0"
-        title={
+        className="relative z-10 w-11 flex justify-center shrink-0"
+        data-tooltip={
           gateSelection
             ? queueable
               ? "Queue candidate"
@@ -66,45 +68,7 @@ export function MediaFlatRow({
           className="size-4 rounded-md"
         />
       </div>
-      <div className="flex-1 min-w-0 pr-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <div
-            className={cn(
-              "font-semibold text-sm truncate",
-              missing && "line-through text-muted-fg",
-            )}
-          >
-            {baseName(item.path)}
-          </div>
-          <OversizeBadge file={item} />
-        </div>
-        <div className="text-xs text-muted-dim truncate font-mono">
-          {dirName(item.path)}
-        </div>
-      </div>
-      <div className="w-16 sm:w-20 shrink-0">
-        <CodecBadge codec={item.video_codec} showUnknown={showState} />
-      </div>
-      <div className="hidden sm:block w-16 shrink-0 text-sm text-muted-fg">
-        {resolutionLabel(item.width, item.height)}
-      </div>
-      {showState && (
-        <div className="hidden lg:block w-28 shrink-0">
-          <StateBadge state={item.candidate_state} />
-        </div>
-      )}
-      <div className="hidden sm:block w-24 shrink-0 text-right text-sm text-muted-fg pr-2 font-mono">
-        {formatBytes(item.size_bytes)}
-      </div>
-      <div className="w-20 sm:w-28 shrink-0 text-right text-sm sm:text-sm pr-3 sm:pr-4 font-mono">
-        {queueable ? (
-          <span className="text-brand font-semibold">
-            {formatBytes(item.predicted_savings_bytes)}
-          </span>
-        ) : (
-          <span className="text-muted-dim">-</span>
-        )}
-      </div>
+      <ColumnCells columns={columns} item={item} href={href} />
     </div>
   );
 }

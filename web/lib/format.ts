@@ -233,3 +233,66 @@ export function formatDayFull(day: string): string {
     timeZone: "UTC",
   });
 }
+
+/**
+ * formatFileDate renders a unix-seconds timestamp as a short date. The year is
+ * dropped inside the current year so the common case stays narrow.
+ */
+export function formatFileDate(unixSeconds: number | null | undefined): string {
+  if (!unixSeconds) return "—";
+  const d = new Date(unixSeconds * 1000);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+}
+
+/** formatFileDateTime renders a unix-seconds timestamp in full, for tooltips. */
+export function formatFileDateTime(
+  unixSeconds: number | null | undefined,
+): string {
+  if (!unixSeconds) return "unknown";
+  return new Date(unixSeconds * 1000).toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+export function formatBitrate(kbps: number | null | undefined): string {
+  if (!kbps || kbps <= 0) return "—";
+  if (kbps >= 10000) return `${(kbps / 1000).toFixed(1)} Mbps`;
+  return `${formatInt(Math.round(kbps))} kbps`;
+}
+
+export function formatAudio(
+  codec: string | null | undefined,
+  channels: number | null | undefined,
+): string {
+  const layout =
+    channels === 8
+      ? "7.1"
+      : channels === 6
+        ? "5.1"
+        : channels === 2
+          ? "2.0"
+          : channels === 1
+            ? "mono"
+            : channels
+              ? `${channels}ch`
+              : "";
+  const name = codec?.toUpperCase() ?? "";
+  if (!name && !layout) return "—";
+  return [name, layout].filter(Boolean).join(" ");
+}
+
+export function formatContainer(
+  path: string,
+  containerFormat: string | null | undefined,
+): string {
+  const ext = baseName(path).split(".").pop() ?? "";
+  if (ext && ext.length <= 5 && !ext.includes(" ")) return ext.toUpperCase();
+  const probed = containerFormat?.split(",")[0]?.trim();
+  return probed ? probed.toUpperCase() : "—";
+}

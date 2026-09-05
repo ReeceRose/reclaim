@@ -21,6 +21,12 @@ export function stateLabel(state: CandidateState): string {
   return STATE_OPTIONS.find((o) => o.value === state)?.label ?? state;
 }
 
+const COMPACT_STATE_LABELS: Partial<Record<CandidateState, string>> = {
+  already_hevc: "HEVC",
+  probe_failed: "Failed",
+  unknown_codec: "Unknown",
+};
+
 /** queueBlockReason explains, in a few words, why a file cannot be queued. */
 export function queueBlockReason(file: MediaFile): string {
   switch (file.candidate_state) {
@@ -41,8 +47,17 @@ export function queueBlockReason(file: MediaFile): string {
   }
 }
 
-/** StateBadge renders a candidate state as a colour-coded pill. */
-export function StateBadge({ state }: { state: CandidateState }) {
+/**
+ * StateBadge renders a candidate state as a colour-coded pill. `compact`
+ * shortens the two-word labels for the fixed-width table column.
+ */
+export function StateBadge({
+  state,
+  compact = false,
+}: {
+  state: CandidateState;
+  compact?: boolean;
+}) {
   const cls =
     state === "candidate"
       ? "text-brand border-brand-line bg-brand-soft"
@@ -55,7 +70,7 @@ export function StateBadge({ state }: { state: CandidateState }) {
             : "text-muted-fg border-line bg-surface-3";
   return (
     <Badge className={`text-xs rounded-lg font-semibold ${cls}`}>
-      {stateLabel(state)}
+      {(compact ? COMPACT_STATE_LABELS[state] : undefined) ?? stateLabel(state)}
     </Badge>
   );
 }

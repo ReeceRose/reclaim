@@ -456,7 +456,7 @@ function FilePageContent() {
                     onClick={() => forceMutation.mutate(activeJob.id)}
                     disabled={forceMutation.isPending}
                     className="h-7 text-xs"
-                    title="Run now, bypassing the encode window"
+                    data-tooltip="Run now, bypassing the encode window"
                   >
                     {forceMutation.isPending ? "Forcing…" : "Run now"}
                   </Button>
@@ -467,7 +467,7 @@ function FilePageContent() {
                 onClick={() => rescanMutation.mutate()}
                 disabled={isRescanning}
                 className="h-7 text-xs text-muted-fg hover:text-text gap-1.5"
-                title="Re-probe this file with ffprobe"
+                data-tooltip="Re-probe this file with ffprobe"
               >
                 <svg
                   aria-hidden="true"
@@ -488,7 +488,7 @@ function FilePageContent() {
                 onClick={() => void handleRefresh()}
                 disabled={refreshing}
                 className="h-7 text-xs text-muted-fg hover:text-text gap-1.5"
-                title="Re-fetch poster, title, and year from TMDB"
+                data-tooltip="Re-fetch poster, title, and year from TMDB"
               >
                 <svg
                   aria-hidden="true"

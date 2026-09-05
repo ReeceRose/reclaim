@@ -26,6 +26,7 @@ export function CandidatesFilterBar({
   library,
   libraryOptions,
   onLibraryChange,
+  columnOptions,
   isPending,
 }: {
   search: string;
@@ -41,6 +42,7 @@ export function CandidatesFilterBar({
   library: string;
   libraryOptions: { value: string; label: string }[];
   onLibraryChange: (v: string) => void;
+  columnOptions?: React.ReactNode;
   isPending?: boolean;
 }) {
   return (
@@ -122,6 +124,7 @@ export function CandidatesFilterBar({
           onChange={onLibraryChange}
           className="min-w-32"
         />
+        {columnOptions && <div className="ml-auto">{columnOptions}</div>}
       </div>
     </div>
   );

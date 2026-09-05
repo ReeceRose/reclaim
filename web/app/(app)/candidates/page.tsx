@@ -20,11 +20,16 @@ import { CandidatesFilterBar } from "@/components/candidates/candidates-filter-b
 import { CandidatesFlatList } from "@/components/candidates/candidates-flat-list";
 import { CandidatesPageSkeleton } from "@/components/candidates/candidates-page-skeleton";
 import {
+  CANDIDATE_COLUMNS,
+  CANDIDATES_TABLE_ID,
+} from "@/components/candidates/columns";
+import {
   CANDIDATE_SORT_OPTIONS,
   CANDIDATES_PAGE_SIZE,
 } from "@/components/candidates/constants";
 import { QueueConfirmDialog } from "@/components/media/queue-confirm-dialog";
 import { QueueSelectionBar } from "@/components/media/selection-bar";
+import { ColumnOptions } from "@/components/table/column-options";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,6 +39,7 @@ import {
   useQueryParam,
   useQueryParams,
 } from "@/hooks/use-query-params";
+import { useTableColumns } from "@/hooks/use-table-columns";
 import { api, type CandidateFilters, type MediaFile } from "@/lib/api";
 import {
   codecFilterOptions,
@@ -67,6 +73,7 @@ function CandidatesPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const fileMapRef = useRef<Map<number, MediaFile>>(new Map());
   const parentRef = useRef<HTMLDivElement>(null);
+  const table = useTableColumns(CANDIDATES_TABLE_ID, CANDIDATE_COLUMNS);
 
   const { data: stats } = useQuery({
     queryKey: ["stats"],
@@ -256,6 +263,7 @@ function CandidatesPage() {
         library={effectiveLibrary}
         libraryOptions={libraryOptions}
         onLibraryChange={(v) => startTransition(() => setLibrary(v))}
+        columnOptions={<ColumnOptions table={table} />}
         isPending={isPending}
       />
 
@@ -268,6 +276,7 @@ function CandidatesPage() {
         <CandidatesFlatList
           sort={sort}
           onSortChange={(v) => startTransition(() => setSortRaw(v))}
+          table={table}
           parentRef={parentRef}
           allItems={allItems}
           orderedIds={orderedIds}

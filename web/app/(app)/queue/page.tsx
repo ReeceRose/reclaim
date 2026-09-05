@@ -419,7 +419,7 @@ function QueueContent() {
               {runningJob.forced && (
                 <Badge
                   className="text-xs rounded-3xl border-transparent text-brand bg-brand-soft shrink-0"
-                  title="Started with Run now, so it ignores the encode window"
+                  data-tooltip="Started with Run now, so it ignores the encode window"
                 >
                   forced
                 </Badge>
@@ -530,7 +530,7 @@ function QueueContent() {
                           onClick={() => forceMutation.mutate(job.id)}
                           disabled={forceMutation.isPending}
                           className="rounded-xl text-xs"
-                          title="Run now, bypassing the encode window"
+                          data-tooltip="Run now, bypassing the encode window"
                         >
                           Run now
                         </Button>

@@ -9,6 +9,7 @@ export function SortHeaderCell({
   onClick,
   className,
   align = "left",
+  tooltip,
   children,
 }: {
   active: boolean;
@@ -16,20 +17,22 @@ export function SortHeaderCell({
   onClick: () => void;
   className?: string;
   align?: "left" | "right";
+  tooltip?: string;
   children: ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      data-tooltip={tooltip}
       className={cn(
-        className,
         "inline-flex items-center gap-0 font-bold uppercase tracking-wider transition-colors",
         "cursor-pointer bg-transparent border-0 p-0 m-0",
         align === "right" ? "justify-end" : "justify-start",
         active
           ? "text-brand hover:text-brand"
           : "text-muted-fg hover:text-text",
+        className,
       )}
     >
       <span>{children}</span>

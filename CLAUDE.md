@@ -268,6 +268,28 @@ Key frontend pieces:
 - `web/hooks/use-ws.ts` — WebSocket hook for live job progress
 - `web/components/app-shell.tsx` — root shell with auth gate
 
+`web/components/ui/tooltip-layer.tsx` is the app's tooltip: one instance
+mounted in `AppShell`, driven by delegated `pointerover`/`focusin` on
+`document`. Any element opts in with a `data-tooltip` attribute (innermost
+under the pointer wins) — prefer it over the native `title`, which the media
+tables cannot use at scale: a Radix trigger per cell would mount hundreds of
+stateful components inside a virtualised list.
+
+Table columns on the Candidates, Library, Browse › Movies, and Browse › TV
+episode tables are user-configurable (visibility + drag order). `web/lib/table-columns.ts`
+holds the pure `ColumnDef`/`TableLayout` model, `web/lib/table-layout-store.ts` is
+the `localStorage` store behind `useSyncExternalStore` (key `reclaim:columns:<tableId>`,
+`EMPTY_LAYOUT` as the server snapshot so a static export hydrates cleanly), and
+`web/hooks/use-table-columns.ts` joins the two. Column definitions come from the
+shared `web/components/media/media-columns.tsx` registry, composed per table in
+`components/{candidates,library}/columns.tsx` and `components/browse/{movie,episode}-columns.tsx`.
+Saved layouts store only what the user changed: a column absent from `visible`
+falls back to its `defaultVisible`, and a column absent from `order` is spliced
+in beside its registry neighbour, so adding a column in a later release does not
+invalidate a saved layout. Breakpoint hiding is independent of user visibility —
+`ColumnDef.breakpoint` still hides a column on narrow windows. Nothing is
+persisted server-side; see the README for the user-facing contract.
+
 The frontend uses the **Next.js App Router** (`web/app/`). **Important:** `web/AGENTS.md` warns that this is Next.js 16 with breaking changes from prior versions. Read `node_modules/next/dist/docs/` before writing Next.js code.
 
 `docs/API.md` is the authoritative REST API reference. Encode time estimation design: `docs/ENCODE-TIME-PLAN.md`.

@@ -20,19 +20,19 @@ export const CANDIDATE_SORT_OPTIONS: {
   { value: "codec", label: "Source codec" },
 ];
 
-export type CandidateSortColumn = "file" | "codec" | "size" | "savings";
+export type CandidateSortColumn = "added" | "codec" | "size" | "savings";
 
 const SORT_COLUMN: Record<CandidateSortKey, CandidateSortColumn> = {
   savings_desc: "savings",
   size_desc: "size",
   size_asc: "size",
-  mtime_desc: "file",
-  mtime_asc: "file",
+  mtime_desc: "added",
+  mtime_asc: "added",
   codec: "codec",
 };
 
 const COLUMN_DEFAULT_SORT: Record<CandidateSortColumn, CandidateSortKey> = {
-  file: "mtime_desc",
+  added: "mtime_desc",
   codec: "codec",
   size: "size_desc",
   savings: "savings_desc",
@@ -41,7 +41,7 @@ const COLUMN_DEFAULT_SORT: Record<CandidateSortColumn, CandidateSortKey> = {
 const COLUMN_TOGGLE: Partial<
   Record<CandidateSortColumn, readonly [CandidateSortKey, CandidateSortKey]>
 > = {
-  file: ["mtime_desc", "mtime_asc"],
+  added: ["mtime_desc", "mtime_asc"],
   size: ["size_desc", "size_asc"],
 };
 

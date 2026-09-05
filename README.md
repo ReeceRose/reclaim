@@ -161,6 +161,38 @@ echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf
 sudo sysctl -p
 ```
 
+### Table columns are stored in the browser
+
+The Candidates, Library, Browse › Movies (list view), and Browse › TV episode
+tables each have a **Columns** button that toggles which columns are shown and
+lets you drag them into a different order. Optional columns — folder, length,
+bitrate, audio, container — are off by default.
+
+That layout is saved in the browser's `localStorage`, one key per table:
+
+```
+reclaim:columns:candidates
+reclaim:columns:library
+reclaim:columns:browse-movies
+reclaim:columns:browse-episodes
+```
+
+Each value is `{"order": [...], "visible": {...}}`. Two consequences worth
+knowing:
+
+- **It is per browser and per device, not per instance.** Nothing is written to
+  the database and nothing crosses devices; a phone, a laptop, and a private
+  window each keep their own layout. That is deliberate — how many columns fit
+  is a property of the screen, not of the library. Clearing site data resets
+  every table to its defaults, as does **Reset** in the Columns popover.
+- **Narrow windows still hide columns.** A column can be enabled and still not
+  render, because each one also has a minimum breakpoint (`Bitrate` needs a very
+  wide window, `Added` a wide one, and so on). Hovering a column name in the
+  popover says which. Widen the window rather than re-toggling.
+
+Columns added by a future release appear automatically with their default
+visibility, in their natural position, without disturbing a saved layout.
+
 ### SQLite WAL files
 
 SQLite WAL sidecars (`reclaim.db-wal`, `reclaim.db-shm`) next to the DB are normal. Do not delete them while Reclaim is running.

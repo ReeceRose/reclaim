@@ -3,14 +3,20 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { type RefObject, useEffect } from "react";
 import { BROWSE_ROUTES } from "@/app/(app)/browse/browse";
-import { MediaFlatRow } from "@/components/media/media-flat-row";
-import { SortHeaderCell } from "@/components/media/sort-header-cell";
+import {
+  FLAT_ROW_CLASS,
+  MediaFlatRow,
+} from "@/components/media/media-flat-row";
+import { ColumnHeaders } from "@/components/table/column-cells";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QueryErrorState } from "@/components/ui/query-error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { IdToggleHandler } from "@/hooks/use-id-selection";
+import type { TableColumns } from "@/hooks/use-table-columns";
 import type { MediaFile } from "@/lib/api";
+import { columnCellClass } from "@/lib/table-columns";
+import { cn } from "@/lib/utils";
 import {
   type CandidateSortColumn,
   type CandidateSortKey,
@@ -19,38 +25,10 @@ import {
   toggleCandidateSort,
 } from "./constants";
 
-function CandidateSortHeader({
-  column,
-  sort,
-  className,
-  align = "left",
-  onSortChange,
-  children,
-}: {
-  column: CandidateSortColumn;
-  sort: CandidateSortKey;
-  className?: string;
-  align?: "left" | "right";
-  onSortChange: (sort: CandidateSortKey) => void;
-  children: React.ReactNode;
-}) {
-  const active = candidateSortColumn(sort) === column;
-  return (
-    <SortHeaderCell
-      active={active}
-      arrow={active ? candidateSortArrow(sort) : null}
-      onClick={() => onSortChange(toggleCandidateSort(sort, column))}
-      className={className}
-      align={align}
-    >
-      {children}
-    </SortHeaderCell>
-  );
-}
-
 export function CandidatesFlatList({
   sort,
   onSortChange,
+  table,
   parentRef,
   allItems,
   orderedIds,
@@ -68,6 +46,7 @@ export function CandidatesFlatList({
 }: {
   sort: CandidateSortKey;
   onSortChange: (sort: CandidateSortKey) => void;
+  table: TableColumns<MediaFile, CandidateSortColumn>;
   parentRef: RefObject<HTMLDivElement | null>;
   allItems: MediaFile[];
   orderedIds: number[];
@@ -110,51 +89,29 @@ export function CandidatesFlatList({
     onLoadMore,
   ]);
 
+  const columns = table.columns;
+
   return (
     <div className="bg-surface border border-line rounded-(--radius) overflow-hidden flex flex-col h-full">
-      <div className="flex items-center text-xs uppercase tracking-wider text-muted-fg font-bold bg-surface-2 border-b border-line shrink-0">
-        <div className="w-14 flex justify-center py-3">
+      <div
+        className={cn(
+          FLAT_ROW_CLASS,
+          "py-3 text-xs uppercase tracking-wider text-muted-fg font-bold bg-surface-2 border-b border-line shrink-0",
+        )}
+      >
+        <div className="w-11 flex justify-center shrink-0">
           <Checkbox
             checked={allSelected}
             onCheckedChange={onToggleAll}
             className="size-4 rounded-md cursor-pointer"
           />
         </div>
-        <CandidateSortHeader
-          column="file"
-          sort={sort}
-          onSortChange={onSortChange}
-          className="flex-1 py-3 pr-3 min-w-0"
-        >
-          File
-        </CandidateSortHeader>
-        <CandidateSortHeader
-          column="codec"
-          sort={sort}
-          onSortChange={onSortChange}
-          className="w-16 sm:w-20 py-3 shrink-0"
-        >
-          Codec
-        </CandidateSortHeader>
-        <div className="hidden sm:block w-16 py-3 shrink-0">Res</div>
-        <CandidateSortHeader
-          column="size"
-          sort={sort}
-          align="right"
-          onSortChange={onSortChange}
-          className="hidden sm:flex w-24 py-3 pr-2 shrink-0"
-        >
-          Size
-        </CandidateSortHeader>
-        <CandidateSortHeader
-          column="savings"
-          sort={sort}
-          align="right"
-          onSortChange={onSortChange}
-          className="w-20 sm:w-28 py-3 pr-3 sm:pr-4 shrink-0"
-        >
-          Est. savings
-        </CandidateSortHeader>
+        <ColumnHeaders
+          columns={columns}
+          sortColumn={candidateSortColumn(sort)}
+          sortArrow={candidateSortArrow(sort)}
+          onSort={(column) => onSortChange(toggleCandidateSort(sort, column))}
+        />
       </div>
 
       {showError ? (
@@ -169,20 +126,29 @@ export function CandidatesFlatList({
             <div
               // biome-ignore lint/suspicious/noArrayIndexKey: reason: static, fixed-length skeleton placeholder list with no stable identity
               key={i}
-              className="flex items-center gap-0 border-b border-line-soft px-0"
+              className={cn(FLAT_ROW_CLASS, "border-b border-line-soft")}
               style={{ height: 52 }}
             >
-              <div className="w-14 flex justify-center shrink-0">
+              <div className="w-11 flex justify-center shrink-0">
                 <Skeleton className="w-4 h-4 rounded-md" />
               </div>
-              <div className="flex-1 min-w-0 pr-3">
-                <Skeleton className="h-4 w-48 mb-1.5" />
-                <Skeleton className="h-3 w-64" />
-              </div>
-              <Skeleton className="w-16 sm:w-20 h-5 rounded-lg shrink-0" />
-              <Skeleton className="hidden sm:block w-16 h-3 shrink-0 mx-1" />
-              <Skeleton className="hidden sm:block w-24 h-3 shrink-0 mr-2" />
-              <Skeleton className="w-20 sm:w-28 h-4 shrink-0 mr-3 sm:mr-4" />
+              {columns.map((col) => (
+                <div key={col.id} className={columnCellClass(col)}>
+                  {col.locked ? (
+                    <>
+                      <Skeleton className="h-4 w-48 mb-1.5" />
+                      <Skeleton className="h-3 w-64" />
+                    </>
+                  ) : (
+                    <Skeleton
+                      className={cn(
+                        "h-3 w-full",
+                        col.align === "right" && "ml-auto",
+                      )}
+                    />
+                  )}
+                </div>
+              ))}
             </div>
           ))}
         </div>
@@ -225,6 +191,7 @@ export function CandidatesFlatList({
                     item={allItems[vRow.index]}
                     index={vRow.index}
                     orderedIds={orderedIds}
+                    columns={columns}
                     selected={selectedIds.has(allItems[vRow.index].id)}
                     onToggle={onToggle}
                     href={BROWSE_ROUTES.FILE(allItems[vRow.index].id)}

@@ -20,18 +20,24 @@ import { toast } from "sonner";
 import { BROWSE_ROUTES } from "@/app/(app)/browse/browse";
 import { FilterSelect } from "@/components/filter-select";
 import {
+  LIBRARY_COLUMNS,
+  LIBRARY_TABLE_ID,
+} from "@/components/library/columns";
+import {
   LIBRARY_SORT_OPTIONS,
-  type LibrarySortColumn,
-  type LibrarySortKey,
   librarySortArrow,
   librarySortColumn,
   toggleLibrarySort,
 } from "@/components/library/constants";
 import { isQueueable, STATE_OPTIONS } from "@/components/media/candidate-state";
-import { MediaFlatRow } from "@/components/media/media-flat-row";
+import {
+  FLAT_ROW_CLASS,
+  MediaFlatRow,
+} from "@/components/media/media-flat-row";
 import { QueueConfirmDialog } from "@/components/media/queue-confirm-dialog";
 import { QueueSelectionBar } from "@/components/media/selection-bar";
-import { SortHeaderCell } from "@/components/media/sort-header-cell";
+import { ColumnHeaders } from "@/components/table/column-cells";
+import { ColumnOptions } from "@/components/table/column-options";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
@@ -50,6 +56,7 @@ import {
   useQueryParam,
   useQueryParams,
 } from "@/hooks/use-query-params";
+import { useTableColumns } from "@/hooks/use-table-columns";
 import {
   api,
   type CandidateState,
@@ -65,35 +72,6 @@ import { formatInt } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 100;
-
-function LibrarySortHeader({
-  column,
-  sort,
-  className,
-  align = "left",
-  onSortChange,
-  children,
-}: {
-  column: LibrarySortColumn;
-  sort: LibrarySortKey;
-  className?: string;
-  align?: "left" | "right";
-  onSortChange: (sort: LibrarySortKey) => void;
-  children: React.ReactNode;
-}) {
-  const active = librarySortColumn(sort) === column;
-  return (
-    <SortHeaderCell
-      active={active}
-      arrow={active ? librarySortArrow(sort) : null}
-      onClick={() => onSortChange(toggleLibrarySort(sort, column))}
-      className={className}
-      align={align}
-    >
-      {children}
-    </SortHeaderCell>
-  );
-}
 
 const STATUS_OPTIONS = [
   { value: "active", label: "Active" },
@@ -133,6 +111,7 @@ function LibraryPage() {
     toggleAll: selectAllToggle,
   } = useIdSelection({ isSelectable });
   const parentRef = useRef<HTMLDivElement>(null);
+  const table = useTableColumns(LIBRARY_TABLE_ID, LIBRARY_COLUMNS);
 
   const { data: stats } = useQuery({
     queryKey: ["stats"],
@@ -391,6 +370,9 @@ function LibraryPage() {
             onChange={(v) => startTransition(() => setOversized(v))}
             className="min-w-36"
           />
+          <div className="ml-auto">
+            <ColumnOptions table={table} />
+          </div>
         </div>
       </div>
 
@@ -401,51 +383,29 @@ function LibraryPage() {
         )}
       >
         <div className="bg-surface border border-line rounded-(--radius) overflow-hidden flex flex-col h-full">
-          <div className="flex items-center text-xs uppercase tracking-wider text-muted-fg font-bold bg-surface-2 border-b border-line shrink-0">
-            <div className="w-14 flex justify-center py-3">
+          <div
+            className={cn(
+              FLAT_ROW_CLASS,
+              "py-3 text-xs uppercase tracking-wider text-muted-fg font-bold bg-surface-2 border-b border-line shrink-0",
+            )}
+          >
+            <div className="w-11 flex justify-center shrink-0">
               <Checkbox
                 checked={allSelected}
                 onCheckedChange={toggleAll}
                 className="size-4 rounded-md cursor-pointer"
               />
             </div>
-            <LibrarySortHeader
-              column="file"
-              sort={sort}
-              onSortChange={(v) => startTransition(() => setSortRaw(v))}
-              className="flex-1 py-3 pr-3 min-w-0"
-            >
-              File
-            </LibrarySortHeader>
-            <LibrarySortHeader
-              column="codec"
-              sort={sort}
-              onSortChange={(v) => startTransition(() => setSortRaw(v))}
-              className="w-16 sm:w-20 py-3 shrink-0"
-            >
-              Codec
-            </LibrarySortHeader>
-            <LibrarySortHeader
-              column="res"
-              sort={sort}
-              onSortChange={(v) => startTransition(() => setSortRaw(v))}
-              className="hidden sm:flex w-16 py-3 shrink-0"
-            >
-              Res
-            </LibrarySortHeader>
-            <div className="hidden lg:block w-28 py-3 shrink-0">State</div>
-            <LibrarySortHeader
-              column="size"
-              sort={sort}
-              align="right"
-              onSortChange={(v) => startTransition(() => setSortRaw(v))}
-              className="hidden sm:flex w-24 py-3 pr-2 shrink-0"
-            >
-              Size
-            </LibrarySortHeader>
-            <div className="w-20 sm:w-28 py-3 text-right pr-3 sm:pr-4 shrink-0">
-              Est. savings
-            </div>
+            <ColumnHeaders
+              columns={table.columns}
+              sortColumn={librarySortColumn(sort)}
+              sortArrow={librarySortArrow(sort)}
+              onSort={(column) =>
+                startTransition(() =>
+                  setSortRaw(toggleLibrarySort(sort, column)),
+                )
+              }
+            />
           </div>
           {isError && !data ? (
             <QueryErrorState
@@ -501,7 +461,7 @@ function LibraryPage() {
                         selected={selectedIds.has(allItems[vRow.index].id)}
                         onToggle={toggleId}
                         href={BROWSE_ROUTES.FILE(allItems[vRow.index].id)}
-                        showState
+                        columns={table.columns}
                         gateSelection
                       />
                     ) : (

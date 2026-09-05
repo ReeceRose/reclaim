@@ -9,12 +9,15 @@ import {
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { BROWSE_ROUTES, EPISODES_PER_PAGE } from "@/app/(app)/browse/browse";
+import { ColumnHeaders } from "@/components/table/column-cells";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTableColumns } from "@/hooks/use-table-columns";
 import { api, type LibrarySeasonGroup } from "@/lib/api";
 import { formatBytes, formatInt } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { TvEpisodeRow } from "./tv-episode-row";
+import { EPISODE_COLUMNS, EPISODES_TABLE_ID } from "./episode-columns";
+import { EPISODE_ROW_CLASS, TvEpisodeRow } from "./tv-episode-row";
 
 export function TvSeasonSection({
   seriesTitle,
@@ -24,6 +27,7 @@ export function TvSeasonSection({
   seasonData: LibrarySeasonGroup;
 }) {
   const queryClient = useQueryClient();
+  const table = useTableColumns(EPISODES_TABLE_ID, EPISODE_COLUMNS);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
     useInfiniteQuery({
@@ -98,7 +102,7 @@ export function TvSeasonSection({
           onClick={() => rescanMutation.mutate()}
           disabled={isRescanning || (seasonData.episode_ids?.length ?? 0) === 0}
           className="h-6 text-xs text-muted-fg hover:text-text gap-1.5 -my-1"
-          title="Re-probe every episode in this season with ffprobe"
+          data-tooltip="Re-probe every episode in this season with ffprobe"
         >
           <svg
             aria-hidden="true"
@@ -116,14 +120,13 @@ export function TvSeasonSection({
       </div>
 
       <div className="bg-surface border border-line rounded-b-xl overflow-hidden">
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-line text-xs uppercase tracking-wider text-muted-dim font-bold">
-          <span className="flex-1">File</span>
-          <span className="w-16 shrink-0">Codec</span>
-          <span className="hidden sm:inline w-12 shrink-0 text-right">Res</span>
-          <span className="hidden md:inline w-16 shrink-0 text-right">
-            Size
-          </span>
-          <span className="w-20 shrink-0 text-right">Savings</span>
+        <div
+          className={cn(
+            EPISODE_ROW_CLASS,
+            "py-2 border-b border-line text-xs uppercase tracking-wider text-muted-dim font-bold",
+          )}
+        >
+          <ColumnHeaders columns={table.columns} />
         </div>
 
         {isLoading ? (
@@ -139,6 +142,7 @@ export function TvSeasonSection({
               <TvEpisodeRow
                 key={ep.id}
                 ep={ep}
+                columns={table.columns}
                 href={BROWSE_ROUTES.FILE(ep.id)}
               />
             ))}

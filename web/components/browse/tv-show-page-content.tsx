@@ -12,14 +12,17 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { BROWSE_ROUTES, LIBRARY_TYPE } from "@/app/(app)/browse/browse";
 import { EncodeHealthBar } from "@/components/media/encode-health-bar";
+import { ColumnOptions } from "@/components/table/column-options";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useQueryParams } from "@/hooks/use-query-params";
+import { useTableColumns } from "@/hooks/use-table-columns";
 import { api, tmdbImageURL } from "@/lib/api";
 import { formatBytes, formatInt } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { EditPosterDialog } from "./edit-poster-dialog";
+import { EPISODE_COLUMNS, EPISODES_TABLE_ID } from "./episode-columns";
 import { TvSeasonSection } from "./tv-season-section";
 
 export function TvShowPageContent() {
@@ -27,6 +30,7 @@ export function TvShowPageContent() {
   const title = get("show") ?? "";
   const view = get("view") ?? undefined;
   const queryClient = useQueryClient();
+  const table = useTableColumns(EPISODES_TABLE_ID, EPISODE_COLUMNS);
 
   const [editOpen, setEditOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -220,13 +224,18 @@ export function TvShowPageContent() {
             </Link>
 
             <div className="flex items-center gap-2">
+              <ColumnOptions
+                table={table}
+                variant="ghost"
+                className="h-7 gap-1.5"
+              />
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => rescanMutation.mutate()}
                 disabled={isRescanning || allEpisodeIds.length === 0}
                 className="h-7 text-xs text-muted-fg hover:text-text gap-1.5"
-                title="Re-probe every episode in this show with ffprobe"
+                data-tooltip="Re-probe every episode in this show with ffprobe"
               >
                 <svg
                   aria-hidden="true"
@@ -247,7 +256,7 @@ export function TvShowPageContent() {
                 onClick={() => void handleRefresh()}
                 disabled={refreshing}
                 className="h-7 text-xs text-muted-fg hover:text-text gap-1.5"
-                title="Re-fetch poster, title, and year from TMDB"
+                data-tooltip="Re-fetch poster, title, and year from TMDB"
               >
                 <svg
                   aria-hidden="true"

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { NotificationPanel } from "@/components/notification-panel";
+import { TooltipLayer } from "@/components/ui/tooltip-layer";
 import { MobileBottomNav, MobileHeader } from "./mobile-nav";
 import { Sidebar } from "./sidebar";
 import { useShellData } from "./use-shell-data";
@@ -41,6 +42,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <NotificationPanel open={notifOpen} onOpenChange={setNotifOpen} />
 
       <MobileBottomNav pathname={shell.pathname} />
+
+      <TooltipLayer />
     </div>
   );
 }

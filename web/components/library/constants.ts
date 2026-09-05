@@ -22,12 +22,12 @@ export const LIBRARY_SORT_OPTIONS: {
   { value: "oversize_desc", label: "Most oversized" },
 ];
 
-export type LibrarySortColumn = "file" | "codec" | "res" | "size";
+export type LibrarySortColumn = "file" | "added" | "codec" | "res" | "size";
 
 const SORT_COLUMN: Record<LibrarySortKey, LibrarySortColumn> = {
   path_asc: "file",
-  mtime_desc: "file",
-  mtime_asc: "file",
+  mtime_desc: "added",
+  mtime_asc: "added",
   size_desc: "size",
   size_asc: "size",
   codec: "codec",
@@ -36,7 +36,8 @@ const SORT_COLUMN: Record<LibrarySortKey, LibrarySortColumn> = {
 };
 
 const COLUMN_DEFAULT_SORT: Record<LibrarySortColumn, LibrarySortKey> = {
-  file: "mtime_desc",
+  file: "path_asc",
+  added: "mtime_desc",
   codec: "codec",
   res: "resolution",
   size: "size_desc",
@@ -45,7 +46,7 @@ const COLUMN_DEFAULT_SORT: Record<LibrarySortColumn, LibrarySortKey> = {
 const COLUMN_TOGGLE: Partial<
   Record<LibrarySortColumn, readonly [LibrarySortKey, LibrarySortKey]>
 > = {
-  file: ["mtime_desc", "mtime_asc"],
+  added: ["mtime_desc", "mtime_asc"],
   size: ["size_desc", "size_asc"],
 };
 
@@ -70,7 +71,6 @@ export function toggleLibrarySort(
     if (toggle) {
       if (sort === toggle[0]) return toggle[1];
       if (sort === toggle[1]) return toggle[0];
-      if (column === "file" && sort === "path_asc") return "mtime_desc";
     }
     return COLUMN_DEFAULT_SORT[column];
   }

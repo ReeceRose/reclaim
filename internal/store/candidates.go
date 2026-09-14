@@ -23,6 +23,13 @@ const (
 	SortMtimeDesc   CandidateSort = "mtime_desc"
 	SortMtimeAsc    CandidateSort = "mtime_asc"
 	SortLibraryType CandidateSort = "library_type"
+	SortReleaseDesc CandidateSort = "release_desc"
+	SortReleaseAsc  CandidateSort = "release_asc"
+)
+
+const (
+	releaseDescOrder = "release_date DESC NULLS LAST, path ASC, id ASC"
+	releaseAscOrder  = "release_date ASC NULLS LAST, path ASC, id ASC"
 )
 
 // orderClauses maps each sort to its ORDER BY. id is always the final tiebreak
@@ -37,6 +44,8 @@ var orderClauses = map[CandidateSort]string{
 	SortMtimeDesc:   "mtime DESC, id ASC",
 	SortMtimeAsc:    "mtime ASC, id ASC",
 	SortLibraryType: "library_type ASC, predicted_savings_bytes DESC, id ASC",
+	SortReleaseDesc: releaseDescOrder,
+	SortReleaseAsc:  releaseAscOrder,
 }
 
 // CandidateFilter narrows the candidate list. Zero values mean "no filter".

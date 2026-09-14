@@ -11,6 +11,7 @@ export const CANDIDATE_COLUMNS = mediaColumns<MediaFile, CandidateSortColumn>([
   { id: "codec", sort: "codec" },
   "resolution",
   { id: "added", sort: "added" },
+  { id: "released", sort: "released" },
   "duration",
   "bitrate",
   "audio",

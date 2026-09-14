@@ -315,7 +315,7 @@ One page of ranked re-encode candidates. Excludes files that are already HEVC,
 
 | Param | Notes |
 |---|---|
-| `sort` | `savings_desc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type` |
+| `sort` | `savings_desc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`, `release_desc`, `release_asc` (by `release_date`; undated files last in both directions) |
 | `library_type` | filter: `movies` or `tv` |
 | `video_codec` | filter, exact source codec, e.g. `h264` |
 | `height` | resolution filter: `uhd8k`, `uhd`, `qhd`, `fhd`, `hd`, `sd`, `unknown`; exact numeric heights like `1080` are still accepted for compatibility |
@@ -334,6 +334,12 @@ One page of ranked re-encode candidates. Excludes files that are already HEVC,
   "next_cursor": { "after_savings": 2000, "after_id": 5 }
 }
 ```
+Every file item carries `release_date`: a movie's earliest theatrical release in
+any country or a TV episode's original air date (`YYYY-MM-DD`, from TMDB), or,
+for a movie TMDB has no date for, the release year in its folder or file name
+(`YYYY`). `null` when nothing is known. A bare year sorts below every full date
+in that year.
+
 `total_count` is included on the first page of the default `savings_desc` sort
 (no cursor, no offset). `next_cursor` is present only for the default sort when
 the page is full (`len(items) == limit`). Walk pages until `items` is shorter
@@ -348,7 +354,7 @@ eligibility.
 
 | Param | Notes |
 |---|---|
-| `sort` | `path_asc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`, `oversize_desc` (most oversized first) |
+| `sort` | `path_asc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`, `oversize_desc` (most oversized first), `release_desc`, `release_asc` |
 | `library_type` | filter: `movies` or `tv` |
 | `video_codec` | filter, exact source codec, e.g. `h264` |
 | `height` | resolution bucket filter (same values as `/api/candidates`) |

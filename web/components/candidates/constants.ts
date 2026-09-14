@@ -6,6 +6,8 @@ export type CandidateSortKey =
   | "size_asc"
   | "mtime_desc"
   | "mtime_asc"
+  | "release_desc"
+  | "release_asc"
   | "codec";
 
 export const CANDIDATE_SORT_OPTIONS: {
@@ -17,10 +19,17 @@ export const CANDIDATE_SORT_OPTIONS: {
   { value: "size_asc", label: "Smallest file" },
   { value: "mtime_desc", label: "Newest file" },
   { value: "mtime_asc", label: "Oldest file" },
+  { value: "release_desc", label: "Newest release" },
+  { value: "release_asc", label: "Oldest release" },
   { value: "codec", label: "Source codec" },
 ];
 
-export type CandidateSortColumn = "added" | "codec" | "size" | "savings";
+export type CandidateSortColumn =
+  | "added"
+  | "released"
+  | "codec"
+  | "size"
+  | "savings";
 
 const SORT_COLUMN: Record<CandidateSortKey, CandidateSortColumn> = {
   savings_desc: "savings",
@@ -28,11 +37,14 @@ const SORT_COLUMN: Record<CandidateSortKey, CandidateSortColumn> = {
   size_asc: "size",
   mtime_desc: "added",
   mtime_asc: "added",
+  release_desc: "released",
+  release_asc: "released",
   codec: "codec",
 };
 
 const COLUMN_DEFAULT_SORT: Record<CandidateSortColumn, CandidateSortKey> = {
   added: "mtime_desc",
+  released: "release_desc",
   codec: "codec",
   size: "size_desc",
   savings: "savings_desc",
@@ -42,6 +54,7 @@ const COLUMN_TOGGLE: Partial<
   Record<CandidateSortColumn, readonly [CandidateSortKey, CandidateSortKey]>
 > = {
   added: ["mtime_desc", "mtime_asc"],
+  released: ["release_desc", "release_asc"],
   size: ["size_desc", "size_asc"],
 };
 

@@ -259,6 +259,7 @@ export interface MediaFile {
   probe_error: string | null;
   status: string;
   candidate_state: CandidateState;
+  release_date: string | null;
   poster_path?: string | null;
   backdrop_path?: string | null;
   overview?: string | null;

@@ -166,7 +166,9 @@ sudo sysctl -p
 The Candidates, Library, Browse › Movies (list view), and Browse › TV episode
 tables each have a **Columns** button that toggles which columns are shown and
 lets you drag them into a different order. Optional columns — folder, length,
-bitrate, audio, container — are off by default.
+bitrate, audio, container — are off by default. The release date column (a
+movie's first theatrical release, an episode's air date) is on by default in
+Browse and off in Candidates and Library.
 
 That layout is saved in the browser's `localStorage`, one key per table:
 

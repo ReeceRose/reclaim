@@ -20,6 +20,8 @@ import {
   formatFileDateTime,
   formatInt,
   formatPct,
+  formatReleaseDate,
+  formatReleaseDateLong,
   resolutionLabel,
 } from "@/lib/format";
 import type { ColumnDef } from "@/lib/table-columns";
@@ -33,6 +35,7 @@ export type MediaColumnId =
   | "codec"
   | "resolution"
   | "added"
+  | "released"
   | "state"
   | "duration"
   | "bitrate"
@@ -141,6 +144,27 @@ const BASE: Record<MediaColumnId, BaseColumn> = {
     cell: (item) => formatFileDate(item.mtime),
     title: (item) => formatFileDateTime(item.mtime),
     description: "File modification time on disk",
+  },
+  released: {
+    id: "released",
+    label: "Released",
+    width: "w-24 shrink-0",
+    breakpoint: "lg",
+    align: "right",
+    defaultVisible: false,
+    cellClassName: "font-mono text-xs text-muted-fg",
+    cell: (item) => formatReleaseDate(item.release_date),
+    title: (item) => {
+      if (!item.release_date) return "Release date unknown";
+      if (item.library_type === "tv") {
+        return `Aired ${formatReleaseDateLong(item.release_date)}`;
+      }
+      if (item.release_date.length === 4) {
+        return `${item.release_date} · year taken from the file name`;
+      }
+      return `In theaters ${formatReleaseDateLong(item.release_date)}`;
+    },
+    description: "First theatrical release for movies, air date for episodes",
   },
   state: {
     id: "state",

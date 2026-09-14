@@ -36,6 +36,8 @@ const (
 	// FileSortOversizeDesc ranks files by how bloated they are for their runtime
 	// (oversize_ratio), largest first — the "most oversized" view.
 	FileSortOversizeDesc FileSort = "oversize_desc"
+	FileSortReleaseDesc  FileSort = "release_desc"
+	FileSortReleaseAsc   FileSort = "release_asc"
 )
 
 var fileOrderClauses = map[FileSort]string{
@@ -48,6 +50,8 @@ var fileOrderClauses = map[FileSort]string{
 	FileSortMtimeAsc:     "mtime ASC, id ASC",
 	FileSortLibraryType:  "library_type ASC, path ASC, id ASC",
 	FileSortOversizeDesc: "oversize_ratio DESC, id ASC",
+	FileSortReleaseDesc:  releaseDescOrder,
+	FileSortReleaseAsc:   releaseAscOrder,
 }
 
 // FileFilter narrows the all-files Library view. Zero values mean "no filter".

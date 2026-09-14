@@ -756,6 +756,7 @@ func (s *Scanner) probeAndStore(
 	}
 
 	f.ReplaceKey = s.replaceKeyFor(path, libraryType)
+	f.StampReleaseIdentity(s.tvRoot(), s.moviesRoot())
 
 	if libraryType == store.LibraryTypeTV {
 		title, season, _ := media.ParseTVInfo(path, s.tvRoot())
@@ -918,6 +919,9 @@ func (s *Scanner) Start(ctx context.Context) {
 		}
 		if err := s.store.Media.BackfillReplaceKeys(ctx, s.tvRoot(), s.moviesRoot()); err != nil {
 			slog.Warn("scanner: replace key backfill failed", "err", err)
+		}
+		if err := s.store.Media.BackfillReleaseIdentity(ctx, s.tvRoot(), s.moviesRoot()); err != nil {
+			slog.Warn("scanner: release identity backfill failed", "err", err)
 		}
 		if _, err := s.Scan(ctx, TriggerStartup, false); err != nil {
 			if errors.Is(err, ErrScanInProgress) {

@@ -2,8 +2,10 @@ package tmdb
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 )
 
 type TVDetails struct {
@@ -14,6 +16,7 @@ type TVDetails struct {
 	PosterPath     string
 	BackdropPath   string
 	FirstAirYear   int
+	FirstAirDate   string
 	EpisodeRuntime int
 	VoteAverage    float64
 	VoteCount      int
@@ -92,11 +95,66 @@ func (c *Client) TVDetails(ctx context.Context, tmdbID int) (*TVDetails, error) 
 	return &TVDetails{
 		TMDBID: raw.ID, Name: raw.Name, Tagline: raw.Tagline, Overview: raw.Overview,
 		PosterPath: raw.PosterPath, BackdropPath: raw.BackdropPath,
-		FirstAirYear: parseYear(raw.FirstAirDate), EpisodeRuntime: runtime,
-		VoteAverage: raw.VoteAverage, VoteCount: raw.VoteCount,
+		FirstAirYear: parseYear(raw.FirstAirDate), FirstAirDate: parseDate(raw.FirstAirDate),
+		EpisodeRuntime: runtime,
+		VoteAverage:    raw.VoteAverage, VoteCount: raw.VoteCount,
 		Genres: genres, Status: raw.Status, InProduction: raw.InProduction,
 		Network: network,
 	}, nil
+}
+
+type EpisodeAirDate struct {
+	Season  int
+	Episode int
+	AirDate string
+}
+
+const maxAppendedSeasons = 20
+
+func (c *Client) SeasonAirDates(ctx context.Context, tmdbID int, seasons []int) (map[int][]EpisodeAirDate, error) {
+	out := make(map[int][]EpisodeAirDate, len(seasons))
+	for start := 0; start < len(seasons); start += maxAppendedSeasons {
+		chunk := seasons[start:min(start+maxAppendedSeasons, len(seasons))]
+		parts := make([]string, len(chunk))
+		for i, s := range chunk {
+			parts[i] = fmt.Sprintf("season/%d", s)
+		}
+		var raw map[string]json.RawMessage
+		path := fmt.Sprintf("/tv/%d?append_to_response=%s", tmdbID, strings.Join(parts, ","))
+		if err := c.get(ctx, path, &raw); err != nil {
+			return nil, err
+		}
+		for _, s := range chunk {
+			eps, err := parseSeasonAirDates(raw[fmt.Sprintf("season/%d", s)], s)
+			if err != nil {
+				return nil, err
+			}
+			out[s] = eps
+		}
+	}
+	return out, nil
+}
+
+func parseSeasonAirDates(block json.RawMessage, season int) ([]EpisodeAirDate, error) {
+	if len(block) == 0 || string(block) == "null" {
+		return nil, nil
+	}
+	var s struct {
+		Episodes []struct {
+			EpisodeNumber int    `json:"episode_number"`
+			AirDate       string `json:"air_date"`
+		} `json:"episodes"`
+	}
+	if err := json.Unmarshal(block, &s); err != nil {
+		return nil, fmt.Errorf("tmdb: season %d: %w", season, err)
+	}
+	out := make([]EpisodeAirDate, 0, len(s.Episodes))
+	for _, e := range s.Episodes {
+		if d := parseDate(e.AirDate); d != "" {
+			out = append(out, EpisodeAirDate{Season: season, Episode: e.EpisodeNumber, AirDate: d})
+		}
+	}
+	return out, nil
 }
 
 func (c *Client) searchTVID(ctx context.Context, title string) (int, error) {

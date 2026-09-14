@@ -14,6 +14,7 @@ export const MOVIE_COLUMNS = mediaColumns<MediaFile>([
   },
   "resolution",
   "added",
+  { id: "released", defaultVisible: true },
   "duration",
   "bitrate",
   "audio",

@@ -39,8 +39,42 @@ type MediaFile struct {
 	// independent of the release providing it. Computed by the scanner (the only
 	// layer that knows the library roots) and matched against when a file is
 	// deleted and re-acquired. Empty means unidentifiable, which never matches.
-	ReplaceKey string
+	ReplaceKey        string
+	MetadataKey       string
+	EpisodeNumber     *int
+	ParsedReleaseDate *string
+	ReleaseDate       *string
 }
+
+func (f *MediaFile) StampReleaseIdentity(tvRoot, moviesRoot string) {
+	f.MetadataKey, f.EpisodeNumber, f.ParsedReleaseDate = releaseIdentity(f.Path, f.LibraryType, tvRoot, moviesRoot)
+}
+
+func releaseIdentity(path, libraryType, tvRoot, moviesRoot string) (key string, episode *int, parsed *string) {
+	key = media.MetadataKey(path, libraryType, tvRoot, moviesRoot)
+	if libraryType == LibraryTypeTV {
+		if _, _, ep := media.ParseTVInfo(path, tvRoot); ep >= 0 {
+			episode = &ep
+		}
+	}
+	if y := media.ParsedReleaseYear(path, libraryType, moviesRoot); y != "" {
+		parsed = &y
+	}
+	return key, episode, parsed
+}
+
+const releaseDateSQL = `COALESCE(
+		CASE WHEN media_files.library_type = 'tv' THEN (
+			SELECT e.air_date FROM episode_air_dates e
+			WHERE e.series_key = media_files.metadata_key
+			  AND e.season_number = media_files.season_number
+			  AND e.episode_number = media_files.episode_number
+		) ELSE (
+			SELECT mm.release_date FROM media_metadata mm
+			WHERE mm.key = media_files.metadata_key
+			  AND mm.media_type = 'movie' AND mm.no_match = 0
+		) END,
+		media_files.parsed_release_date)`
 
 type Media struct {
 	r, w *sql.DB
@@ -67,13 +101,15 @@ func (m *Media) Insert(ctx context.Context, f *MediaFile) (int64, error) {
 			video_codec, video_codec_profile, width, height, duration_seconds,
 			bitrate_kbps, audio_codec, audio_channels, container_format,
 			is_already_hevc, predicted_savings_bytes, oversize_ratio, last_probed_at, probe_error, status,
-			series_title, season_number, replace_key, first_seen_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			series_title, season_number, replace_key, first_seen_at,
+			metadata_key, episode_number, parsed_release_date
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		f.Path, f.LibraryType, f.SizeBytes, f.Mtime, f.Fingerprint,
 		f.VideoCodec, f.VideoCodecProfile, f.Width, f.Height, f.DurationSeconds,
 		f.BitrateKbps, f.AudioCodec, f.AudioChannels, f.ContainerFormat,
 		btoi(f.IsAlreadyHEVC), f.PredictedSavingsBytes, f.OversizeRatio, f.LastProbedAt, f.ProbeError, f.Status,
 		f.SeriesTitle, f.SeasonNumber, f.ReplaceKey, time.Now().Unix(),
+		f.MetadataKey, f.EpisodeNumber, f.ParsedReleaseDate,
 	)
 	if err != nil {
 		return 0, err
@@ -120,7 +156,8 @@ func (m *Media) UpdateProbe(ctx context.Context, f *MediaFile) error {
 			container_format = ?, is_already_hevc = ?, predicted_savings_bytes = ?,
 			oversize_ratio = ?, last_probed_at = ?, probe_error = ?, status = ?,
 			missing_since = CASE WHEN ? = 'missing' THEN COALESCE(missing_since, ?) END,
-			series_title = ?, season_number = ?, replace_key = ?
+			series_title = ?, season_number = ?, replace_key = ?,
+			metadata_key = ?, episode_number = ?, parsed_release_date = ?
 		WHERE id = ?`,
 		f.SizeBytes, f.Mtime, f.Fingerprint,
 		f.VideoCodec, f.VideoCodecProfile, f.Width, f.Height,
@@ -128,7 +165,8 @@ func (m *Media) UpdateProbe(ctx context.Context, f *MediaFile) error {
 		f.ContainerFormat, btoi(f.IsAlreadyHEVC), f.PredictedSavingsBytes,
 		f.OversizeRatio, f.LastProbedAt, f.ProbeError, f.Status,
 		f.Status, time.Now().Unix(),
-		f.SeriesTitle, f.SeasonNumber, f.ReplaceKey, f.ID,
+		f.SeriesTitle, f.SeasonNumber, f.ReplaceKey,
+		f.MetadataKey, f.EpisodeNumber, f.ParsedReleaseDate, f.ID,
 	); err != nil {
 		return err
 	}
@@ -565,6 +603,18 @@ func (m *Media) RecordMove(ctx context.Context, keepID, mergeID int64, newPath, 
 		}
 	}
 
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE media_files SET
+			(series_title, season_number, episode_number, metadata_key, parsed_release_date) = (
+				SELECT series_title, season_number, episode_number, metadata_key, parsed_release_date
+				FROM media_files WHERE id = ?
+			)
+		WHERE id = ? AND EXISTS (SELECT 1 FROM media_files WHERE id = ?)`,
+		mergeID, keepID, mergeID,
+	); err != nil {
+		return err
+	}
+
 	// DELETE the duplicate row first so the UNIQUE(path) constraint doesn't fire
 	// when we update keepID's path to the same value.
 	if _, err := tx.ExecContext(ctx, "DELETE FROM media_files WHERE id = ?", mergeID); err != nil {
@@ -698,18 +748,22 @@ const mediaQ = `
 		video_codec, video_codec_profile, width, height, duration_seconds,
 		bitrate_kbps, audio_codec, audio_channels, container_format,
 		is_already_hevc, predicted_savings_bytes, oversize_ratio, last_probed_at, probe_error, status,
-		series_title, season_number, replace_key
+		series_title, season_number, replace_key,
+		metadata_key, episode_number, parsed_release_date,
+		` + releaseDateSQL + ` AS release_date
 	FROM media_files`
 
 func scanMedia(s rowScanner) (*MediaFile, error) {
 	var f MediaFile
 	var isHEVC int
+	var metadataKey sql.NullString
 	err := s.Scan(
 		&f.ID, &f.Path, &f.LibraryType, &f.SizeBytes, &f.Mtime, &f.Fingerprint,
 		&f.VideoCodec, &f.VideoCodecProfile, &f.Width, &f.Height, &f.DurationSeconds,
 		&f.BitrateKbps, &f.AudioCodec, &f.AudioChannels, &f.ContainerFormat,
 		&isHEVC, &f.PredictedSavingsBytes, &f.OversizeRatio, &f.LastProbedAt, &f.ProbeError, &f.Status,
 		&f.SeriesTitle, &f.SeasonNumber, &f.ReplaceKey,
+		&metadataKey, &f.EpisodeNumber, &f.ParsedReleaseDate, &f.ReleaseDate,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -718,7 +772,81 @@ func scanMedia(s rowScanner) (*MediaFile, error) {
 		return nil, err
 	}
 	f.IsAlreadyHEVC = isHEVC != 0
+	f.MetadataKey = metadataKey.String
 	return &f, nil
+}
+
+func (m *Media) BackfillReleaseIdentity(ctx context.Context, tvRoot, moviesRoot string) error {
+	rows, err := m.r.QueryContext(ctx,
+		"SELECT id, path, library_type FROM media_files WHERE metadata_key IS NULL",
+	)
+	if err != nil {
+		return err
+	}
+	type row struct {
+		id          int64
+		path        string
+		libraryType string
+	}
+	var pending []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.path, &r.libraryType); err != nil {
+			rows.Close()
+			return err
+		}
+		pending = append(pending, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+
+	tx, err := m.w.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx,
+		"UPDATE media_files SET metadata_key = ?, episode_number = ?, parsed_release_date = ? WHERE id = ?",
+	)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, r := range pending {
+		key, episode, parsed := releaseIdentity(r.path, r.libraryType, tvRoot, moviesRoot)
+		if _, err := stmt.ExecContext(ctx, key, episode, parsed, r.id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (m *Media) SeriesSeasons(ctx context.Context, seriesTitle string) ([]int, error) {
+	rows, err := m.r.QueryContext(ctx, `
+		SELECT DISTINCT season_number FROM media_files
+		WHERE library_type = 'tv' AND status = 'active'
+		  AND series_title = ? AND season_number IS NOT NULL
+		ORDER BY season_number`, seriesTitle)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int
+	for rows.Next() {
+		var s int
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 // BackfillSeriesMeta populates series_title and season_number for all TV files

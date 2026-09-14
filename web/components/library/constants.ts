@@ -4,6 +4,8 @@ export type LibrarySortKey =
   | "size_asc"
   | "mtime_desc"
   | "mtime_asc"
+  | "release_desc"
+  | "release_asc"
   | "codec"
   | "resolution"
   | "oversize_desc";
@@ -17,17 +19,27 @@ export const LIBRARY_SORT_OPTIONS: {
   { value: "size_asc", label: "Smallest file" },
   { value: "mtime_desc", label: "Recently modified" },
   { value: "mtime_asc", label: "Oldest modified" },
+  { value: "release_desc", label: "Newest release" },
+  { value: "release_asc", label: "Oldest release" },
   { value: "codec", label: "Codec" },
   { value: "resolution", label: "Resolution" },
   { value: "oversize_desc", label: "Most oversized" },
 ];
 
-export type LibrarySortColumn = "file" | "added" | "codec" | "res" | "size";
+export type LibrarySortColumn =
+  | "file"
+  | "added"
+  | "released"
+  | "codec"
+  | "res"
+  | "size";
 
 const SORT_COLUMN: Record<LibrarySortKey, LibrarySortColumn> = {
   path_asc: "file",
   mtime_desc: "added",
   mtime_asc: "added",
+  release_desc: "released",
+  release_asc: "released",
   size_desc: "size",
   size_asc: "size",
   codec: "codec",
@@ -38,6 +50,7 @@ const SORT_COLUMN: Record<LibrarySortKey, LibrarySortColumn> = {
 const COLUMN_DEFAULT_SORT: Record<LibrarySortColumn, LibrarySortKey> = {
   file: "path_asc",
   added: "mtime_desc",
+  released: "release_desc",
   codec: "codec",
   res: "resolution",
   size: "size_desc",
@@ -47,6 +60,7 @@ const COLUMN_TOGGLE: Partial<
   Record<LibrarySortColumn, readonly [LibrarySortKey, LibrarySortKey]>
 > = {
   added: ["mtime_desc", "mtime_asc"],
+  released: ["release_desc", "release_asc"],
   size: ["size_desc", "size_asc"],
 };
 

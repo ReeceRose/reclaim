@@ -95,6 +95,19 @@ func (f *Fetcher) fetchMissing(ctx context.Context, client *tmdb.Client) error {
 		}
 	}
 
+	pending, err := f.store.Metadata.PendingSeasonAirDates(ctx)
+	if err != nil {
+		return err
+	}
+	for _, p := range pending {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err := f.fetchSeasonAirDates(ctx, client, p.SeriesKey, int(p.TMDBID), p.Seasons); err != nil {
+			slog.Warn("tmdb: season air dates fetch failed", "title", p.SeriesKey, "err", err)
+		}
+	}
+
 	movieKeys, err := f.store.Media.DistinctMovieKeys(ctx, f.moviesPath)
 	if err != nil {
 		return err
@@ -136,6 +149,7 @@ func (f *Fetcher) fetchTV(ctx context.Context, client *tmdb.Client, title string
 		PosterPath:   strptr(details.PosterPath),
 		BackdropPath: strptr(details.BackdropPath),
 		ReleaseYear:  intptr(details.FirstAirYear),
+		ReleaseDate:  strptr(details.FirstAirDate),
 		RuntimeMins:  intptr(details.EpisodeRuntime),
 		VoteAverage:  f64ptr(details.VoteAverage),
 		VoteCount:    int64ptr(int64(details.VoteCount)),
@@ -145,7 +159,31 @@ func (f *Fetcher) fetchTV(ctx context.Context, client *tmdb.Client, title string
 		InProduction: &inProd,
 		FetchedAt:    time.Now().Unix(),
 	}
-	return f.store.Metadata.Upsert(ctx, meta)
+	if err := f.store.Metadata.Upsert(ctx, meta); err != nil {
+		return err
+	}
+	seasons, err := f.store.Media.SeriesSeasons(ctx, title)
+	if err != nil {
+		return err
+	}
+	return f.fetchSeasonAirDates(ctx, client, title, details.TMDBID, seasons)
+}
+
+func (f *Fetcher) fetchSeasonAirDates(ctx context.Context, client *tmdb.Client, seriesKey string, tmdbID int, seasons []int) error {
+	if len(seasons) == 0 {
+		return nil
+	}
+	bySeason, err := client.SeasonAirDates(ctx, tmdbID, seasons)
+	if err != nil {
+		return err
+	}
+	var dates []store.EpisodeAirDate
+	for _, s := range seasons {
+		for _, e := range bySeason[s] {
+			dates = append(dates, store.EpisodeAirDate{Season: e.Season, Episode: e.Episode, AirDate: e.AirDate})
+		}
+	}
+	return f.store.Metadata.RecordSeasonAirDates(ctx, seriesKey, seasons, dates, time.Now().Unix())
 }
 
 func (f *Fetcher) fetchMovie(ctx context.Context, client *tmdb.Client, key string) error {
@@ -170,6 +208,7 @@ func (f *Fetcher) fetchMovie(ctx context.Context, client *tmdb.Client, key strin
 		PosterPath:   strptr(details.PosterPath),
 		BackdropPath: strptr(details.BackdropPath),
 		ReleaseYear:  intptr(details.ReleaseYear),
+		ReleaseDate:  strptr(details.ReleaseDate),
 		RuntimeMins:  intptr(details.RuntimeMins),
 		VoteAverage:  f64ptr(details.VoteAverage),
 		VoteCount:    int64ptr(int64(details.VoteCount)),

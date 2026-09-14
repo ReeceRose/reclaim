@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"time"
 )
 
 type MovieDetails struct {
@@ -14,6 +15,7 @@ type MovieDetails struct {
 	PosterPath   string
 	BackdropPath string
 	ReleaseYear  int
+	ReleaseDate  string
 	RuntimeMins  int
 	VoteAverage  float64
 	VoteCount    int
@@ -78,8 +80,9 @@ func (c *Client) MovieDetails(ctx context.Context, tmdbID int) (*MovieDetails, e
 		BelongsToCollection *struct {
 			Name string `json:"name"`
 		} `json:"belongs_to_collection"`
+		ReleaseDates releaseDates `json:"release_dates"`
 	}
-	if err := c.get(ctx, fmt.Sprintf("/movie/%d", tmdbID), &raw); err != nil {
+	if err := c.get(ctx, fmt.Sprintf("/movie/%d?append_to_response=release_dates", tmdbID), &raw); err != nil {
 		return nil, err
 	}
 	genres := make([]string, 0, len(raw.Genres))
@@ -89,7 +92,8 @@ func (c *Client) MovieDetails(ctx context.Context, tmdbID int) (*MovieDetails, e
 	d := &MovieDetails{
 		TMDBID: raw.ID, Title: raw.Title, Tagline: raw.Tagline, Overview: raw.Overview,
 		PosterPath: raw.PosterPath, BackdropPath: raw.BackdropPath,
-		ReleaseYear: parseYear(raw.ReleaseDate), RuntimeMins: raw.Runtime,
+		ReleaseYear: parseYear(raw.ReleaseDate), ReleaseDate: firstTheatricalDate(raw.ReleaseDates, raw.ReleaseDate),
+		RuntimeMins: raw.Runtime,
 		VoteAverage: raw.VoteAverage, VoteCount: raw.VoteCount,
 		Genres: genres, Status: raw.Status,
 	}
@@ -128,6 +132,52 @@ func (c *Client) searchMovieID(ctx context.Context, title string, year int) (int
 	}
 	return 0, ErrNotFound
 }
+
+type releaseDates struct {
+	Results []struct {
+		ReleaseDates []struct {
+			Type        int    `json:"type"`
+			ReleaseDate string `json:"release_date"`
+		} `json:"release_dates"`
+	} `json:"results"`
+}
+
+const (
+	releaseTypeTheatricalLimited = 2
+	releaseTypeTheatrical        = 3
+)
+
+func firstTheatricalDate(rd releaseDates, primary string) string {
+	first := ""
+	for _, country := range rd.Results {
+		for _, r := range country.ReleaseDates {
+			if r.Type != releaseTypeTheatricalLimited && r.Type != releaseTypeTheatrical {
+				continue
+			}
+			d := parseDate(r.ReleaseDate)
+			if d != "" && (first == "" || d < first) {
+				first = d
+			}
+		}
+	}
+	if first != "" {
+		return first
+	}
+	return parseDate(primary)
+}
+
+func parseDate(s string) string {
+	if len(s) < len(dateLayout) {
+		return ""
+	}
+	d := s[:len(dateLayout)]
+	if _, err := time.Parse(dateLayout, d); err != nil {
+		return ""
+	}
+	return d
+}
+
+const dateLayout = "2006-01-02"
 
 func parseYear(date string) int {
 	if len(date) < 4 {

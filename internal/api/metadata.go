@@ -36,6 +36,7 @@ func (s *Server) handleMetadataGet(c *echo.Context) error {
 		"poster_path":   meta.PosterPath,
 		"backdrop_path": meta.BackdropPath,
 		"release_year":  meta.ReleaseYear,
+		"release_date":  meta.ReleaseDate,
 		"runtime_mins":  meta.RuntimeMins,
 		"vote_average":  meta.VoteAverage,
 		"vote_count":    meta.VoteCount,

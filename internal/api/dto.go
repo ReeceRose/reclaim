@@ -45,6 +45,7 @@ type mediaFileDTO struct {
 	ProbeError            *string  `json:"probe_error"`
 	Status                string   `json:"status"`
 	CandidateState        string   `json:"candidate_state"`
+	ReleaseDate           *string  `json:"release_date"`
 	PosterPath            *string  `json:"poster_path"`
 	BackdropPath          *string  `json:"backdrop_path"`
 	// TMDB metadata fields — only populated by handleFileDetail
@@ -89,6 +90,7 @@ func toMediaFileDTOWithState(f *store.MediaFile, candidateState string, oversize
 		ProbeError:            f.ProbeError,
 		Status:                f.Status,
 		CandidateState:        candidateState,
+		ReleaseDate:           f.ReleaseDate,
 	}
 }
 

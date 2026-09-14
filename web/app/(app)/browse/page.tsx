@@ -61,6 +61,7 @@ const MOVIE_SORT_OPTIONS = [
   { value: MOVIE_SORT.ALPHA, label: "A – Z" },
   { value: MOVIE_SORT.SIZE, label: "Largest" },
   { value: MOVIE_SORT.RECENT, label: "Recently added" },
+  { value: MOVIE_SORT.RELEASE, label: "Release date" },
 ] as const;
 
 const SEASON_SORT_OPTIONS = [

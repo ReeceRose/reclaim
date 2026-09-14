@@ -51,6 +51,7 @@ export const MOVIE_SORT = {
   ALPHA: "path_asc",
   SIZE: "size_desc",
   RECENT: "mtime_desc",
+  RELEASE: "release_desc",
 } as const;
 
 export const SEASON_SORT = {

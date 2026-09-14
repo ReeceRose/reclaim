@@ -300,9 +300,15 @@ The hub broadcasts: `job_started`, `job_progress` (with `percent`), `job_complet
 
 ### Candidate pagination & filtering
 
-`GET /api/candidates` supports 8 sort options via `?sort=`: `savings_desc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`. Filters: `library_type` (`movies`|`tv`), `video_codec`, `height` (`uhd8k`|`uhd`|`qhd`|`fhd`|`hd`|`sd`|`unknown`, or legacy numeric heights), `search` (path substring).
+`GET /api/candidates` supports 10 sort options via `?sort=`: `savings_desc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`, `release_desc`, `release_asc`. Filters: `library_type` (`movies`|`tv`), `video_codec`, `height` (`uhd8k`|`uhd`|`qhd`|`fhd`|`hd`|`sd`|`unknown`, or legacy numeric heights), `search` (path substring).
 
-`GET /api/files` is the Library view — same filters plus `status` (`active`|`missing`) and `candidate_state` (`candidate`|`already_hevc`|`probe_failed`|`unknown_codec`|`queued`|`completed`|`missing`). Sort options: `path_asc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`.
+`GET /api/files` is the Library view — same filters plus `status` (`active`|`missing`) and `candidate_state` (`candidate`|`already_hevc`|`probe_failed`|`unknown_codec`|`queued`|`completed`|`missing`). Sort options: `path_asc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`, `oversize_desc`, `release_desc`, `release_asc`.
+
+### Release dates
+
+`release_date` on every file DTO is resolved per query by `releaseDateSQL` (a correlated subquery in `mediaQ`, aliased so the `release_*` sorts order on it `NULLS LAST`): for TV, the episode's air date from `episode_air_dates`; for a movie, `media_metadata.release_date`, the earliest type 2/3 (theatrical) entry from TMDB's `release_dates`, falling back to the primary release date; failing both, `media_files.parsed_release_date`, the last `19xx`/`20xx` year in the movie folder, then the file name. Migration `00018` adds the path-derived `metadata_key`, `episode_number`, `parsed_release_date` (stamped by `StampReleaseIdentity` in `probeAndStore`, taken over from the duplicate row by `RecordMove`, backfilled at boot where `metadata_key IS NULL`) and marks all cached metadata stale so dates fill in on the next fetch.
+
+Episode air dates come from `SeasonAirDates`, which appends up to 20 `season/N` blocks per `/tv/{id}` request. `fetchTV` refreshes every library season of a series; `PendingSeasonAirDates` catches seasons added since, using `season_air_date_fetches` so a season TMDB lacks is not re-requested every scan. `SetNoMatch` drops a key's air dates.
 
 The Browse page's grouped TV views (`GET /api/files/grouped`, `GET /api/seasons`)
 take a `progress` filter — `converted` | `partial` | `unconverted` | `missing` —

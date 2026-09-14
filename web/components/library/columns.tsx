@@ -17,6 +17,7 @@ export const LIBRARY_COLUMNS = mediaColumns<MediaFile, LibrarySortColumn>([
   },
   { id: "resolution", sort: "res" },
   { id: "added", sort: "added" },
+  { id: "released", sort: "released" },
   "state",
   "duration",
   "bitrate",

@@ -11,6 +11,7 @@ export const EPISODE_COLUMNS = mediaColumns<Episode>([
   "codec",
   "resolution",
   "added",
+  { id: "released", label: "Aired", defaultVisible: true },
   "duration",
   "bitrate",
   "audio",

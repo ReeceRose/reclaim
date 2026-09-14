@@ -260,6 +260,27 @@ export function formatFileDateTime(
   });
 }
 
+function releaseDateString(date: string, month: "short" | "long"): string {
+  const [year, m, d] = date.split("-");
+  if (!m || !d) return year;
+  return new Date(
+    Date.UTC(Number(year), Number(m) - 1, Number(d)),
+  ).toLocaleDateString("en-US", {
+    month,
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export function formatReleaseDate(date: string | null | undefined): string {
+  return date ? releaseDateString(date, "short") : "—";
+}
+
+export function formatReleaseDateLong(date: string): string {
+  return releaseDateString(date, "long");
+}
+
 export function formatBitrate(kbps: number | null | undefined): string {
   if (!kbps || kbps <= 0) return "—";
   if (kbps >= 10000) return `${(kbps / 1000).toFixed(1)} Mbps`;

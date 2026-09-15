@@ -424,13 +424,7 @@ func (w *Worker) replace(ctx context.Context, job *store.TranscodeJob, file *sto
 	}
 	w.hub.Broadcast("event_created", eventBroadcast(eventID, store.EventJobCompleted, store.SeverityInfo, completedMsg, completedMeta, now))
 
-	// After completing a job, check whether this codec now has enough samples
-	// to override its seed savings estimate with observed data.
-	if file.VideoCodec != nil {
-		if err := w.refineRatioIfReady(ctx, *file.VideoCodec); err != nil {
-			slog.Warn("worker: savings refinement", "codec", *file.VideoCodec, "err", err)
-		}
-	}
+	w.refreshSavingsModel(ctx)
 
 	w.hub.Broadcast("job_completed", map[string]any{
 		"job_id":            job.ID,
@@ -440,30 +434,18 @@ func (w *Worker) replace(ctx context.Context, job *store.TranscodeJob, file *sto
 	return nil
 }
 
-// refineRatioIfReady checks whether the given source codec has accumulated
-// enough completed jobs to replace its seed savings ratio with an observed one.
-// If so, it batch-updates predicted_savings_bytes for all active files with
-// that codec and reconciles library_stats.
-func (w *Worker) refineRatioIfReady(ctx context.Context, codec string) error {
-	learned, err := w.store.Jobs.LearnedRatios(ctx, store.LearnedRatioMinSamples)
+// refreshSavingsModel folds a newly recorded encode into the learned savings
+// ratios and reprices the library against them. A failure only leaves
+// predictions a step stale, so it is logged rather than failing the job.
+func (w *Worker) refreshSavingsModel(ctx context.Context) {
+	n, err := w.store.SavingsModel.Refresh(context.WithoutCancel(ctx))
 	if err != nil {
-		return err
-	}
-	lr, ok := learned[strings.ToLower(codec)]
-	if !ok {
-		return nil
-	}
-	n, err := w.store.Media.UpdatePredictedSavingsByCodec(ctx, strings.ToLower(codec), lr.Ratio)
-	if err != nil {
-		return err
+		slog.Warn("worker: savings model refresh", "err", err)
+		return
 	}
 	if n > 0 {
-		slog.Info("worker: refined savings model",
-			"codec", codec, "ratio", lr.Ratio,
-			"samples", lr.SampleCount, "files_updated", n)
-		return w.store.Stats.Recompute(ctx)
+		slog.Info("worker: refined savings model", "files_updated", n)
 	}
-	return nil
 }
 
 // cancelJob handles a user-cancelled running job: the temp is removed, the
@@ -573,6 +555,7 @@ func (w *Worker) tryCompletePostSwap(ctx context.Context, job *store.TranscodeJo
 		return false
 	}
 	w.hub.Broadcast("event_created", eventBroadcast(eventID, store.EventJobCompleted, store.SeverityInfo, completedMsg, completedMeta, now))
+	w.refreshSavingsModel(ctx)
 	w.hub.Broadcast("job_completed", map[string]any{
 		"job_id":            job.ID,
 		"media_file_id":     file.ID,

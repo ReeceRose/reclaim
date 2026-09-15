@@ -164,8 +164,10 @@ Precomputed library overview (O(buckets), not O(files)).
 ```
 
 `ratio_source` on each `by_codec` entry is `seed` (shipped rule-of-thumb per
-codec) or `learned` (mean output/original ratio from completed encodes on this
-instance, after ≥10 samples per codec).
+codec) or `learned` (byte-weighted output/original ratio from completed encodes
+on this instance, after ≥10 samples per codec). A learned ratio applies to every
+file of that codec, including files indexed later; predictions are repriced at
+boot and after each completed encode.
 
 The `savings` block reports *realized* savings — measured from completed
 encodes — as opposed to the `predicted_savings_bytes` figures elsewhere in the

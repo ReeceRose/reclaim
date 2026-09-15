@@ -350,8 +350,19 @@ excludes them.
 
 `Jobs.LearnedRatios` reads the ledger rather than joining `transcode_jobs` to
 `media_files`. The old query grouped by the post-encode `media_files.video_codec`,
-which is always `hevc`, so `refineRatioIfReady` could never find the source
-codec's bucket and the savings model never actually refined.
+which is always `hevc`, so the source codec's bucket was never found and the
+savings model never actually refined. The ratio is byte-weighted
+(`SUM(output)/SUM(original)`), since predictions are summed into remaining
+savings and scored against realized bytes.
+
+`store.SavingsModel` is the only thing that should compute
+`predicted_savings_bytes`. It caches `LearnedRatios` in memory and `Predict`
+prefers the learned ratio over the seed, so `probeAndStore` prices new and
+re-probed files on observed results. `Refresh` reloads the cache, reprices every
+active file of every learned codec (only rows whose value changes), and
+rebuilds `library_stats` if any moved; it runs at the end of `store.Open` and
+after both encode completion paths. `GET /api/stats` reads `ratio_source` off
+the same cache.
 
 The ledger's `source` column (migration `00016`) widened it from "bytes this
 encoder reclaimed" to "bytes reclaimed by any means": `encode` rows come from

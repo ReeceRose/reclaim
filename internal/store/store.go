@@ -41,6 +41,8 @@ type Store struct {
 	Metadata *Metadata
 	Savings  *Savings
 
+	SavingsModel *SavingsModel
+
 	w *sql.DB
 	r *sql.DB
 }
@@ -78,6 +80,7 @@ func Open(path string) (*Store, error) {
 		Metadata: &Metadata{r: r, w: w},
 		Savings:  &Savings{r: r, w: w},
 	}
+	s.SavingsModel = &SavingsModel{jobs: s.Jobs, media: s.Media, stats: s.Stats}
 
 	if err := runMigrations(w); err != nil {
 		s.Close()
@@ -90,6 +93,10 @@ func Open(path string) (*Store, error) {
 	if err := s.bootstrapIfNeeded(context.Background()); err != nil {
 		s.Close()
 		return nil, fmt.Errorf("bootstrap: %w", err)
+	}
+	if _, err := s.SavingsModel.Refresh(context.Background()); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("refresh savings model: %w", err)
 	}
 
 	return s, nil

@@ -21,10 +21,7 @@ func (s *Server) handleStats(c *echo.Context) error {
 		return serverError(c, err)
 	}
 
-	learnedMap, err := s.store.Jobs.LearnedRatios(ctx, store.LearnedRatioMinSamples)
-	if err != nil {
-		return serverError(c, err)
-	}
+	learnedMap := s.store.SavingsModel.Learned()
 
 	codecs := make([]map[string]any, 0, len(ov.ByCodec))
 	for _, cs := range ov.ByCodec {

@@ -783,7 +783,7 @@ func (s *Scanner) probeAndStore(
 		f.LastProbedAt = &now
 		// Compute the savings estimate at probe time and store it so the
 		// candidate ranking and dashboard never have to recompute it per query.
-		f.PredictedSavingsBytes = media.PredictedSavingsBytes(
+		f.PredictedSavingsBytes = s.store.SavingsModel.Predict(
 			result.VideoCodec, result.IsAlreadyHEVC, size,
 		)
 		// Compute the oversize ratio (bitrate vs. codec/resolution expectation)

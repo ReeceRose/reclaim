@@ -606,9 +606,11 @@ const jobWithPathQ = `
 const LearnedRatioMinSamples = 10
 
 // learnedRatioMin and learnedRatioMax clamp observed ratios to a sane range so
-// a handful of unusual encodes can't produce absurd savings predictions.
+// a handful of unusual encodes can't produce absurd savings predictions. The
+// floor sits below what real h264 sources reach at typical CRFs (~0.35), so it
+// bounds outliers rather than capping an ordinary library.
 const (
-	learnedRatioMin = 0.30
+	learnedRatioMin = 0.20
 	learnedRatioMax = 0.95
 )
 
@@ -619,9 +621,15 @@ type LearnedRatio struct {
 	SampleCount int
 }
 
-// LearnedRatios computes the observed mean output/original ratio per source
-// video codec from the savings ledger. Only codecs with at least minSamples
-// encodes are returned. Results are clamped to [learnedRatioMin, learnedRatioMax].
+// LearnedRatios computes the observed output/original ratio per source video
+// codec from the savings ledger. Only codecs with at least minSamples encodes
+// are returned. Results are clamped to [learnedRatioMin, learnedRatioMax].
+//
+// The ratio is byte-weighted (total output over total original) rather than a
+// mean of per-file ratios. Predictions are summed into the library's remaining
+// savings and scored against realized bytes on the Insights page, and large
+// sources tend to compress further than small ones, so an unweighted mean
+// systematically under-predicts the total.
 //
 // This reads savings_ledger rather than joining transcode_jobs to media_files
 // because the swap rewrites video_codec to 'hevc', so the post-encode media row
@@ -636,7 +644,7 @@ func (j *Jobs) LearnedRatios(ctx context.Context, minSamples int) (map[string]Le
 	rows, err := j.r.QueryContext(ctx, `
 		SELECT LOWER(source_codec),
 		       COUNT(*),
-		       AVG(CAST(output_size_bytes AS REAL) / CAST(original_size_bytes AS REAL))
+		       CAST(SUM(output_size_bytes) AS REAL) / CAST(SUM(original_size_bytes) AS REAL)
 		FROM savings_ledger
 		WHERE source = 'encode'
 		  AND source_codec IS NOT NULL

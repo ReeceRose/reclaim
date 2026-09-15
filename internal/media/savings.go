@@ -63,10 +63,16 @@ func RatioFor(videoCodec *string) (ratio float64, source RatioSource) {
 // have nothing to gain and return 0. The result is clamped to be non-negative.
 // It is an estimate for ranking, never a guarantee.
 func PredictedSavingsBytes(videoCodec *string, isAlreadyHEVC bool, sizeBytes int64) int64 {
+	ratio, _ := RatioFor(videoCodec)
+	return SavingsForRatio(ratio, isAlreadyHEVC, sizeBytes)
+}
+
+// SavingsForRatio is PredictedSavingsBytes for a caller that already knows the
+// ratio, such as one learned from this instance's completed encodes.
+func SavingsForRatio(ratio float64, isAlreadyHEVC bool, sizeBytes int64) int64 {
 	if isAlreadyHEVC || sizeBytes <= 0 {
 		return 0
 	}
-	ratio, _ := RatioFor(videoCodec)
 	saved := int64(float64(sizeBytes) * (1 - ratio))
 	if saved < 0 {
 		return 0

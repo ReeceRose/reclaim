@@ -707,16 +707,19 @@ func (m *Media) ReplaceWithEncodedTx(ctx context.Context, tx *sql.Tx, id, newSiz
 
 // UpdatePredictedSavingsByCodec rewrites predicted_savings_bytes for every
 // active, non-HEVC file whose video_codec matches codec, using the supplied
-// ratio (output/original). It returns the number of rows updated. The caller
-// is responsible for calling Stats.Recompute after this to keep library_stats
-// in sync, since this bypasses the per-row incremental delta path.
+// ratio (output/original). It returns the number of rows whose value changed,
+// so a refresh that moves nothing can skip the stats rebuild. The caller is
+// responsible for calling Stats.Recompute after this to keep library_stats in
+// sync, since this bypasses the per-row incremental delta path.
 func (m *Media) UpdatePredictedSavingsByCodec(ctx context.Context, codec string, ratio float64) (int64, error) {
 	res, err := m.w.ExecContext(ctx, `
 		UPDATE media_files
-		SET predicted_savings_bytes = CAST(size_bytes * ? AS INTEGER)
+		SET predicted_savings_bytes = CAST(size_bytes * ?1 AS INTEGER)
 		WHERE status = 'active'
 		  AND is_already_hevc = 0
-		  AND LOWER(COALESCE(video_codec, '')) = ?`,
+		  AND size_bytes > 0
+		  AND LOWER(COALESCE(video_codec, '')) = ?2
+		  AND predicted_savings_bytes != CAST(size_bytes * ?1 AS INTEGER)`,
 		1.0-ratio, codec,
 	)
 	if err != nil {

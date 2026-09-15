@@ -47,7 +47,7 @@ func (tf testFile) toMedia() *MediaFile {
 		SizeBytes:             tf.size,
 		Mtime:                 tf.mtime,
 		Fingerprint:           "fp-" + tf.path,
-		IsAlreadyHEVC:         tf.hevc,
+		IsEfficientCodec:      tf.hevc,
 		PredictedSavingsBytes: tf.savings,
 		OversizeRatio:         tf.oversize,
 		Status:                orDefault(tf.status, "active"),

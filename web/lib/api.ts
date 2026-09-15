@@ -153,6 +153,7 @@ export interface SavingsEntry {
   path: string;
   library_type: string;
   source_codec: string | null;
+  result_codec: string | null;
   width: number | null;
   height: number | null;
   original_size_bytes: number;
@@ -215,6 +216,7 @@ export interface ReplacementReport {
 export interface SavingsReport {
   summary: SavingsSummary;
   by_codec: SavingsBucket[];
+  by_target_codec: SavingsBucket[];
   by_library: SavingsBucket[];
   by_resolution: SavingsBucket[];
   daily: SavingsDay[];
@@ -226,6 +228,7 @@ export interface SavingsReport {
 }
 
 export interface Stats {
+  savings_target_codec: TargetCodec;
   total_files: number;
   total_bytes: number;
   total_recoverable_bytes: number;
@@ -251,7 +254,7 @@ export interface MediaFile {
   audio_codec: string | null;
   audio_channels: number | null;
   container_format: string | null;
-  is_already_hevc: boolean;
+  is_efficient_codec: boolean;
   predicted_savings_bytes: number;
   oversize_ratio: number;
   is_oversized: boolean;
@@ -273,7 +276,7 @@ export interface MediaFile {
 
 export type CandidateState =
   | "candidate"
-  | "already_hevc"
+  | "already_efficient"
   | "probe_failed"
   | "unknown_codec"
   | "queued"
@@ -331,6 +334,7 @@ export interface LibrarySeasonGroup {
   season: number;
   file_count: number;
   eligible_count: number;
+  queued_count: number;
   missing_count: number;
   total_bytes: number;
   predicted_savings_bytes: number;
@@ -342,6 +346,7 @@ export interface LibrarySeriesGroup {
   library_type: string;
   file_count: number;
   eligible_count: number;
+  queued_count: number;
   missing_count: number;
   season_count: number;
   total_bytes: number;
@@ -364,6 +369,7 @@ export interface RankedSeason {
   season: number;
   file_count: number;
   eligible_count: number;
+  queued_count: number;
   missing_count: number;
   total_bytes: number;
   predicted_savings_bytes: number;
@@ -380,9 +386,25 @@ export interface GroupedSeasonEpisodes {
   total_count?: number;
 }
 
+export type TargetCodec = "hevc" | "av1";
+
+/** An output codec a profile can encode to, and whether this host can run it. */
+export interface Encoder {
+  codec: TargetCodec;
+  label: string;
+  encoder: string;
+  available: boolean;
+  crf_min: number;
+  crf_max: number;
+  default_crf: number;
+  presets: string[];
+  default_preset: string;
+}
+
 export interface Profile {
   id: number;
   name: string;
+  codec: TargetCodec;
   crf: number;
   preset: string;
   extra_args: string | null;
@@ -406,6 +428,7 @@ export interface Job {
   source_path: string | null;
   queue_position: number;
   forced: boolean;
+  encode_codec: string | null;
   encode_preset: string | null;
   encode_crf: number | null;
   encode_extra_args: string | null;
@@ -523,6 +546,7 @@ export interface VerificationResult {
   playable?: boolean;
   stream_count_match?: boolean;
   resolution_match?: boolean;
+  codec_match?: boolean;
   passed?: boolean;
   [k: string]: unknown;
 }
@@ -672,6 +696,11 @@ export const api = {
   updateProfile: (id: number, p: Omit<Profile, "id">) =>
     request<Profile>("PUT", `/api/profiles/${id}`, p),
   deleteProfile: (id: number) => request<void>("DELETE", `/api/profiles/${id}`),
+  encoders: () =>
+    request<{ items: Encoder[]; savings_target_codec: TargetCodec }>(
+      "GET",
+      "/api/encoders",
+    ),
 
   // Jobs
   createJobs: (fileIds: number[], profileId?: number) =>

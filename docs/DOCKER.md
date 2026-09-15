@@ -212,7 +212,7 @@ sudo sysctl -p
 
 ### Encode throughput
 
-CPU `libx265` only; no GPU/NVENC. Large libraries can take months of overnight windows.
+CPU `libx265` (HEVC) or SVT-AV1 (AV1) only; no GPU/NVENC. Large libraries can take months of overnight windows. The startup log reports which encoders the image's ffmpeg provides (`encoder ready` / `encoder unavailable`); profiles targeting an unavailable encoder are refused.
 
 ### Lost password
 

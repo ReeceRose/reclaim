@@ -12,13 +12,13 @@ import (
 type CandidateState string
 
 const (
-	CandidateStateCandidate    CandidateState = "candidate"
-	CandidateStateAlreadyHEVC  CandidateState = "already_hevc"
-	CandidateStateProbeFailed  CandidateState = "probe_failed"
-	CandidateStateUnknownCodec CandidateState = "unknown_codec"
-	CandidateStateQueued       CandidateState = "queued"
-	CandidateStateCompleted    CandidateState = "completed"
-	CandidateStateMissing      CandidateState = "missing"
+	CandidateStateCandidate        CandidateState = "candidate"
+	CandidateStateAlreadyEfficient CandidateState = "already_efficient"
+	CandidateStateProbeFailed      CandidateState = "probe_failed"
+	CandidateStateUnknownCodec     CandidateState = "unknown_codec"
+	CandidateStateQueued           CandidateState = "queued"
+	CandidateStateCompleted        CandidateState = "completed"
+	CandidateStateMissing          CandidateState = "missing"
 )
 
 // FileSort selects the ordering of the all-files Library page.
@@ -112,16 +112,20 @@ func appendFileFilter(where []string, args []any, f FileFilter) ([]string, []any
 	return where, args, nil
 }
 
+// candidateStateLegacyAlreadyHEVC is the pre-AV1 name for already_efficient,
+// still accepted as a filter so saved Library links keep working.
+const candidateStateLegacyAlreadyHEVC CandidateState = "already_hevc"
+
 func candidateStateClause(state string) (string, error) {
 	switch CandidateState(state) {
 	case CandidateStateCandidate:
-		return "status = 'active' AND is_already_hevc = 0 AND probe_error IS NULL AND video_codec IS NOT NULL AND " + jobExclusionSQL, nil
-	case CandidateStateAlreadyHEVC:
-		return "status = 'active' AND probe_error IS NULL AND is_already_hevc = 1 AND " + jobExclusionSQL, nil
+		return "status = 'active' AND is_efficient_codec = 0 AND probe_error IS NULL AND video_codec IS NOT NULL AND " + jobExclusionSQL, nil
+	case CandidateStateAlreadyEfficient, candidateStateLegacyAlreadyHEVC:
+		return "status = 'active' AND probe_error IS NULL AND is_efficient_codec = 1 AND " + jobExclusionSQL, nil
 	case CandidateStateProbeFailed:
 		return "status = 'active' AND probe_error IS NOT NULL", nil
 	case CandidateStateUnknownCodec:
-		return "status = 'active' AND probe_error IS NULL AND is_already_hevc = 0 AND video_codec IS NULL AND " + jobExclusionSQL, nil
+		return "status = 'active' AND probe_error IS NULL AND is_efficient_codec = 0 AND video_codec IS NULL AND " + jobExclusionSQL, nil
 	case CandidateStateQueued:
 		return `status = 'active' AND probe_error IS NULL AND EXISTS (
 			SELECT 1 FROM transcode_jobs j
@@ -391,8 +395,8 @@ func candidateStateForFile(f MediaFile, jobState CandidateState) CandidateState 
 	if jobState != "" {
 		return jobState
 	}
-	if f.IsAlreadyHEVC {
-		return CandidateStateAlreadyHEVC
+	if f.IsEfficientCodec {
+		return CandidateStateAlreadyEfficient
 	}
 	if f.VideoCodec == nil {
 		return CandidateStateUnknownCodec
@@ -407,22 +411,31 @@ type TVSeriesRow struct {
 	SeasonCount           int
 	TotalBytes            int64
 	EligibleCount         int
+	QueuedCount           int
 	MissingCount          int
 	PredictedSavingsBytes int64
 }
 
-const tvEligibleExpr = `status = 'active' AND is_already_hevc = 0 AND probe_error IS NULL AND video_codec IS NOT NULL
+const tvEligibleExpr = `status = 'active' AND is_efficient_codec = 0 AND probe_error IS NULL AND video_codec IS NOT NULL
 		AND NOT EXISTS (
 			SELECT 1 FROM transcode_jobs j
 			WHERE j.media_file_id = media_files.id
 			  AND j.status IN ('queued', 'running', 'verifying', 'completed')
 		)`
 
+const tvQueuedExpr = `status = 'active' AND EXISTS (
+			SELECT 1 FROM transcode_jobs j
+			WHERE j.media_file_id = media_files.id
+			  AND j.status IN ('queued', 'running', 'verifying')
+		)`
+
 const (
 	tvFileCountExpr     = `COUNT(*)`
 	tvEligibleCountExpr = `SUM(CASE WHEN ` + tvEligibleExpr + ` THEN 1 ELSE 0 END)`
+	tvQueuedCountExpr   = `SUM(CASE WHEN ` + tvQueuedExpr + ` THEN 1 ELSE 0 END)`
 	tvMissingCountExpr  = `SUM(CASE WHEN status = 'missing' THEN 1 ELSE 0 END)`
 	tvActiveCountExpr   = `(` + tvFileCountExpr + ` - ` + tvMissingCountExpr + `)`
+	tvPendingCountExpr  = `(` + tvEligibleCountExpr + ` + ` + tvQueuedCountExpr + `)`
 )
 
 // TVProgress narrows a grouped TV view to how far through re-encoding the group
@@ -430,12 +443,14 @@ const (
 type TVProgress string
 
 const (
-	// TVProgressConverted keeps groups with nothing left to encode and nothing
-	// missing from disk — the "All converted" badge in the UI.
+	// TVProgressConverted keeps groups with nothing left to encode, nothing
+	// queued, and nothing missing from disk — the "All converted" badge in the UI.
 	TVProgressConverted TVProgress = "converted"
-	// TVProgressPartial keeps groups where some files are done and some are not.
+	// TVProgressPartial keeps groups where some files are done and some are
+	// still eligible or queued.
 	TVProgressPartial TVProgress = "partial"
-	// TVProgressUnconverted keeps groups where no file has been converted yet.
+	// TVProgressUnconverted keeps groups where no file has been converted yet;
+	// a queued file counts as not yet converted.
 	TVProgressUnconverted TVProgress = "unconverted"
 	// TVProgressMissing keeps groups holding at least one missing file.
 	TVProgressMissing TVProgress = "missing"
@@ -448,11 +463,11 @@ func tvProgressHaving(p TVProgress) (string, error) {
 	case "":
 		return "", nil
 	case TVProgressConverted:
-		return tvEligibleCountExpr + " = 0 AND " + tvMissingCountExpr + " = 0", nil
+		return tvEligibleCountExpr + " = 0 AND " + tvQueuedCountExpr + " = 0 AND " + tvMissingCountExpr + " = 0", nil
 	case TVProgressPartial:
-		return tvEligibleCountExpr + " > 0 AND " + tvEligibleCountExpr + " < " + tvActiveCountExpr, nil
+		return tvPendingCountExpr + " > 0 AND " + tvPendingCountExpr + " < " + tvActiveCountExpr, nil
 	case TVProgressUnconverted:
-		return tvEligibleCountExpr + " > 0 AND " + tvEligibleCountExpr + " = " + tvActiveCountExpr, nil
+		return tvPendingCountExpr + " > 0 AND " + tvPendingCountExpr + " = " + tvActiveCountExpr, nil
 	case TVProgressMissing:
 		return tvMissingCountExpr + " > 0", nil
 	default:
@@ -494,6 +509,7 @@ func (m *Media) TVSeriesGroups(ctx context.Context, f TVGroupFilter, limit, offs
 			COUNT(DISTINCT season_number) AS season_count,
 			SUM(size_bytes) AS total_bytes,
 			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN 1 ELSE 0 END) AS eligible_count,
+			` + tvQueuedCountExpr + ` AS queued_count,
 			SUM(CASE WHEN status = 'missing' THEN 1 ELSE 0 END) AS missing_count,
 			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN predicted_savings_bytes ELSE 0 END) AS predicted_savings_bytes
 		FROM media_files
@@ -512,7 +528,7 @@ func (m *Media) TVSeriesGroups(ctx context.Context, f TVGroupFilter, limit, offs
 	var out []TVSeriesRow
 	for rows.Next() {
 		var r TVSeriesRow
-		if err := rows.Scan(&r.Title, &r.FileCount, &r.SeasonCount, &r.TotalBytes, &r.EligibleCount, &r.MissingCount, &r.PredictedSavingsBytes); err != nil {
+		if err := rows.Scan(&r.Title, &r.FileCount, &r.SeasonCount, &r.TotalBytes, &r.EligibleCount, &r.QueuedCount, &r.MissingCount, &r.PredictedSavingsBytes); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -525,6 +541,7 @@ type TVSeasonRow struct {
 	Season                int
 	FileCount             int
 	EligibleCount         int
+	QueuedCount           int
 	MissingCount          int
 	TotalBytes            int64
 	PredictedSavingsBytes int64
@@ -541,6 +558,7 @@ type TVSeasonAcrossShowsRow struct {
 	Season                int
 	FileCount             int
 	EligibleCount         int
+	QueuedCount           int
 	MissingCount          int
 	TotalBytes            int64
 	PredictedSavingsBytes int64
@@ -587,6 +605,7 @@ func (m *Media) TVSeasonsAcrossShows(ctx context.Context, f TVGroupFilter, sort 
 			season_number,
 			COUNT(*) AS file_count,
 			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN 1 ELSE 0 END) AS eligible_count,
+			` + tvQueuedCountExpr + ` AS queued_count,
 			SUM(CASE WHEN status = 'missing' THEN 1 ELSE 0 END) AS missing_count,
 			SUM(size_bytes) AS total_bytes,
 			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN predicted_savings_bytes ELSE 0 END) AS predicted_savings_bytes
@@ -606,7 +625,7 @@ func (m *Media) TVSeasonsAcrossShows(ctx context.Context, f TVGroupFilter, sort 
 	var out []TVSeasonAcrossShowsRow
 	for rows.Next() {
 		var r TVSeasonAcrossShowsRow
-		if err := rows.Scan(&r.SeriesTitle, &r.Season, &r.FileCount, &r.EligibleCount, &r.MissingCount, &r.TotalBytes, &r.PredictedSavingsBytes); err != nil {
+		if err := rows.Scan(&r.SeriesTitle, &r.Season, &r.FileCount, &r.EligibleCount, &r.QueuedCount, &r.MissingCount, &r.TotalBytes, &r.PredictedSavingsBytes); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -652,6 +671,7 @@ func (m *Media) TVShowSeasons(ctx context.Context, seriesTitle string) ([]TVSeas
 			season_number,
 			COUNT(*) AS file_count,
 			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN 1 ELSE 0 END) AS eligible_count,
+			` + tvQueuedCountExpr + ` AS queued_count,
 			SUM(CASE WHEN status = 'missing' THEN 1 ELSE 0 END) AS missing_count,
 			SUM(size_bytes) AS total_bytes,
 			SUM(CASE WHEN ` + tvEligibleExpr + ` THEN predicted_savings_bytes ELSE 0 END) AS predicted_savings_bytes
@@ -670,7 +690,7 @@ func (m *Media) TVShowSeasons(ctx context.Context, seriesTitle string) ([]TVSeas
 	var out []TVSeasonRow
 	for rows.Next() {
 		var r TVSeasonRow
-		if err := rows.Scan(&r.Season, &r.FileCount, &r.EligibleCount, &r.MissingCount, &r.TotalBytes, &r.PredictedSavingsBytes); err != nil {
+		if err := rows.Scan(&r.Season, &r.FileCount, &r.EligibleCount, &r.QueuedCount, &r.MissingCount, &r.TotalBytes, &r.PredictedSavingsBytes); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

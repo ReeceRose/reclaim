@@ -68,6 +68,7 @@ func (s *Server) handleStats(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]any{
+		"savings_target_codec":    string(s.store.SavingsModel.Target()),
 		"total_files":             ov.TotalFiles,
 		"total_bytes":             ov.TotalBytes,
 		"total_recoverable_bytes": ov.TotalRecoverableBytes,

@@ -37,7 +37,7 @@ type mediaFileDTO struct {
 	AudioCodec            *string  `json:"audio_codec"`
 	AudioChannels         *int     `json:"audio_channels"`
 	ContainerFormat       *string  `json:"container_format"`
-	IsAlreadyHEVC         bool     `json:"is_already_hevc"`
+	IsEfficientCodec      bool     `json:"is_efficient_codec"`
 	PredictedSavingsBytes int64    `json:"predicted_savings_bytes"`
 	OversizeRatio         float64  `json:"oversize_ratio"`
 	IsOversized           bool     `json:"is_oversized"`
@@ -82,7 +82,7 @@ func toMediaFileDTOWithState(f *store.MediaFile, candidateState string, oversize
 		AudioCodec:            f.AudioCodec,
 		AudioChannels:         f.AudioChannels,
 		ContainerFormat:       f.ContainerFormat,
-		IsAlreadyHEVC:         f.IsAlreadyHEVC,
+		IsEfficientCodec:      f.IsEfficientCodec,
 		PredictedSavingsBytes: f.PredictedSavingsBytes,
 		OversizeRatio:         f.OversizeRatio,
 		IsOversized:           oversizeThreshold > 0 && f.OversizeRatio >= oversizeThreshold,
@@ -97,6 +97,7 @@ func toMediaFileDTOWithState(f *store.MediaFile, candidateState string, oversize
 type profileDTO struct {
 	ID        int64   `json:"id"`
 	Name      string  `json:"name"`
+	Codec     string  `json:"codec"`
 	CRF       int     `json:"crf"`
 	Preset    string  `json:"preset"`
 	ExtraArgs *string `json:"extra_args"`
@@ -107,6 +108,7 @@ func toProfileDTO(p *store.TranscodeProfile) profileDTO {
 	return profileDTO{
 		ID:        p.ID,
 		Name:      p.Name,
+		Codec:     string(media.NormalizeTargetCodec(p.Codec)),
 		CRF:       p.CRF,
 		Preset:    p.Preset,
 		ExtraArgs: p.ExtraArgs,
@@ -134,7 +136,9 @@ type jobDTO struct {
 	// QueuePosition is 1-based for queued jobs, 0 otherwise.
 	QueuePosition int  `json:"queue_position"`
 	Forced        bool `json:"forced"`
-	// Snapshot encode settings at queue time.
+	// Snapshot encode settings at queue time, restamped when the worker claims
+	// the job with the settings it actually runs.
+	EncodeCodec     *string `json:"encode_codec"`
 	EncodePreset    *string `json:"encode_preset"`
 	EncodeCRF       *int    `json:"encode_crf"`
 	EncodeExtraArgs *string `json:"encode_extra_args"`
@@ -147,7 +151,7 @@ type jobDTO struct {
 	EstimateSampleCount   *int   `json:"estimate_sample_count,omitempty"`
 	// PredictedSavingsBytes is the queue-time prediction of bytes reclaimed,
 	// snapshotted so history can compare it against the actual outcome even
-	// after the source file has since become HEVC.
+	// after the source file has since been re-encoded.
 	PredictedSavingsBytes *int64 `json:"predicted_savings_bytes,omitempty"`
 }
 
@@ -169,6 +173,7 @@ func toJobDTO(j *store.TranscodeJob, position int, lookup *media.EncodeRateLooku
 		SourcePath:            j.SourcePath,
 		QueuePosition:         position,
 		Forced:                j.Forced,
+		EncodeCodec:           j.EncodeCodec,
 		EncodePreset:          j.EncodePreset,
 		EncodeCRF:             j.EncodeCRF,
 		EncodeExtraArgs:       j.EncodeExtraArgs,
@@ -183,10 +188,14 @@ func toJobDTO(j *store.TranscodeJob, position int, lookup *media.EncodeRateLooku
 	if j.EncodeCRF != nil {
 		crf = *j.EncodeCRF
 	}
+	codec := media.DefaultTargetCodec
+	if j.EncodeCodec != nil {
+		codec = media.NormalizeTargetCodec(*j.EncodeCodec)
+	}
 
 	switch j.Status {
 	case "queued", "running":
-		rate, source, samples := media.ResolveEncodeRate(j.ProfileID, preset, crf, lookup)
+		rate, source, samples := media.ResolveEncodeRate(j.ProfileID, codec, preset, crf, lookup)
 		if est := media.PredictedEncodeSeconds(rate, j.DurationSeconds, j.Width, j.Height); est > 0 {
 			dto.EstimatedDurationSeconds = &est
 			dto.EstimateSource = string(source)

@@ -26,6 +26,8 @@ export const metadata: Metadata = {
   keywords: [
     "HEVC",
     "H.265",
+    "AV1",
+    "SVT-AV1",
     "ffmpeg",
     "Plex",
     "Jellyfin",

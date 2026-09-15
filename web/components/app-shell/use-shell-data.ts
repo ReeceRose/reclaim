@@ -6,6 +6,7 @@ import { useClockFormat } from "@/hooks/use-clock-format";
 import { useNow } from "@/hooks/use-now";
 import { useWS } from "@/hooks/use-ws";
 import { api, type ScanProgress } from "@/lib/api";
+import { isEfficientCodec } from "@/lib/codec";
 import { formatInt, formatVersion, windowInfo } from "@/lib/format";
 
 export function useShellData() {
@@ -74,7 +75,7 @@ export function useShellData() {
 
   const candidateCount = stats
     ? stats.by_codec
-        .filter((c) => c.codec !== "hevc")
+        .filter((c) => !isEfficientCodec(c.codec))
         .reduce((s, c) => s + c.file_count, 0)
     : null;
 

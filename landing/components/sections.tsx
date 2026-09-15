@@ -27,13 +27,13 @@ const features = [
   {
     icon: BarChart3,
     title: "Savings that adapt",
-    body: "Ranks candidates by predicted HEVC savings, starting conservative and recalculating from your own completed encodes. An Insights view tracks the bytes actually reclaimed — and how close the predictions came.",
+    body: "Ranks candidates by predicted HEVC or AV1 savings, starting conservative and recalculating from your own completed encodes. An Insights view tracks the bytes actually reclaimed — and how close the predictions came.",
     accent: "var(--sky)",
   },
   {
     icon: Eye,
     title: "Browse every file",
-    body: "The Library view shows all scanned files, including already-HEVC, skipped, and missing items, with a clear reason each one is or isn't a candidate. Pick which columns you see and drag them into the order you want.",
+    body: "The Library view shows all scanned files, including already-HEVC/AV1, skipped, and missing items, with a clear reason each one is or isn't a candidate. Pick which columns you see and drag them into the order you want.",
     accent: "var(--green)",
   },
   {
@@ -83,7 +83,7 @@ const steps = [
   {
     n: "02",
     title: "Rank & review",
-    body: "Files are sorted by predicted HEVC savings. As jobs complete, Reclaim recalculates estimates from your library's results so future rankings stay grounded in real outcomes.",
+    body: "Files are sorted by predicted savings for your profile's codec — HEVC or AV1. As jobs complete, Reclaim recalculates estimates from your library's results so future rankings stay grounded in real outcomes.",
   },
   {
     n: "03",
@@ -105,6 +105,7 @@ const does = [
   "Fetches TMDB poster art for movies and TV shows (optional)",
   "Helps spot files better re-downloaded than re-encoded",
   "Replaces files in-place after verification",
+  "Encodes to HEVC or AV1, chosen per profile",
   "Runs encodes in a configurable overnight window (or force individual jobs)",
   "Persistent audit trail for scans, jobs, and recovery events",
 ];
@@ -112,7 +113,7 @@ const does = [
 const doesNot = [
   "Integrate with Sonarr, Radarr, Plex, Jellyfin, or Emby APIs",
   "Auto-encode your whole library",
-  "Use GPU/NVENC hardware encoding (CPU libx265 only)",
+  "Use GPU/NVENC hardware encoding (CPU libx265 and SVT-AV1 only)",
   "Pause for active streams (time window only)",
 ];
 
@@ -445,7 +446,7 @@ export function Throughput() {
             Throughput
           </p>
           <h2 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">
-            CPU x265 is slow by design
+            CPU encoding is slow by design
           </h2>
           <p className="mt-3 text-base leading-relaxed text-muted-fg">
             Reclaim is meant to chip away safely over weeks and months of

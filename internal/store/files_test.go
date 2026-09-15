@@ -61,7 +61,7 @@ func TestFiles_includesAllStatusesAndDerivesCandidateStates(t *testing.T) {
 	}
 	want := map[int64]CandidateState{
 		candidateID: CandidateStateCandidate,
-		hevcID:      CandidateStateAlreadyHEVC,
+		hevcID:      CandidateStateAlreadyEfficient,
 		missingID:   CandidateStateMissing,
 		probeID:     CandidateStateProbeFailed,
 		unknownID:   CandidateStateUnknownCodec,
@@ -99,8 +99,8 @@ func TestFiles_filtersByCandidateState(t *testing.T) {
 	if n := count(CandidateStateCandidate); n != 1 {
 		t.Fatalf("candidate: want 1, got %d", n)
 	}
-	if n := count(CandidateStateAlreadyHEVC); n != 1 {
-		t.Fatalf("already_hevc: want 1, got %d", n)
+	if n := count(CandidateStateAlreadyEfficient); n != 1 {
+		t.Fatalf("already_efficient: want 1, got %d", n)
 	}
 	if n := count(CandidateStateMissing); n != 1 {
 		t.Fatalf("missing: want 1, got %d", n)
@@ -161,7 +161,7 @@ func TestTVSeasonsAcrossShows_Ranking(t *testing.T) {
 			SizeBytes:             size,
 			Status:                "active",
 			VideoCodec:            &codec,
-			IsAlreadyHEVC:         hevc,
+			IsEfficientCodec:      hevc,
 			PredictedSavingsBytes: savings,
 			SeriesTitle:           &title,
 			SeasonNumber:          &season,
@@ -233,7 +233,7 @@ func TestTVGroupProgressFilter(t *testing.T) {
 			SizeBytes:             1000,
 			Status:                status,
 			VideoCodec:            &codec,
-			IsAlreadyHEVC:         hevc,
+			IsEfficientCodec:      hevc,
 			PredictedSavingsBytes: 400,
 			SeriesTitle:           &title,
 			SeasonNumber:          &season,
@@ -256,6 +256,13 @@ func TestTVGroupProgressFilter(t *testing.T) {
 	// Gone: converted on disk but one episode has vanished.
 	insert("/tv/Gone/S01E01.mkv", "Gone", 1, true, "active")
 	insert("/tv/Gone/S01E02.mkv", "Gone", 1, false, "missing")
+	// Queued: nothing eligible, but every episode is still waiting on a job.
+	for _, p := range []string{"/tv/Queued/S01E01.mkv", "/tv/Queued/S01E02.mkv"} {
+		id := insert(p, "Queued", 1, false, "active")
+		if _, err := s.Jobs.Create(ctx, &TranscodeJob{MediaFileID: id, ProfileID: 1, Status: "queued", QueuedAt: 10, OriginalSizeBytes: 1000}); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	titles := func(p TVProgress) []string {
 		t.Helper()
@@ -283,9 +290,9 @@ func TestTVGroupProgressFilter(t *testing.T) {
 	}{
 		{TVProgressConverted, []string{"Done"}},
 		{TVProgressPartial, []string{"Half"}},
-		{TVProgressUnconverted, []string{"Raw"}},
+		{TVProgressUnconverted, []string{"Queued", "Raw"}},
 		{TVProgressMissing, []string{"Gone"}},
-		{"", []string{"Done", "Gone", "Half", "Raw"}},
+		{"", []string{"Done", "Gone", "Half", "Queued", "Raw"}},
 	}
 	for _, tc := range cases {
 		got := titles(tc.progress)
@@ -296,6 +303,19 @@ func TestTVGroupProgressFilter(t *testing.T) {
 			if got[i] != tc.want[i] {
 				t.Fatalf("progress %q = %v, want %v", tc.progress, got, tc.want)
 			}
+		}
+	}
+
+	all, err := s.Media.TVSeriesGroups(ctx, TVGroupFilter{}, 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range all {
+		if r.Title == "Queued" && (r.QueuedCount != 2 || r.EligibleCount != 0) {
+			t.Fatalf("Queued row = %+v, want queued 2, eligible 0", r)
+		}
+		if r.Title != "Queued" && r.QueuedCount != 0 {
+			t.Fatalf("%s queued = %d, want 0", r.Title, r.QueuedCount)
 		}
 	}
 

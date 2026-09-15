@@ -51,6 +51,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	encoders, err := startup.DetectEncoders(context.Background())
+	if err != nil {
+		slog.Error("encoder check failed", "err", err)
+		os.Exit(1)
+	}
+
 	if err := startup.CheckMounts(cfg.MoviesPath, cfg.TVPath); err != nil {
 		slog.Error("mount check failed", "err", err)
 		os.Exit(1)
@@ -114,6 +120,7 @@ func main() {
 		StaticFS:        web.FS(),
 		MetadataFetcher: metaFetcher,
 		Notifier:        notifier,
+		Encoders:        encoders,
 	})
 
 	sc.SetBroadcaster(&scanBroadcaster{

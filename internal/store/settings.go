@@ -179,4 +179,3 @@ func (s *Settings) ensureSecret(ctx context.Context) error {
 	)
 	return err
 }
-

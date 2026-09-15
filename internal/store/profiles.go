@@ -7,8 +7,11 @@ import (
 )
 
 type TranscodeProfile struct {
-	ID        int64
-	Name      string
+	ID   int64
+	Name string
+	// Codec is the target codec the profile encodes to ("hevc" or "av1"); see
+	// media.EncoderFor for the encoder and the CRF/preset vocabulary it implies.
+	Codec     string
 	CRF       int
 	Preset    string
 	ExtraArgs *string
@@ -59,9 +62,9 @@ func (p *Profiles) Create(ctx context.Context, prof *TranscodeProfile) (int64, e
 	}
 
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO transcode_profiles (name, crf, preset, extra_args, is_default)
-		VALUES (?, ?, ?, ?, ?)`,
-		prof.Name, prof.CRF, prof.Preset, prof.ExtraArgs, btoi(prof.IsDefault),
+		INSERT INTO transcode_profiles (name, codec, crf, preset, extra_args, is_default)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		prof.Name, profileCodec(prof.Codec), prof.CRF, prof.Preset, prof.ExtraArgs, btoi(prof.IsDefault),
 	)
 	if err != nil {
 		return 0, err
@@ -88,9 +91,9 @@ func (p *Profiles) Update(ctx context.Context, prof *TranscodeProfile) error {
 
 	_, err = tx.ExecContext(ctx, `
 		UPDATE transcode_profiles
-		SET name = ?, crf = ?, preset = ?, extra_args = ?, is_default = ?
+		SET name = ?, codec = ?, crf = ?, preset = ?, extra_args = ?, is_default = ?
 		WHERE id = ?`,
-		prof.Name, prof.CRF, prof.Preset, prof.ExtraArgs, btoi(prof.IsDefault), prof.ID,
+		prof.Name, profileCodec(prof.Codec), prof.CRF, prof.Preset, prof.ExtraArgs, btoi(prof.IsDefault), prof.ID,
 	)
 	if err != nil {
 		return err
@@ -103,12 +106,23 @@ func (p *Profiles) Delete(ctx context.Context, id int64) error {
 	return err
 }
 
-const profileQ = `SELECT id, name, crf, preset, extra_args, is_default FROM transcode_profiles`
+const profileQ = `SELECT id, name, codec, crf, preset, extra_args, is_default FROM transcode_profiles`
+
+// profileCodec stores an unset codec as the default rather than an empty
+// string, so every row names the codec it encodes to.
+func profileCodec(codec string) string {
+	if codec == "" {
+		return defaultProfileCodec
+	}
+	return codec
+}
+
+const defaultProfileCodec = "hevc"
 
 func scanProfile(s rowScanner) (*TranscodeProfile, error) {
 	var p TranscodeProfile
 	var isDefault int
-	err := s.Scan(&p.ID, &p.Name, &p.CRF, &p.Preset, &p.ExtraArgs, &isDefault)
+	err := s.Scan(&p.ID, &p.Name, &p.Codec, &p.CRF, &p.Preset, &p.ExtraArgs, &isDefault)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

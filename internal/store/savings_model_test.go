@@ -68,7 +68,7 @@ func TestSavingsModel_refreshRepricesLibraryAndNewProbes(t *testing.T) {
 	if got := st.SavingsModel.Predict(strp("H264"), false, 1000); got != 650 {
 		t.Errorf("new probe: want learned 650, got %d", got)
 	}
-	if got, want := st.SavingsModel.Predict(strp("mpeg4"), false, 1000), media.PredictedSavingsBytes(strp("mpeg4"), false, 1000); got != want {
+	if got, want := st.SavingsModel.Predict(strp("mpeg4"), false, 1000), media.PredictedSavingsBytes(media.TargetHEVC, strp("mpeg4"), false, 1000); got != want {
 		t.Errorf("unlearned codec: want seed %d, got %d", want, got)
 	}
 
@@ -95,7 +95,7 @@ func TestLearnedRatios_byteWeighted(t *testing.T) {
 		}
 	}
 
-	learned, err := st.Jobs.LearnedRatios(ctx, LearnedRatioMinSamples)
+	learned, err := st.Jobs.LearnedRatios(ctx, "hevc", LearnedRatioMinSamples)
 	if err != nil {
 		t.Fatal(err)
 	}

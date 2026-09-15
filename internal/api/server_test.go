@@ -364,7 +364,7 @@ func TestCreateJobsEchoesResolvedSelection(t *testing.T) {
 	hevc := "hevc"
 	hevcID, err := st.Media.Insert(ctx, &store.MediaFile{
 		Path: "/media/movies/b.mkv", LibraryType: "movie", SizeBytes: 5000,
-		Mtime: 1, Fingerprint: "fpb", VideoCodec: &hevc, IsAlreadyHEVC: true, Status: "active",
+		Mtime: 1, Fingerprint: "fpb", VideoCodec: &hevc, IsEfficientCodec: true, Status: "active",
 	})
 	if err != nil {
 		t.Fatalf("insert hevc: %v", err)

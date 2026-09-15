@@ -41,6 +41,7 @@ import {
 } from "@/hooks/use-query-params";
 import { useTableColumns } from "@/hooks/use-table-columns";
 import { api, type CandidateFilters, type MediaFile } from "@/lib/api";
+import { targetCodecLabel } from "@/lib/codec";
 import {
   codecFilterOptions,
   libraryFilterOptions,
@@ -82,7 +83,10 @@ function CandidatesPage() {
   });
   const codecOptions = useMemo(
     () =>
-      codecFilterOptions(stats, { excludeHEVC: true, excludeUnknown: true }),
+      codecFilterOptions(stats, {
+        excludeEfficient: true,
+        excludeUnknown: true,
+      }),
     [stats],
   );
   const resolutionOptions = useMemo(
@@ -244,7 +248,12 @@ function CandidatesPage() {
             className="sm:ml-auto self-start text-sm font-semibold px-3.5 py-2 rounded-xl border-line bg-surface gap-1.5"
           >
             <span className="font-mono text-xs">Profile</span>
-            {profiles.find((p) => p.is_default)?.name ?? profiles[0].name}
+            {(profiles.find((p) => p.is_default) ?? profiles[0]).name}
+            <span className="font-mono text-xs text-muted-fg">
+              {targetCodecLabel(
+                (profiles.find((p) => p.is_default) ?? profiles[0]).codec,
+              )}
+            </span>
           </Badge>
         )}
       </PageHeader>

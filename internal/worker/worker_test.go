@@ -97,7 +97,7 @@ func seedRunningJob(t *testing.T, st *store.Store, srcPath, content string) *sto
 
 func matchingInspect(*ffprobe.Inspection) InspectFunc {
 	return func(context.Context, string) (*ffprobe.Inspection, error) {
-		return &ffprobe.Inspection{
+		return &ffprobe.Inspection{VideoCodec: "hevc",
 			DurationSeconds: 10, Width: 1920, Height: 1080,
 			VideoStreams: 1, AudioStreams: 1,
 		}, nil
@@ -195,7 +195,7 @@ func TestProcessJobHappyPath(t *testing.T) {
 	}
 	// Media row converted to HEVC → drops out of candidates.
 	f, _ := st.Media.GetByID(context.Background(), job.MediaFileID)
-	if !f.IsAlreadyHEVC {
+	if !f.IsEfficientCodec {
 		t.Error("media row not marked HEVC")
 	}
 	if !hub.has("job_started") || !hub.has("job_completed") {
@@ -216,9 +216,9 @@ func TestProcessJobVerificationFailureKeepsTemp(t *testing.T) {
 	// Output duration is way off → duration check fails.
 	inspect := func(_ context.Context, path string) (*ffprobe.Inspection, error) {
 		if path == src {
-			return &ffprobe.Inspection{DurationSeconds: 10, Width: 1920, Height: 1080, VideoStreams: 1, AudioStreams: 1}, nil
+			return &ffprobe.Inspection{VideoCodec: "hevc", DurationSeconds: 10, Width: 1920, Height: 1080, VideoStreams: 1, AudioStreams: 1}, nil
 		}
-		return &ffprobe.Inspection{DurationSeconds: 2, Width: 1920, Height: 1080, VideoStreams: 1, AudioStreams: 1}, nil
+		return &ffprobe.Inspection{VideoCodec: "hevc", DurationSeconds: 2, Width: 1920, Height: 1080, VideoStreams: 1, AudioStreams: 1}, nil
 	}
 
 	w := New(st, fakeWindow{start: 0, end: 0}, hub, []string{dir},
@@ -443,7 +443,7 @@ func TestReconcilePostSwapCommit(t *testing.T) {
 	hub := &fakeHub{}
 	hevc := "hevc"
 	w := New(st, fakeWindow{start: 0, end: 0}, hub, []string{dir}, WithProbeFunc(func(_ context.Context, _ string) (*ffprobe.Result, error) {
-		return &ffprobe.Result{VideoCodec: &hevc, IsAlreadyHEVC: true}, nil
+		return &ffprobe.Result{VideoCodec: &hevc, IsEfficientCodec: true}, nil
 	}))
 	w.reconcileInterrupted(ctx)
 
@@ -455,7 +455,7 @@ func TestReconcilePostSwapCommit(t *testing.T) {
 		t.Fatal("expected job_completed broadcast after reconcile")
 	}
 	f, _ := st.Media.GetByID(ctx, id)
-	if !f.IsAlreadyHEVC {
+	if !f.IsEfficientCodec {
 		t.Fatal("media row not updated after reconcile")
 	}
 }
@@ -531,11 +531,11 @@ func TestEncodeVerifyReplaceReal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("probe result: %v", err)
 	}
-	if !res.IsAlreadyHEVC {
+	if !res.IsEfficientCodec {
 		t.Errorf("swapped file is not HEVC: codec=%v", deref(res.VideoCodec))
 	}
 	f, _ := st.Media.GetByID(ctx, id)
-	if !f.IsAlreadyHEVC {
+	if !f.IsEfficientCodec {
 		t.Error("media row not marked HEVC after real encode")
 	}
 }

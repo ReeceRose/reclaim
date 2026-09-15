@@ -7,6 +7,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"reclaim/internal/media"
 	"reclaim/internal/store"
 )
 
@@ -67,6 +68,7 @@ type savingsEntryDTO struct {
 	Path          string  `json:"path"`
 	LibraryType   string  `json:"library_type"`
 	SourceCodec   *string `json:"source_codec"`
+	ResultCodec   *string `json:"result_codec"`
 	Width         *int    `json:"width"`
 	Height        *int    `json:"height"`
 	OriginalBytes int64   `json:"original_size_bytes"`
@@ -202,6 +204,7 @@ func toSavingsEntryDTOs(in []store.SavingsEntry) []savingsEntryDTO {
 			Path:          e.Path,
 			LibraryType:   e.LibraryType,
 			SourceCodec:   e.SourceCodec,
+			ResultCodec:   e.ResultCodec,
 			Width:         e.Width,
 			Height:        e.Height,
 			OriginalBytes: e.OriginalBytes,
@@ -290,6 +293,10 @@ func (s *Server) handleSavings(c *echo.Context) error {
 	if err != nil {
 		return serverError(c, err)
 	}
+	byTarget, err := s.store.Savings.ByTargetCodec(ctx)
+	if err != nil {
+		return serverError(c, err)
+	}
 	byLibrary, err := s.store.Savings.ByLibrary(ctx)
 	if err != nil {
 		return serverError(c, err)
@@ -350,14 +357,15 @@ func (s *Server) handleSavings(c *echo.Context) error {
 			"recent":     toReplacementEntryDTOs(recentReplacements),
 			"top":        toReplacementEntryDTOs(topReplacements),
 		},
-		"by_codec":      toSavingsBucketDTOs(byCodec),
-		"by_library":    toSavingsBucketDTOs(byLibrary),
-		"by_resolution": toSavingsBucketDTOs(byResolution),
-		"daily":         toSavingsDayDTOs(daily),
-		"top_wins":      toSavingsEntryDTOs(topWins),
-		"recent":        toSavingsEntryDTOs(recent),
-		"job_outcomes":  outcomes,
-		"days":          days,
+		"by_codec":        toSavingsBucketDTOs(byCodec),
+		"by_target_codec": toSavingsBucketDTOs(byTarget),
+		"by_library":      toSavingsBucketDTOs(byLibrary),
+		"by_resolution":   toSavingsBucketDTOs(byResolution),
+		"daily":           toSavingsDayDTOs(daily),
+		"top_wins":        toSavingsEntryDTOs(topWins),
+		"recent":          toSavingsEntryDTOs(recent),
+		"job_outcomes":    outcomes,
+		"days":            days,
 	})
 }
 
@@ -375,16 +383,16 @@ func toSavingsDayDTOs(in []store.SavingsDay) []savingsDayDTO {
 	return out
 }
 
-// remainingCandidates counts the active files that are not yet HEVC.
+// remainingCandidates counts the active files not already in an efficient codec.
 func remainingCandidates(ov *store.LibraryStats) int64 {
-	var hevc int64
+	var efficient int64
 	for _, c := range ov.ByCodec {
-		if c.Codec == "hevc" {
-			hevc = c.FileCount
-			break
+		codec := c.Codec
+		if media.IsEfficientCodec(&codec) {
+			efficient += c.FileCount
 		}
 	}
-	if n := ov.TotalFiles - hevc; n > 0 {
+	if n := ov.TotalFiles - efficient; n > 0 {
 		return n
 	}
 	return 0

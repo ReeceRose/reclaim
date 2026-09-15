@@ -178,7 +178,7 @@ func (m *Media) needsSavingsBackfill(ctx context.Context) (bool, error) {
 		WHERE status = 'active'
 		  AND probe_error IS NULL
 		  AND video_codec IS NOT NULL
-		  AND is_already_hevc = 0
+		  AND is_efficient_codec = 0
 		  AND size_bytes > 0
 		  AND predicted_savings_bytes = 0`,
 	).Scan(&n)
@@ -272,12 +272,12 @@ func (m *Media) BackfillOversizeRatio(ctx context.Context) (int, error) {
 // fields without re-running ffprobe. Returns the number of rows updated.
 func (m *Media) BackfillPredictedSavings(ctx context.Context) (int, error) {
 	rows, err := m.r.QueryContext(ctx, `
-		SELECT id, video_codec, is_already_hevc, size_bytes
+		SELECT id, video_codec, is_efficient_codec, size_bytes
 		FROM media_files
 		WHERE status = 'active'
 		  AND probe_error IS NULL
 		  AND video_codec IS NOT NULL
-		  AND is_already_hevc = 0
+		  AND is_efficient_codec = 0
 		  AND size_bytes > 0
 		  AND predicted_savings_bytes = 0`)
 	if err != nil {
@@ -318,7 +318,7 @@ func (m *Media) BackfillPredictedSavings(ctx context.Context) (int, error) {
 	updated := 0
 	for _, r := range pending {
 		codec := r.codec
-		savings := media.PredictedSavingsBytes(&codec, r.hevc, r.size)
+		savings := media.PredictedSavingsBytes(media.DefaultTargetCodec, &codec, r.hevc, r.size)
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE media_files SET predicted_savings_bytes = ? WHERE id = ?`,
 			savings, r.id,

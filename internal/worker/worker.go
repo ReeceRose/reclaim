@@ -224,6 +224,15 @@ func (w *Worker) processJob(ctx context.Context, job *store.TranscodeJob) {
 		w.failJob(ctx, job.ID, "profile not found: "+err.Error(), nil)
 		return
 	}
+	codec := media.NormalizeTargetCodec(profile.Codec)
+	enc, ok := media.EncoderFor(codec)
+	if !ok {
+		w.failJob(ctx, job.ID, fmt.Sprintf("profile %q has unsupported codec %q", profile.Name, profile.Codec), nil)
+		return
+	}
+	if err := w.store.Jobs.SetEncodeSettings(ctx, job.ID, string(codec), profile.Preset, profile.CRF, profile.ExtraArgs); err != nil {
+		slog.Warn("worker: stamp encode settings", "job", job.ID, "err", err)
+	}
 
 	tmpPath := tempPathFor(file.Path)
 	if err := w.store.Jobs.SetOutputPath(ctx, job.ID, tmpPath); err != nil {
@@ -257,6 +266,7 @@ func (w *Worker) processJob(ctx context.Context, job *store.TranscodeJob) {
 	encErr := w.encode(encCtx, ffmpeg.Options{
 		InputPath:       file.Path,
 		OutputPath:      tmpPath,
+		Encoder:         enc.FFmpegEncoder,
 		CRF:             profile.CRF,
 		Preset:          profile.Preset,
 		ExtraArgs:       extra,
@@ -303,14 +313,14 @@ func (w *Worker) processJob(ctx context.Context, job *store.TranscodeJob) {
 	if err := w.store.Jobs.Transition(ctx, job.ID, string(jobs.StatusRunning), string(jobs.StatusVerifying)); err != nil {
 		slog.Error("worker: transition to verifying", "job", job.ID, "err", err)
 	}
-	w.verifyAndReplace(ctx, job, file, tmpPath)
+	w.verifyAndReplace(ctx, job, file, tmpPath, codec)
 }
 
 // verifyAndReplace runs the verification checks and, only on a full pass,
 // performs the atomic swap. Any failure keeps the temp, leaves the original
 // untouched, and marks the job failed with the verification detail attached.
-func (w *Worker) verifyAndReplace(ctx context.Context, job *store.TranscodeJob, file *store.MediaFile, tmpPath string) {
-	result, ok := w.verify(ctx, file, tmpPath)
+func (w *Worker) verifyAndReplace(ctx context.Context, job *store.TranscodeJob, file *store.MediaFile, tmpPath string, codec media.TargetCodec) {
+	result, ok := w.verify(ctx, file, tmpPath, codec)
 	blob, _ := json.Marshal(result)
 	if err := w.store.Jobs.SetVerificationResult(ctx, job.ID, string(blob)); err != nil {
 		slog.Error("worker: store verification result", "job", job.ID, "err", err)
@@ -344,12 +354,15 @@ type verificationResult struct {
 	Playable             bool    `json:"playable"`
 	StreamCountMatch     bool    `json:"stream_count_match"`
 	ResolutionMatch      bool    `json:"resolution_match"`
+	CodecMatch           bool    `json:"codec_match"`
 	Passed               bool    `json:"passed"`
 }
 
 // verify runs the verification checks against the temp output, re-probing the
-// original on disk for the freshest comparison truth.
-func (w *Worker) verify(ctx context.Context, file *store.MediaFile, tmpPath string) (verificationResult, bool) {
+// original on disk for the freshest comparison truth. The output must also be
+// in the target codec: extra args can override -c:v, and an output still in
+// the source codec would otherwise be swapped in and recorded as HEVC or AV1.
+func (w *Worker) verify(ctx context.Context, file *store.MediaFile, tmpPath string, codec media.TargetCodec) (verificationResult, bool) {
 	var res verificationResult
 
 	out, err := w.inspect(ctx, tmpPath)
@@ -375,7 +388,9 @@ func (w *Worker) verify(ctx context.Context, file *store.MediaFile, tmpPath stri
 
 	res.ResolutionMatch = src.Width == out.Width && src.Height == out.Height
 
-	res.Passed = res.DurationMatch && res.Playable && res.StreamCountMatch && res.ResolutionMatch
+	res.CodecMatch = media.NormalizeTargetCodec(out.VideoCodec) == codec
+
+	res.Passed = res.DurationMatch && res.Playable && res.StreamCountMatch && res.ResolutionMatch && res.CodecMatch
 	return res, res.Passed
 }
 
@@ -525,11 +540,12 @@ func (w *Worker) tryCompletePostSwap(ctx context.Context, job *store.TranscodeJo
 	if err != nil {
 		return false
 	}
-	if file.IsAlreadyHEVC {
+	if file.IsEfficientCodec {
 		return false
 	}
+	target := w.jobTargetCodec(ctx, job)
 	res, err := w.probe(ctx, file.Path)
-	if err != nil || !res.IsAlreadyHEVC {
+	if err != nil || res.VideoCodec == nil || media.NormalizeTargetCodec(*res.VideoCodec) != target {
 		return false
 	}
 	info, err := os.Stat(file.Path)
@@ -563,6 +579,18 @@ func (w *Worker) tryCompletePostSwap(ctx context.Context, job *store.TranscodeJo
 	})
 	slog.Info("worker: reconciled post-swap db commit", "job", job.ID, "path", file.Path)
 	return true
+}
+
+// jobTargetCodec is the codec a job encoded to: the snapshot the worker stamped
+// when it claimed the job, else its profile's codec, else the default.
+func (w *Worker) jobTargetCodec(ctx context.Context, job *store.TranscodeJob) media.TargetCodec {
+	if job.EncodeCodec != nil && *job.EncodeCodec != "" {
+		return media.NormalizeTargetCodec(*job.EncodeCodec)
+	}
+	if profile, err := w.store.Profiles.GetByID(ctx, job.ProfileID); err == nil {
+		return media.NormalizeTargetCodec(profile.Codec)
+	}
+	return media.DefaultTargetCodec
 }
 
 // sweepOrphans cleans up stray reclaim temp/backup files at paths derived from

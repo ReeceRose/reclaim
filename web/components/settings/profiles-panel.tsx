@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import type { Profile } from "@/lib/api";
+import { encodeSettingsLabel } from "@/lib/codec";
 
 export function ProfilesPanel({
   profiles,
@@ -55,7 +56,7 @@ export function ProfilesPanel({
               )}
             </div>
             <div className="text-xs text-muted-fg font-mono mt-0.5 wrap-break-word">
-              libx265 · CRF {p.crf} · preset {p.preset}
+              {encodeSettingsLabel(p.codec, p.crf, p.preset)}
               {p.extra_args && ` · ${p.extra_args}`}
             </div>
           </div>

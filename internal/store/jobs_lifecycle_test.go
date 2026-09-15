@@ -242,19 +242,19 @@ func TestReplaceWithEncodedUpdatesStatsAndDropsCandidate(t *testing.T) {
 		t.Fatalf("candidates before = %d, want 1", len(before))
 	}
 
-	if err := st.Media.ReplaceWithEncoded(ctx, mid, 2000, "newfp", 12345); err != nil {
+	if err := st.Media.ReplaceWithEncoded(ctx, mid, 2000, "newfp", "hevc", 12345); err != nil {
 		t.Fatalf("replace: %v", err)
 	}
 
 	f, _ := st.Media.GetByID(ctx, mid)
-	if !f.IsAlreadyHEVC || f.VideoCodec == nil || *f.VideoCodec != "hevc" {
+	if !f.IsEfficientCodec || f.VideoCodec == nil || *f.VideoCodec != "hevc" {
 		t.Fatalf("row not converted to hevc: %+v", f)
 	}
 	if f.SizeBytes != 2000 || f.PredictedSavingsBytes != 0 || f.Fingerprint != "newfp" {
 		t.Fatalf("row fields wrong after replace: %+v", f)
 	}
 
-	// After: drops out of the candidate list (is_already_hevc).
+	// After: drops out of the candidate list (is_efficient_codec).
 	after, _ := st.Media.Candidates(ctx, CandidateQuery{})
 	if len(after) != 0 {
 		t.Fatalf("candidates after = %d, want 0", len(after))
@@ -297,7 +297,7 @@ func TestReplaceWithEncodedReactivatesMissingRow(t *testing.T) {
 		t.Fatalf("mark missing: %v", err)
 	}
 
-	if err := st.Media.ReplaceWithEncoded(ctx, mid, 2000, "newfp", 12345); err != nil {
+	if err := st.Media.ReplaceWithEncoded(ctx, mid, 2000, "newfp", "hevc", 12345); err != nil {
 		t.Fatalf("replace: %v", err)
 	}
 
@@ -340,7 +340,7 @@ func TestCommitEncodeSwapAtomic(t *testing.T) {
 	}
 
 	f, _ := st.Media.GetByID(ctx, mid)
-	if !f.IsAlreadyHEVC || f.SizeBytes != 2000 {
+	if !f.IsEfficientCodec || f.SizeBytes != 2000 {
 		t.Fatalf("media not updated: %+v", f)
 	}
 	job, _ := st.Jobs.GetByID(ctx, jid)
@@ -355,7 +355,7 @@ func TestCommitEncodeSwapAtomic(t *testing.T) {
 		t.Fatal("want error when job is not verifying")
 	}
 	f2, _ := st.Media.GetByID(ctx, mid2)
-	if f2.IsAlreadyHEVC {
+	if f2.IsEfficientCodec {
 		t.Fatal("media updated despite failed commit")
 	}
 }

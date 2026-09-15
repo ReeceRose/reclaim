@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-Self-hosted codec audit and re-encode tool for homelabs. Point it at the same movie and TV folders Plex, Jellyfin, or Emby already use, rank files by predicted HEVC savings, and manually queue overnight `ffmpeg` jobs.
+Self-hosted codec audit and re-encode tool for homelabs. Point it at the same movie and TV folders Plex, Jellyfin, or Emby already use, rank files by predicted HEVC or AV1 savings, and manually queue overnight `ffmpeg` jobs.
 
 **Website:** [reclaim.reecerose.com](https://reclaim.reecerose.com)
 
@@ -21,7 +21,8 @@ Reclaim is for large libraries with mixed codecs where you want a safe, manual-f
 |---|---|
 | Scans mounted library folders directly | Integrate with Sonarr, Radarr, Plex, Jellyfin, or Emby APIs |
 | Ranks candidates by estimated savings (learns from your completed encodes) | Auto-encode your whole library |
-| Per-job encode time estimates on the Queue page (learns from completed jobs) | Use GPU/NVENC hardware encoding (CPU `libx265` only) |
+| Per-job encode time estimates on the Queue page (learns from completed jobs) | Use GPU/NVENC hardware encoding (CPU `libx265` / SVT-AV1 only) |
+| Encodes to HEVC (`libx265`) or AV1 (SVT-AV1), chosen per profile | Re-encode files that are already HEVC or AV1 |
 | Library view for every scanned file with eligibility reasons | Pause for active streams (time window only) |
 | Helps spot bloated rips better re-downloaded than re-encoded | |
 | Optional TMDB posters and metadata for movies and TV | |
@@ -109,20 +110,20 @@ For HTTPS reverse proxies, forward `X-Forwarded-Proto: https` so cookies get the
 
 1. **Scan** — walks `MOVIES_PATH` and `TV_PATH`, probes video files with `ffprobe`, and records codec, resolution, bitrate, size, mtime, and fingerprint. Later scans skip unchanged files and detect renames.
 
-2. **Rank** — files are sorted by predicted HEVC savings. After enough completed jobs for a codec, estimates switch from seed values to your observed results. Per-file codec, bitrate, and resolution help you spot rips that are better re-downloaded than re-encoded.
+2. **Rank** — files are sorted by predicted savings against the default profile's codec (HEVC or AV1). After enough completed jobs for a codec, estimates switch from seed values to your observed results. Per-file codec, bitrate, and resolution help you spot rips that are better re-downloaded than re-encoded.
 
-3. **Browse** — the Library view shows every scanned file, including already-HEVC, missing, and probe-failed items, each with a `candidate_state` explaining eligibility.
+3. **Browse** — the Library view shows every scanned file, including already-HEVC/AV1, missing, and probe-failed items, each with a `candidate_state` explaining eligibility.
 
 4. **Queue** — select files, pick a profile, and confirm before jobs are created. Queued jobs wait for the encode window unless you **Force** them to run immediately. The Queue page shows per-job encode time estimates (seed-based at first, then learned from your completed jobs) and live remaining time on the running job.
 
 5. **Encode** — queued jobs run inside the encode window unless forced. Reclaim writes a `.reclaim-tmp` file, then:
-   - Verifies the output (duration ±1 s, stream counts, resolution match)
+   - Verifies the output (duration ±1 s, stream counts, resolution match, and that the video really is in the profile's codec)
    - On pass: atomically swaps original → `.reclaim-backup`, temp → original, deletes backup
    - On fail: marks the job failed, keeps the temp for inspection, leaves the original untouched
 
 6. **Recover** — on boot, temp files are cleaned up, interrupted backups are restored, and stuck jobs are marked failed. Job and scan events are logged to a persistent audit trail (bell icon in the UI).
 
-7. **Notify** — when new re-encode candidates arrive (anything indexed that isn't already HEVC), Reclaim tells you. Arrivals are collected until the library has been quiet for a configurable delay (default 15 minutes), then sent as **one notification per show or movie** — a whole season import pings you once, and a second show arriving at the same time gets its own message instead of being mixed in. Notifications land on the bell icon, and optionally on a webhook — Discord, Slack, ntfy, or generic JSON — configured under **Settings › Notifications**. The very first scan on a new install is treated as your library baseline and stays quiet.
+7. **Notify** — when new re-encode candidates arrive (anything indexed that isn't already HEVC or AV1), Reclaim tells you. Arrivals are collected until the library has been quiet for a configurable delay (default 15 minutes), then sent as **one notification per show or movie** — a whole season import pings you once, and a second show arriving at the same time gets its own message instead of being mixed in. Notifications land on the bell icon, and optionally on a webhook — Discord, Slack, ntfy, or generic JSON — configured under **Settings › Notifications**. The very first scan on a new install is treated as your library baseline and stays quiet.
 
 ---
 
@@ -137,6 +138,23 @@ CPU x265 is slow by design. Rough expectations:
 | `ultrafast` | ~8–10× realtime | 6–8 min |
 
 **A 20 000-file library at `medium` can take months of overnight windows.** Reclaim is meant to chip away safely, not batch-convert everything at once.
+
+---
+
+## HEVC or AV1
+
+Each transcode profile picks a target codec under **Settings › Encoding**:
+
+| Codec | Encoder | CRF | Presets | Default |
+|---|---|---|---|---|
+| HEVC | `libx265` | 0–51 | `ultrafast` … `veryslow` | CRF 26, `medium` |
+| AV1 | SVT-AV1 (`libsvtav1`) | 0–63 | `0` (slowest) … `13` (fastest) | CRF 30, preset `6` |
+
+AV1 is typically around a fifth smaller than HEVC at the same quality, and SVT-AV1's middle presets encode at a similar pace to x265 `medium`. The catch is playback: many Plex and Jellyfin clients — older Rokus and Fire TV sticks, Apple TV, and plenty of smart TVs — can't direct-play AV1, so the server transcodes it on every play. Check your players before encoding a library to AV1.
+
+- **Already-efficient files are left alone.** Files already in HEVC or AV1 are never candidates, whichever codec you target: re-encoding between them loses quality for little or no space.
+- **Predictions follow the default profile.** Candidate rankings and the dashboard's recoverable figure are priced against the default profile's codec; switching it reprices the library. Learned ratios and encode-time estimates are kept separately for each codec.
+- **Encoder availability is checked at boot.** Reclaim reads `ffmpeg -encoders` on startup and refuses AV1 profiles if the ffmpeg on `PATH` wasn't built with `libsvtav1`.
 
 Per-job encode time estimates on the Queue page learn from your completed jobs after a few runs on each profile; until then they use conservative preset-based guesses.
 

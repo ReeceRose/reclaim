@@ -26,6 +26,30 @@ func TestEncodeArgsMapsAllInputStreams(t *testing.T) {
 	}
 }
 
+func TestEncodeArgsUsesProfileEncoder(t *testing.T) {
+	tests := map[string]string{
+		"":          "libx265",
+		"libx265":   "libx265",
+		"libsvtav1": "libsvtav1",
+	}
+	for encoder, want := range tests {
+		args := encodeArgs(Options{
+			InputPath:  "in.mkv",
+			OutputPath: "out.mkv",
+			Encoder:    encoder,
+			CRF:        30,
+			Preset:     "6",
+		})
+		i := indexOf(args, "-c:v")
+		if i < 0 || args[i+1] != want {
+			t.Errorf("encoder %q: -c:v = %v, want %q", encoder, args, want)
+		}
+		if j := indexOf(args, "-preset"); j < 0 || args[j+1] != "6" {
+			t.Errorf("encoder %q: preset not passed through: %v", encoder, args)
+		}
+	}
+}
+
 func indexOf(ss []string, s string) int {
 	for i, v := range ss {
 		if v == s {

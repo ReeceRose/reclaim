@@ -51,8 +51,8 @@ function goBack(router: ReturnType<typeof useRouter>) {
 
 function candidateStateReason(file: MediaFile): string | null {
   switch (file.candidate_state) {
-    case "already_hevc":
-      return "This file is already HEVC/H.265, so Reclaim does not queue it for another HEVC encode.";
+    case "already_efficient":
+      return "This file is already in an efficient codec (HEVC or AV1), so Reclaim does not re-encode it — another pass would cost quality for little or no space.";
     case "probe_failed":
       return "ffprobe could not read this file successfully. Fix the source file or rescan after the probe issue is resolved.";
     case "unknown_codec":

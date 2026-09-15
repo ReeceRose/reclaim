@@ -215,10 +215,10 @@ export function EncodingPanel({
               Flags a file as <strong>oversized</strong> in the Library when its
               bitrate is at least this many times what a well-encoded file of
               the same codec and resolution would use. It is codec-aware, so it
-              catches bloated files in <em>any</em> codec — including HEVC that
-              the HEVC-savings ranking skips. <strong>2</strong> means "twice
-              the expected bitrate". Lower it to flag more files, raise it to
-              flag only the worst offenders.
+              catches bloated files in <em>any</em> codec — including the HEVC
+              and AV1 files the savings ranking skips. <strong>2</strong> means
+              "twice the expected bitrate". Lower it to flag more files, raise
+              it to flag only the worst offenders.
             </>
           }
         />

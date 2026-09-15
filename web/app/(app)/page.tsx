@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
-import { CODEC_COLORS, codecCSSColor } from "@/lib/codec";
+import { CODEC_COLORS, codecCSSColor, isEfficientCodec } from "@/lib/codec";
 import {
   formatBytes,
   formatInt,
@@ -91,15 +91,17 @@ function DashboardContent() {
 
   const total = stats.total_bytes;
   const recoverable = stats.total_recoverable_bytes;
-  const hevcBytes =
-    stats.by_codec.find((c) => c.codec === "hevc")?.total_bytes ?? 0;
-  const kept = total - recoverable - hevcBytes;
+  const efficientCodecs = stats.by_codec.filter((c) =>
+    isEfficientCodec(c.codec),
+  );
+  const efficientBytes = efficientCodecs.reduce((s, c) => s + c.total_bytes, 0);
+  const kept = total - recoverable - efficientBytes;
   const reclaimPct = total > 0 ? Math.round((recoverable / total) * 100) : 0;
   const keptPct = total > 0 ? Math.round((kept / total) * 100) : 0;
-  const hevcPct = total > 0 ? Math.round((hevcBytes / total) * 100) : 0;
-  const hevcCount =
-    stats.by_codec.find((c) => c.codec === "hevc")?.file_count ?? 0;
-  const candidateCount = stats.total_files - hevcCount;
+  const efficientPct =
+    total > 0 ? Math.round((efficientBytes / total) * 100) : 0;
+  const efficientCount = efficientCodecs.reduce((s, c) => s + c.file_count, 0);
+  const candidateCount = stats.total_files - efficientCount;
   const maxCodecFiles = Math.max(...stats.by_codec.map((c) => c.file_count), 1);
   const maxResFiles = Math.max(
     ...stats.by_resolution.map((r) => r.file_count),
@@ -148,7 +150,7 @@ function DashboardContent() {
           </div>
           <div className="text-sm text-muted-dim mt-1 max-w-2xs">
             Trigger a scan to get started — Reclaim will walk your library and
-            rank files by predicted HEVC savings.
+            rank files by predicted re-encode savings.
           </div>
         </div>
         <Button
@@ -230,7 +232,7 @@ function DashboardContent() {
               <b className="text-text font-semibold">
                 {formatInt(candidateCount)} candidates
               </b>{" "}
-              · {formatInt(hevcCount)} already HEVC
+              · {formatInt(efficientCount)} already HEVC/AV1
               <Badge className="ml-2 text-xs font-bold tracking-widest text-brand bg-brand-soft border-brand-line rounded-md uppercase">
                 estimate
               </Badge>
@@ -264,7 +266,7 @@ function DashboardContent() {
             <div
               className="h-full"
               style={{
-                width: `${hevcPct}%`,
+                width: `${efficientPct}%`,
                 background: "color-mix(in srgb, var(--green) 32%, transparent)",
               }}
             />
@@ -286,7 +288,7 @@ function DashboardContent() {
                     "color-mix(in srgb, var(--green) 45%, transparent)",
                 }}
               />
-              Already HEVC · {formatBytes(hevcBytes)} · {hevcPct}%
+              Already HEVC/AV1 · {formatBytes(efficientBytes)} · {efficientPct}%
             </span>
           </div>
         </div>
@@ -313,13 +315,13 @@ function DashboardContent() {
           </div>
           <div>
             <div className="text-xs text-muted-fg uppercase tracking-wider font-bold">
-              Already HEVC
+              Already HEVC/AV1
             </div>
             <div className="text-stat font-bold tracking-tight mt-1 text-green">
-              {formatInt(hevcCount)}
+              {formatInt(efficientCount)}
             </div>
             <div className="text-xs text-muted-dim mt-0.5">
-              {formatPct(hevcCount, stats.total_files)} of library
+              {formatPct(efficientCount, stats.total_files)} of library
             </div>
           </div>
           <div>

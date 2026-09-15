@@ -13,8 +13,10 @@ export function SeasonRankRow({
   rank: number;
   href: string;
 }) {
-  const fullyConverted =
+  const nothingEligible =
     season.eligible_count === 0 && season.missing_count === 0;
+  const fullyConverted = nothingEligible && season.queued_count === 0;
+  const allQueued = nothingEligible && season.queued_count > 0;
   const allMissing =
     season.file_count > 0 && season.missing_count === season.file_count;
   const imageURL = tmdbImageURL(season.poster_path, "w92");
@@ -66,6 +68,10 @@ export function SeasonRankRow({
           </span>
         ) : fullyConverted ? (
           <span className="text-xs font-medium text-green">All converted</span>
+        ) : allQueued ? (
+          <span className="text-xs font-medium text-sky">
+            {formatInt(season.queued_count)} queued
+          </span>
         ) : season.predicted_savings_bytes > 0 ? (
           <span className="text-xs font-semibold text-brand font-mono">
             -{formatBytes(season.predicted_savings_bytes)}

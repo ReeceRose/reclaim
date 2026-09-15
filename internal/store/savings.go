@@ -61,6 +61,7 @@ type SavingsEntry struct {
 	Path          string
 	LibraryType   string
 	SourceCodec   *string
+	ResultCodec   *string
 	Width         *int
 	Height        *int
 	OriginalBytes int64
@@ -82,12 +83,12 @@ const savingsResolutionCase = `
 	END`
 
 // RecordTx appends a ledger row for a job about to be marked completed. It must
-// run before the media row is rewritten to HEVC, since it captures the source
-// codec and pre-encode dimensions that the swap destroys.
+// run before the media row is rewritten to the target codec, since it captures
+// the source codec and pre-encode dimensions that the swap destroys.
 func (s *Savings) RecordTx(ctx context.Context, tx *sql.Tx, jobID, outputSize, completedAt int64) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO savings_ledger (
-			job_id, media_file_id, path, library_type, source_codec,
+			job_id, media_file_id, path, library_type, source_codec, result_codec,
 			width, height, duration_seconds,
 			original_size_bytes, output_size_bytes,
 			predicted_savings_bytes, estimated_duration_seconds, encode_seconds,
@@ -96,6 +97,7 @@ func (s *Savings) RecordTx(ctx context.Context, tx *sql.Tx, jobID, outputSize, c
 		SELECT j.id, j.media_file_id,
 		       COALESCE(m.path, ''), COALESCE(m.library_type, 'unknown'),
 		       LOWER(NULLIF(m.video_codec, '')),
+		       LOWER(COALESCE(NULLIF(j.encode_codec, ''), p.codec, 'hevc')),
 		       m.width, m.height, m.duration_seconds,
 		       j.original_size_bytes, ?,
 		       j.predicted_savings_bytes, j.initial_estimated_duration_seconds,
@@ -169,6 +171,19 @@ func (s *Savings) Summary(ctx context.Context, now int64) (*SavingsSummary, erro
 func (s *Savings) ByCodec(ctx context.Context) ([]SavingsBucket, error) {
 	return s.buckets(ctx, `
 		SELECT COALESCE(LOWER(NULLIF(source_codec, '')), 'unknown'), COUNT(*),
+		       COALESCE(SUM(original_size_bytes), 0),
+		       COALESCE(SUM(output_size_bytes), 0),
+		       COALESCE(SUM(original_size_bytes - output_size_bytes), 0)
+		FROM savings_ledger
+		WHERE source = 'encode'
+		GROUP BY 1
+		ORDER BY 5 DESC, 1`)
+}
+
+// ByTargetCodec groups realized savings by the codec the encode produced.
+func (s *Savings) ByTargetCodec(ctx context.Context) ([]SavingsBucket, error) {
+	return s.buckets(ctx, `
+		SELECT COALESCE(LOWER(NULLIF(result_codec, '')), 'unknown'), COUNT(*),
 		       COALESCE(SUM(original_size_bytes), 0),
 		       COALESCE(SUM(output_size_bytes), 0),
 		       COALESCE(SUM(original_size_bytes - output_size_bytes), 0)
@@ -267,7 +282,7 @@ func (s *Savings) entries(ctx context.Context, orderBy string, limit int) ([]Sav
 		limit = 10
 	}
 	rows, err := s.r.QueryContext(ctx, `
-		SELECT job_id, media_file_id, path, library_type, source_codec,
+		SELECT job_id, media_file_id, path, library_type, source_codec, result_codec,
 		       width, height, original_size_bytes, output_size_bytes,
 		       original_size_bytes - output_size_bytes, encode_seconds, completed_at
 		FROM savings_ledger WHERE source = 'encode' `+orderBy+` LIMIT ?`, limit)
@@ -278,7 +293,7 @@ func (s *Savings) entries(ctx context.Context, orderBy string, limit int) ([]Sav
 	out := []SavingsEntry{}
 	for rows.Next() {
 		var e SavingsEntry
-		if err := rows.Scan(&e.JobID, &e.MediaFileID, &e.Path, &e.LibraryType, &e.SourceCodec,
+		if err := rows.Scan(&e.JobID, &e.MediaFileID, &e.Path, &e.LibraryType, &e.SourceCodec, &e.ResultCodec,
 			&e.Width, &e.Height, &e.OriginalBytes, &e.OutputBytes,
 			&e.BytesSaved, &e.EncodeSeconds, &e.CompletedAt); err != nil {
 			return nil, err

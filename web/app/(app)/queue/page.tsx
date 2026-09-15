@@ -29,6 +29,7 @@ import {
   type Profile,
   type VerificationResult,
 } from "@/lib/api";
+import { encodeSettingsLabel, targetCodecLabel } from "@/lib/codec";
 import {
   baseName,
   dirName,
@@ -48,10 +49,12 @@ function jobName(job: Job): string {
   return path ? baseName(path) : `File #${job.media_file_id}`;
 }
 
-function encodeSettingsLabel(job: Job): string {
-  const preset = job.encode_preset ?? "medium";
-  const crf = job.encode_crf ?? 26;
-  return `libx265 · CRF ${crf} · preset ${preset}`;
+function jobSettingsLabel(job: Job): string {
+  return encodeSettingsLabel(
+    job.encode_codec,
+    job.encode_crf ?? 26,
+    job.encode_preset ?? "medium",
+  );
 }
 
 function formatSignedBytes(diffBytes: number): string {
@@ -75,7 +78,7 @@ function estimateTooltip(job: Job, profileName?: string): string | undefined {
     case "learned_preset":
       return `Based on ${n} jobs at preset ${preset}`;
     case "learned_global":
-      return `Based on ${n} completed jobs on this instance`;
+      return `Based on ${n} completed ${targetCodecLabel(job.encode_codec)} jobs on this instance`;
     case "seed":
       return profileName
         ? `Conservative estimate for ${preset}/CRF ${crf} — ${profileName} has no encode history yet`
@@ -143,6 +146,8 @@ function VerifyChecks({ json }: { json: string | null }) {
     checks.push({ label: "stream count", pass: vr.stream_count_match });
   if (vr.resolution_match !== undefined)
     checks.push({ label: "resolution", pass: vr.resolution_match });
+  if (vr.codec_match !== undefined)
+    checks.push({ label: "codec", pass: vr.codec_match });
 
   return (
     <div className="flex gap-2 mt-2 flex-wrap">
@@ -414,7 +419,7 @@ function QueueContent() {
                 Encoding
               </span>
               <span className="text-muted-fg text-xs">
-                {encodeSettingsLabel(runningJob)}
+                {jobSettingsLabel(runningJob)}
               </span>
               {runningJob.forced && (
                 <Badge

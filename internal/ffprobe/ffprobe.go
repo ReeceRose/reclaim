@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"reclaim/internal/media"
 )
 
 // ProbeError is returned when ffprobe exits non-zero or its output cannot be parsed.
@@ -32,7 +34,7 @@ type Result struct {
 	AudioCodec        *string
 	AudioChannels     *int
 	ContainerFormat   *string
-	IsAlreadyHEVC     bool
+	IsEfficientCodec  bool
 }
 
 // Probe runs ffprobe on path and returns the mapped result.
@@ -60,6 +62,9 @@ func Probe(ctx context.Context, path string) (*Result, error) {
 // type, canonical dimensions, and duration. Distinct from Result, which maps
 // the primary streams into media_files columns.
 type Inspection struct {
+	// VideoCodec is the codec_name of the first video stream, which
+	// verification compares against the profile's target codec.
+	VideoCodec      string
 	DurationSeconds float64
 	Width           int
 	Height          int
@@ -101,6 +106,9 @@ func Inspect(ctx context.Context, path string) (*Inspection, error) {
 		switch s.CodecType {
 		case "video":
 			insp.VideoStreams++
+			if insp.VideoCodec == "" {
+				insp.VideoCodec = strings.ToLower(s.CodecName)
+			}
 			if insp.Width == 0 && s.Width > 0 {
 				insp.Width = s.Width
 			}
@@ -199,7 +207,7 @@ func mapResult(raw *probeOutput) *Result {
 		}
 		codec := s.CodecName
 		r.VideoCodec = &codec
-		r.IsAlreadyHEVC = strings.EqualFold(codec, "hevc") || strings.EqualFold(codec, "h265")
+		r.IsEfficientCodec = media.IsEfficientCodec(&codec)
 		if s.Profile != "" && s.Profile != "unknown" {
 			p := s.Profile
 			r.VideoCodecProfile = &p

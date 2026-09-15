@@ -80,7 +80,7 @@ func Open(path string) (*Store, error) {
 		Metadata: &Metadata{r: r, w: w},
 		Savings:  &Savings{r: r, w: w},
 	}
-	s.SavingsModel = &SavingsModel{jobs: s.Jobs, media: s.Media, stats: s.Stats}
+	s.SavingsModel = &SavingsModel{jobs: s.Jobs, media: s.Media, stats: s.Stats, profiles: s.Profiles}
 
 	if err := runMigrations(w); err != nil {
 		s.Close()
@@ -121,10 +121,14 @@ func (s *Store) CommitEncodeSwap(ctx context.Context, fileID, jobID, newSize int
 		return 0, err
 	}
 	defer tx.Rollback()
+	codec, err := s.Jobs.encodeCodecTx(ctx, tx, jobID)
+	if err != nil {
+		return 0, err
+	}
 	if err := s.Savings.RecordTx(ctx, tx, jobID, newSize, completedAt); err != nil {
 		return 0, err
 	}
-	if err := s.Media.ReplaceWithEncodedTx(ctx, tx, fileID, newSize, newFingerprint, completedAt); err != nil {
+	if err := s.Media.ReplaceWithEncodedTx(ctx, tx, fileID, newSize, newFingerprint, codec, completedAt); err != nil {
 		return 0, err
 	}
 	if err := s.Jobs.MarkCompletedTx(ctx, tx, jobID, newSize, completedAt); err != nil {

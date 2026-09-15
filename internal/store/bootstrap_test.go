@@ -13,7 +13,7 @@ func insertLegacyRow(t *testing.T, s *Store, path, codec string, size int64) int
 	res, err := s.w.Exec(`
 		INSERT INTO media_files (
 			path, library_type, size_bytes, mtime, fingerprint,
-			video_codec, is_already_hevc, predicted_savings_bytes, status
+			video_codec, is_efficient_codec, predicted_savings_bytes, status
 		) VALUES (?, 'movie', ?, 1, 'fp', ?, 0, 0, 'active')`,
 		path, size, codec,
 	)

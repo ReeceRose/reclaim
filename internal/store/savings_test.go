@@ -163,7 +163,7 @@ func TestLearnedRatiosUsesPreEncodeSourceCodec(t *testing.T) {
 		}
 	}
 
-	learned, err := st.Jobs.LearnedRatios(ctx, LearnedRatioMinSamples)
+	learned, err := st.Jobs.LearnedRatios(ctx, "hevc", LearnedRatioMinSamples)
 	if err != nil {
 		t.Fatalf("learned ratios: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestSavingsByCodecBucketsUnknownAndReconciles(t *testing.T) {
 		t.Errorf("buckets must sum to lifetime total: buckets=%d lifetime=%d", bucketed, summary.BytesSaved)
 	}
 
-	learned, err := st.Jobs.LearnedRatios(ctx, 1)
+	learned, err := st.Jobs.LearnedRatios(ctx, "hevc", 1)
 	if err != nil {
 		t.Fatalf("learned ratios: %v", err)
 	}

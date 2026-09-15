@@ -13,8 +13,11 @@ const (
 	EncodeRateLearnedProfile   EncodeRateSource = "learned_profile"
 	EncodeRateLearnedPresetCRF EncodeRateSource = "learned_preset_crf"
 	EncodeRateLearnedPreset    EncodeRateSource = "learned_preset"
-	EncodeRateLearnedGlobal    EncodeRateSource = "learned_global"
-	EncodeRateSeed             EncodeRateSource = "seed"
+	// EncodeRateLearnedGlobal is every completed encode to the same target
+	// codec. Rates are never pooled across codecs: SVT-AV1 and x265 run at
+	// unrelated speeds, so a global figure would describe neither.
+	EncodeRateLearnedGlobal EncodeRateSource = "learned_global"
+	EncodeRateSeed          EncodeRateSource = "seed"
 )
 
 const (
@@ -31,21 +34,45 @@ const (
 	encodeRateClampMax = 20.0
 )
 
-// seedEncodeRates maps x265 preset to wall seconds per 1080p-equivalent source
-// second. Values are conservative (README upper bounds) so estimates err long.
-var seedEncodeRates = map[string]float64{
-	"ultrafast": 0.13,
-	"superfast": 0.15,
-	"veryfast":  0.20,
-	"faster":    0.25,
-	"fast":      0.50,
-	"medium":    2.0,
-	"slow":      4.0,
-	"slower":    6.0,
-	"veryslow":  8.0,
+// seedEncodeRates maps a target codec, then its encoder preset, to wall seconds
+// per 1080p-equivalent source second. Values are conservative upper bounds for
+// a modest multi-core CPU so estimates err long. SVT-AV1's presets are numeric,
+// 0 slowest to 13 fastest.
+var seedEncodeRates = map[TargetCodec]map[string]float64{
+	TargetHEVC: {
+		"ultrafast": 0.13,
+		"superfast": 0.15,
+		"veryfast":  0.20,
+		"faster":    0.25,
+		"fast":      0.50,
+		"medium":    2.0,
+		"slow":      4.0,
+		"slower":    6.0,
+		"veryslow":  8.0,
+		"placebo":   16.0,
+	},
+	TargetAV1: {
+		"0":  20.0,
+		"1":  14.0,
+		"2":  10.0,
+		"3":  6.0,
+		"4":  4.0,
+		"5":  2.5,
+		"6":  1.6,
+		"7":  1.1,
+		"8":  0.70,
+		"9":  0.45,
+		"10": 0.30,
+		"11": 0.22,
+		"12": 0.16,
+		"13": 0.13,
+	},
 }
 
-const defaultSeedEncodeRate = 2.0
+var defaultSeedEncodeRates = map[TargetCodec]float64{
+	TargetHEVC: 2.0,
+	TargetAV1:  1.6,
+}
 
 // LearnedEncodeRate is a normalized encode speed derived from completed jobs.
 type LearnedEncodeRate struct {
@@ -53,12 +80,14 @@ type LearnedEncodeRate struct {
 	SampleCount int
 }
 
-// EncodeRateLookup holds learned rates at each fallback tier.
+// EncodeRateLookup holds learned rates at each fallback tier. Every key carries
+// the target codec, so a profile switched from HEVC to AV1 starts learning
+// afresh instead of inheriting x265's timings.
 type EncodeRateLookup struct {
-	ByProfileID map[int64]LearnedEncodeRate
-	ByPresetCRF map[string]LearnedEncodeRate // key: "medium:26"
-	ByPreset    map[string]LearnedEncodeRate
-	Global      *LearnedEncodeRate
+	ByProfile   map[string]LearnedEncodeRate // key: ProfileRateKey → "12:av1"
+	ByPresetCRF map[string]LearnedEncodeRate // key: PresetCRFKey → "hevc:medium:26"
+	ByPreset    map[string]LearnedEncodeRate // key: PresetKey → "hevc:medium"
+	ByCodec     map[string]LearnedEncodeRate // key: target codec → "av1"
 }
 
 // PixelFactor scales source duration by resolution relative to 1080p.
@@ -109,36 +138,49 @@ func ClampEncodeRate(rate float64) float64 {
 	return rate
 }
 
-// PresetCRFKey builds the preset+crf bucket key.
-func PresetCRFKey(preset string, crf int) string {
-	return fmt.Sprintf("%s:%d", strings.ToLower(preset), crf)
+// ProfileRateKey builds the profile bucket key.
+func ProfileRateKey(profileID int64, codec TargetCodec) string {
+	return fmt.Sprintf("%d:%s", profileID, codec)
 }
 
-// SeedEncodeRate returns the shipped conservative rate for a preset.
-func SeedEncodeRate(preset string) float64 {
-	if r, ok := seedEncodeRates[strings.ToLower(preset)]; ok {
+// PresetCRFKey builds the codec+preset+crf bucket key.
+func PresetCRFKey(codec TargetCodec, preset string, crf int) string {
+	return fmt.Sprintf("%s:%s:%d", codec, strings.ToLower(preset), crf)
+}
+
+// PresetKey builds the codec+preset bucket key.
+func PresetKey(codec TargetCodec, preset string) string {
+	return fmt.Sprintf("%s:%s", codec, strings.ToLower(preset))
+}
+
+// SeedEncodeRate returns the shipped conservative rate for a codec's preset.
+func SeedEncodeRate(codec TargetCodec, preset string) float64 {
+	if r, ok := seedEncodeRates[codec][strings.ToLower(preset)]; ok {
 		return r
 	}
-	return defaultSeedEncodeRate
+	if r, ok := defaultSeedEncodeRates[codec]; ok {
+		return r
+	}
+	return defaultSeedEncodeRates[DefaultTargetCodec]
 }
 
 // ResolveEncodeRate picks the best available rate using the profile-first cascade.
-func ResolveEncodeRate(profileID int64, preset string, crf int, lookup *EncodeRateLookup) (rate float64, source EncodeRateSource, sampleCount int) {
+func ResolveEncodeRate(profileID int64, codec TargetCodec, preset string, crf int, lookup *EncodeRateLookup) (rate float64, source EncodeRateSource, sampleCount int) {
 	if lookup != nil {
-		if lr, ok := lookup.ByProfileID[profileID]; ok {
+		if lr, ok := lookup.ByProfile[ProfileRateKey(profileID, codec)]; ok {
 			return lr.Rate, EncodeRateLearnedProfile, lr.SampleCount
 		}
-		if lr, ok := lookup.ByPresetCRF[PresetCRFKey(preset, crf)]; ok {
+		if lr, ok := lookup.ByPresetCRF[PresetCRFKey(codec, preset, crf)]; ok {
 			return lr.Rate, EncodeRateLearnedPresetCRF, lr.SampleCount
 		}
-		if lr, ok := lookup.ByPreset[strings.ToLower(preset)]; ok {
+		if lr, ok := lookup.ByPreset[PresetKey(codec, preset)]; ok {
 			return lr.Rate, EncodeRateLearnedPreset, lr.SampleCount
 		}
-		if lookup.Global != nil {
-			return lookup.Global.Rate, EncodeRateLearnedGlobal, lookup.Global.SampleCount
+		if lr, ok := lookup.ByCodec[string(codec)]; ok {
+			return lr.Rate, EncodeRateLearnedGlobal, lr.SampleCount
 		}
 	}
-	return SeedEncodeRate(preset), EncodeRateSeed, 0
+	return SeedEncodeRate(codec, preset), EncodeRateSeed, 0
 }
 
 // PredictedEncodeSeconds estimates wall-clock encode time from a normalized rate.

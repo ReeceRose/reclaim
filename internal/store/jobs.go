@@ -25,8 +25,10 @@ type TranscodeJob struct {
 	ErrorMessage       *string
 	VerificationResult *string
 	Forced             bool
-	// Snapshot of encode settings at queue time — used for learning, not for
-	// the worker (which reads the live profile).
+	// Snapshot of encode settings at queue time, restamped by the worker with
+	// the live profile it actually encodes with — so learning, the ledger, and
+	// post-swap crash recovery all see what really ran.
+	EncodeCodec     *string
 	EncodePreset    *string
 	EncodeCRF       *int
 	EncodeExtraArgs *string
@@ -53,11 +55,11 @@ func (j *Jobs) Create(ctx context.Context, job *TranscodeJob) (int64, error) {
 	res, err := j.w.ExecContext(ctx, `
 		INSERT INTO transcode_jobs (
 			media_file_id, profile_id, status, queued_at, original_size_bytes,
-			encode_preset, encode_crf, encode_extra_args,
+			encode_codec, encode_preset, encode_crf, encode_extra_args,
 			predicted_savings_bytes, initial_estimated_duration_seconds
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.MediaFileID, job.ProfileID, job.Status, job.QueuedAt, job.OriginalSizeBytes,
-		job.EncodePreset, job.EncodeCRF, job.EncodeExtraArgs,
+		job.EncodeCodec, job.EncodePreset, job.EncodeCRF, job.EncodeExtraArgs,
 		job.PredictedSavingsBytes, job.InitialEstimatedDurationSeconds,
 	)
 	if err != nil {
@@ -295,6 +297,40 @@ func (j *Jobs) Transition(ctx context.Context, id int64, from, to string) error 
 
 // SetOutputPath records the temp output path the worker is encoding to, so a
 // crash mid-encode leaves a breadcrumb the orphan sweep can reconcile.
+// SetEncodeSettings restamps a job's encode snapshot with the settings the
+// worker is about to run. The worker encodes with the live profile, which may
+// have been edited — even switched codec — since the job was queued; recording
+// what actually ran keeps encode-time learning, the savings ledger's result
+// codec, and post-swap crash recovery honest.
+func (j *Jobs) SetEncodeSettings(ctx context.Context, id int64, codec, preset string, crf int, extraArgs *string) error {
+	_, err := j.w.ExecContext(ctx, `
+		UPDATE transcode_jobs
+		SET encode_codec = ?, encode_preset = ?, encode_crf = ?, encode_extra_args = ?
+		WHERE id = ?`,
+		codec, preset, crf, extraArgs, id,
+	)
+	return err
+}
+
+// encodeCodecTx resolves the codec a job encodes to: its snapshot, else its
+// profile's, else the default.
+func (j *Jobs) encodeCodecTx(ctx context.Context, tx *sql.Tx, id int64) (string, error) {
+	var codec string
+	err := tx.QueryRowContext(ctx, `
+		SELECT COALESCE(NULLIF(j.encode_codec, ''), p.codec, '')
+		FROM transcode_jobs j
+		LEFT JOIN transcode_profiles p ON p.id = j.profile_id
+		WHERE j.id = ?`, id,
+	).Scan(&codec)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	return string(media.NormalizeTargetCodec(codec)), nil
+}
+
 func (j *Jobs) SetOutputPath(ctx context.Context, id int64, path string) error {
 	_, err := j.w.ExecContext(ctx,
 		"UPDATE transcode_jobs SET output_path = ? WHERE id = ?", path, id,
@@ -566,7 +602,7 @@ const jobQ = `
 		original_size_bytes, output_size_bytes, progress_percent, output_path,
 		error_message, verification_result, forced,
 		encode_preset, encode_crf, encode_extra_args,
-		predicted_savings_bytes, initial_estimated_duration_seconds
+		predicted_savings_bytes, initial_estimated_duration_seconds, encode_codec
 	FROM transcode_jobs`
 
 func scanJob(s rowScanner) (*TranscodeJob, error) {
@@ -576,7 +612,7 @@ func scanJob(s rowScanner) (*TranscodeJob, error) {
 		&j.StartedAt, &j.CompletedAt, &j.OriginalSizeBytes, &j.OutputSizeBytes,
 		&j.ProgressPercent, &j.OutputPath, &j.ErrorMessage, &j.VerificationResult,
 		&j.Forced, &j.EncodePreset, &j.EncodeCRF, &j.EncodeExtraArgs,
-		&j.PredictedSavingsBytes, &j.InitialEstimatedDurationSeconds,
+		&j.PredictedSavingsBytes, &j.InitialEstimatedDurationSeconds, &j.EncodeCodec,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -595,7 +631,7 @@ const jobWithPathQ = `
 		j.original_size_bytes, j.output_size_bytes, j.progress_percent, j.output_path,
 		j.error_message, j.verification_result, j.forced,
 		j.encode_preset, j.encode_crf, j.encode_extra_args,
-		j.predicted_savings_bytes, j.initial_estimated_duration_seconds,
+		j.predicted_savings_bytes, j.initial_estimated_duration_seconds, j.encode_codec,
 		m.path, m.duration_seconds, m.width, m.height
 	FROM transcode_jobs j
 	LEFT JOIN media_files m ON m.id = j.media_file_id`
@@ -614,16 +650,19 @@ const (
 	learnedRatioMax = 0.95
 )
 
-// LearnedRatio is the observed output/original size ratio for a source codec,
-// derived from completed jobs on this instance.
+// LearnedRatio is the observed output/original size ratio for a source codec
+// encoded to one target codec, derived from completed jobs on this instance.
 type LearnedRatio struct {
 	Ratio       float64
 	SampleCount int
 }
 
 // LearnedRatios computes the observed output/original ratio per source video
-// codec from the savings ledger. Only codecs with at least minSamples encodes
-// are returned. Results are clamped to [learnedRatioMin, learnedRatioMax].
+// codec, for encodes to target, from the savings ledger. Only codecs with at
+// least minSamples encodes are returned. Results are clamped to
+// [learnedRatioMin, learnedRatioMax]. Targets are never pooled: an h264 file
+// shrinks further under SVT-AV1 than under x265, so an HEVC ratio would
+// under-promise AV1 savings and an AV1 ratio would over-promise HEVC's.
 //
 // The ratio is byte-weighted (total output over total original) rather than a
 // mean of per-file ratios. Predictions are summed into the library's remaining
@@ -632,7 +671,7 @@ type LearnedRatio struct {
 // systematically under-predicts the total.
 //
 // This reads savings_ledger rather than joining transcode_jobs to media_files
-// because the swap rewrites video_codec to 'hevc', so the post-encode media row
+// because the swap rewrites video_codec to the target, so the post-encode media row
 // no longer knows what the source codec was. Rows backfilled from job history
 // predate the ledger and carry no source codec, so they never contribute.
 //
@@ -640,20 +679,21 @@ type LearnedRatio struct {
 // size ratio between a deleted release and the one downloaded to replace it
 // says nothing about what this encoder achieves at this CRF, and folding it in
 // would train the savings model on someone else's encode.
-func (j *Jobs) LearnedRatios(ctx context.Context, minSamples int) (map[string]LearnedRatio, error) {
+func (j *Jobs) LearnedRatios(ctx context.Context, target media.TargetCodec, minSamples int) (map[string]LearnedRatio, error) {
 	rows, err := j.r.QueryContext(ctx, `
 		SELECT LOWER(source_codec),
 		       COUNT(*),
 		       CAST(SUM(output_size_bytes) AS REAL) / CAST(SUM(original_size_bytes) AS REAL)
 		FROM savings_ledger
 		WHERE source = 'encode'
+		  AND LOWER(COALESCE(NULLIF(result_codec, ''), ?)) = ?
 		  AND source_codec IS NOT NULL
 		  AND source_codec != ''
 		  AND output_size_bytes > 0
 		  AND original_size_bytes > 0
 		GROUP BY LOWER(source_codec)
 		HAVING COUNT(*) >= ?`,
-		minSamples,
+		string(media.DefaultTargetCodec), string(target), minSamples,
 	)
 	if err != nil {
 		return nil, err
@@ -691,6 +731,7 @@ const (
 func (j *Jobs) LearnedEncodeRates(ctx context.Context) (*media.EncodeRateLookup, error) {
 	rows, err := j.r.QueryContext(ctx, `
 		SELECT j.profile_id,
+		       COALESCE(NULLIF(j.encode_codec, ''), p.codec, ''),
 		       COALESCE(j.encode_preset, p.preset),
 		       COALESCE(j.encode_crf, p.crf),
 		       j.started_at,
@@ -719,20 +760,11 @@ func (j *Jobs) LearnedEncodeRates(ctx context.Context) (*media.EncodeRateLookup,
 		count int
 	}
 
-	byProfile := make(map[int64]*bucket)
+	byProfile := make(map[string]*bucket)
 	byPresetCRF := make(map[string]*bucket)
 	byPreset := make(map[string]*bucket)
-	var global bucket
+	byCodec := make(map[string]*bucket)
 
-	add := func(m map[int64]*bucket, key int64, rate float64) {
-		b, ok := m[key]
-		if !ok {
-			b = &bucket{}
-			m[key] = b
-		}
-		b.sum += rate
-		b.count++
-	}
 	addStr := func(m map[string]*bucket, key string, rate float64) {
 		b, ok := m[key]
 		if !ok {
@@ -745,12 +777,12 @@ func (j *Jobs) LearnedEncodeRates(ctx context.Context) (*media.EncodeRateLookup,
 
 	for rows.Next() {
 		var profileID int64
-		var preset string
+		var rawCodec, preset string
 		var crf int
 		var startedAt, completedAt int64
 		var durationSeconds float64
 		var width, height sql.NullInt64
-		if err := rows.Scan(&profileID, &preset, &crf, &startedAt, &completedAt,
+		if err := rows.Scan(&profileID, &rawCodec, &preset, &crf, &startedAt, &completedAt,
 			&durationSeconds, &width, &height); err != nil {
 			return nil, err
 		}
@@ -768,11 +800,11 @@ func (j *Jobs) LearnedEncodeRates(ctx context.Context) (*media.EncodeRateLookup,
 		if !ok {
 			continue
 		}
-		add(byProfile, profileID, rate)
-		addStr(byPresetCRF, media.PresetCRFKey(preset, crf), rate)
-		addStr(byPreset, strings.ToLower(preset), rate)
-		global.sum += rate
-		global.count++
+		codec := media.NormalizeTargetCodec(rawCodec)
+		addStr(byProfile, media.ProfileRateKey(profileID, codec), rate)
+		addStr(byPresetCRF, media.PresetCRFKey(codec, preset, crf), rate)
+		addStr(byPreset, media.PresetKey(codec, preset), rate)
+		addStr(byCodec, string(codec), rate)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -789,13 +821,14 @@ func (j *Jobs) LearnedEncodeRates(ctx context.Context) (*media.EncodeRateLookup,
 	}
 
 	lookup := &media.EncodeRateLookup{
-		ByProfileID: make(map[int64]media.LearnedEncodeRate),
+		ByProfile:   make(map[string]media.LearnedEncodeRate),
 		ByPresetCRF: make(map[string]media.LearnedEncodeRate),
 		ByPreset:    make(map[string]media.LearnedEncodeRate),
+		ByCodec:     make(map[string]media.LearnedEncodeRate),
 	}
-	for id, b := range byProfile {
+	for key, b := range byProfile {
 		if lr, ok := toRate(b, LearnedEncodeProfileMinSamples); ok {
-			lookup.ByProfileID[id] = lr
+			lookup.ByProfile[key] = lr
 		}
 	}
 	for key, b := range byPresetCRF {
@@ -808,8 +841,10 @@ func (j *Jobs) LearnedEncodeRates(ctx context.Context) (*media.EncodeRateLookup,
 			lookup.ByPreset[key] = lr
 		}
 	}
-	if lr, ok := toRate(&global, LearnedEncodeGlobalMinSamples); ok {
-		lookup.Global = &lr
+	for key, b := range byCodec {
+		if lr, ok := toRate(b, LearnedEncodeGlobalMinSamples); ok {
+			lookup.ByCodec[key] = lr
+		}
 	}
 	return lookup, nil
 }
@@ -821,7 +856,7 @@ func scanJobWithPath(s rowScanner) (*TranscodeJob, error) {
 		&j.StartedAt, &j.CompletedAt, &j.OriginalSizeBytes, &j.OutputSizeBytes,
 		&j.ProgressPercent, &j.OutputPath, &j.ErrorMessage, &j.VerificationResult,
 		&j.Forced, &j.EncodePreset, &j.EncodeCRF, &j.EncodeExtraArgs,
-		&j.PredictedSavingsBytes, &j.InitialEstimatedDurationSeconds,
+		&j.PredictedSavingsBytes, &j.InitialEstimatedDurationSeconds, &j.EncodeCodec,
 		&j.SourcePath, &j.DurationSeconds, &j.Width, &j.Height,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

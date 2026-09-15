@@ -3,7 +3,7 @@ import type { CandidateState, MediaFile } from "@/lib/api";
 
 export const STATE_OPTIONS: { value: CandidateState; label: string }[] = [
   { value: "candidate", label: "Candidate" },
-  { value: "already_hevc", label: "Already HEVC" },
+  { value: "already_efficient", label: "Already efficient" },
   { value: "probe_failed", label: "Probe failed" },
   { value: "unknown_codec", label: "Unknown codec" },
   { value: "queued", label: "Queued" },
@@ -22,7 +22,7 @@ export function stateLabel(state: CandidateState): string {
 }
 
 const COMPACT_STATE_LABELS: Partial<Record<CandidateState, string>> = {
-  already_hevc: "HEVC",
+  already_efficient: "Efficient",
   probe_failed: "Failed",
   unknown_codec: "Unknown",
 };
@@ -30,8 +30,8 @@ const COMPACT_STATE_LABELS: Partial<Record<CandidateState, string>> = {
 /** queueBlockReason explains, in a few words, why a file cannot be queued. */
 export function queueBlockReason(file: MediaFile): string {
   switch (file.candidate_state) {
-    case "already_hevc":
-      return "Already HEVC";
+    case "already_efficient":
+      return "Already HEVC/AV1";
     case "probe_failed":
       return "Probe failed";
     case "unknown_codec":
@@ -61,7 +61,7 @@ export function StateBadge({
   const cls =
     state === "candidate"
       ? "text-brand border-brand-line bg-brand-soft"
-      : state === "already_hevc" || state === "completed"
+      : state === "already_efficient" || state === "completed"
         ? "text-green border-green-soft bg-green-soft"
         : state === "probe_failed"
           ? "text-red border-red/28 bg-red/9"

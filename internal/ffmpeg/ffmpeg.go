@@ -1,4 +1,4 @@
-// Package ffmpeg is the typed encode wrapper: it builds the libx265 command from
+// Package ffmpeg is the typed encode wrapper: it builds the encoder command from
 // a transcode profile, runs it to a temp file, parses live progress, and cancels
 // cleanly by killing the whole process group.
 package ffmpeg
@@ -13,15 +13,21 @@ import (
 	"time"
 )
 
-// Options describes one encode. CRF/preset come from the chosen profile, never
-// hardcoded. ExtraArgs is the profile's advanced-flag escape hatch and is
-// inserted verbatim after the stream-handling flags.
+// DefaultEncoder is the video encoder used when Options.Encoder is empty.
+const DefaultEncoder = "libx265"
+
+// Options describes one encode. Encoder/CRF/preset come from the chosen
+// profile, never hardcoded. ExtraArgs is the profile's advanced-flag escape
+// hatch and is inserted verbatim after the stream-handling flags.
 type Options struct {
 	InputPath  string
 	OutputPath string
-	CRF        int
-	Preset     string
-	ExtraArgs  []string
+	// Encoder is the ffmpeg video encoder name, e.g. "libx265" or "libsvtav1".
+	// Both accept -crf and -preset, so only the encoder name varies.
+	Encoder   string
+	CRF       int
+	Preset    string
+	ExtraArgs []string
 	// DurationSeconds is the known source duration from the probe, used to turn
 	// ffmpeg's out_time into a percent. Zero means "unknown" → no percent emitted.
 	DurationSeconds float64
@@ -42,12 +48,16 @@ func (e *EncodeError) Error() string {
 
 // encodeArgs builds the ffmpeg argv for one encode.
 func encodeArgs(opts Options) []string {
+	encoder := opts.Encoder
+	if encoder == "" {
+		encoder = DefaultEncoder
+	}
 	args := []string{
 		"-nostdin",
 		"-y",
 		"-i", opts.InputPath,
 		"-map", "0",
-		"-c:v", "libx265",
+		"-c:v", encoder,
 		"-crf", strconv.Itoa(opts.CRF),
 		"-preset", opts.Preset,
 		"-c:a", "copy",
@@ -58,7 +68,7 @@ func encodeArgs(opts Options) []string {
 	return args
 }
 
-// Encode runs libx265 against opts.InputPath, writing to opts.OutputPath. Video
+// Encode runs opts.Encoder against opts.InputPath, writing to opts.OutputPath. Video
 // is re-encoded; audio and subtitles are copied untouched so nothing is
 // silently dropped on remux. Progress is parsed from `-progress pipe:1` and
 // reported via onProgress (may be nil). Cancelling ctx kills the whole ffmpeg

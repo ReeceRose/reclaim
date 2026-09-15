@@ -14,6 +14,7 @@ import (
 	"github.com/labstack/echo/v5/middleware"
 
 	"reclaim/internal/config"
+	"reclaim/internal/media"
 	"reclaim/internal/store"
 )
 
@@ -66,6 +67,10 @@ type Deps struct {
 	MetadataFetcher MetadataFetcher
 	Notifier        TestNotifier
 
+	// Encoders reports which target codecs the host ffmpeg can encode to. Nil
+	// treats every codec as available, which is what API-only tests want.
+	Encoders map[media.TargetCodec]bool
+
 	// StaticFS is the embedded frontend (Next.js static export). When nil, no
 	// static routes are mounted — handy for API-only tests.
 	StaticFS fs.FS
@@ -90,6 +95,7 @@ type Server struct {
 	canceller    JobCanceller
 	metaFetcher  MetadataFetcher
 	notifier     TestNotifier
+	encoders     map[media.TargetCodec]bool
 }
 
 func New(d Deps) *Server {
@@ -106,6 +112,7 @@ func New(d Deps) *Server {
 		loginLimiter: newRateLimiter(),
 		metaFetcher:  d.MetadataFetcher,
 		notifier:     d.Notifier,
+		encoders:     d.Encoders,
 	}
 	if d.Store != nil {
 		s.auth = d.Store.Settings
@@ -187,6 +194,7 @@ func (s *Server) Handler() http.Handler {
 	api.POST("/profiles", s.handleCreateProfile)
 	api.PUT("/profiles/:id", s.handleUpdateProfile)
 	api.DELETE("/profiles/:id", s.handleDeleteProfile)
+	api.GET("/encoders", s.handleListEncoders)
 
 	// Jobs.
 	api.POST("/jobs", s.handleCreateJobs)

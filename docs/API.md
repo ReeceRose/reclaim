@@ -103,14 +103,15 @@ as `null`.
 
 `id, path, library_type, size_bytes, mtime, video_codec, video_codec_profile,
 width, height, duration_seconds, bitrate_kbps, audio_codec, audio_channels,
-container_format, is_already_hevc, predicted_savings_bytes, oversize_ratio,
+container_format, is_efficient_codec, predicted_savings_bytes, oversize_ratio,
 is_oversized, last_probed_at, probe_error, status, candidate_state, poster_path,
 backdrop_path`
 
 | Field | Notes |
 |---|---|
 | `status` | `active` or `missing` (soft-deleted when the path disappears) |
-| `candidate_state` | Why a file can or can't be queued: `candidate`, `already_hevc`, `probe_failed`, `unknown_codec`, `queued`, `completed`, `missing` |
+| `is_efficient_codec` | `true` when the file is already HEVC, AV1, or VVC. Such files are never re-encode candidates, whatever the profile's target codec: moving between efficient codecs costs a generation of quality for little or negative size change |
+| `candidate_state` | Why a file can or can't be queued: `candidate`, `already_efficient`, `probe_failed`, `unknown_codec`, `queued`, `completed`, `missing` |
 | `oversize_ratio` | How many times larger the file's bitrate is than a well-encoded file of the same codec and resolution — `actual_bitrate / expected_bitrate`. Codec-aware (efficient codecs get a tighter ceiling), so it flags bloat in any codec, HEVC included. `0` when not computable (missing duration/size or unknown resolution) |
 | `is_oversized` | `true` when `oversize_ratio` meets or exceeds the live `oversize_threshold` setting |
 | `poster_path`, `backdrop_path` | TMDB image paths (e.g. `/abc123.jpg`); prefix with `https://image.tmdb.org/t/p/<size>`. Populated on grouped TV/movie views and `GET /api/files/:id` when TMDB is configured. Movie list pages also attach posters when configured. |
@@ -129,6 +130,7 @@ Precomputed library overview (O(buckets), not O(files)).
 
 ```json
 {
+  "savings_target_codec": "hevc",
   "total_files": 1234,
   "total_bytes": 9876543210,
   "total_recoverable_bytes": 3210000000,
@@ -163,11 +165,17 @@ Precomputed library overview (O(buckets), not O(files)).
 }
 ```
 
+`savings_target_codec` is the codec every `predicted_savings_bytes` figure is
+priced against — the default profile's codec (`hevc` or `av1`). Changing the
+default profile, or its codec, reprices the whole library.
+
 `ratio_source` on each `by_codec` entry is `seed` (shipped rule-of-thumb per
-codec) or `learned` (byte-weighted output/original ratio from completed encodes
-on this instance, after ≥10 samples per codec). A learned ratio applies to every
-file of that codec, including files indexed later; predictions are repriced at
-boot and after each completed encode.
+source and target codec) or `learned` (byte-weighted output/original ratio from
+completed encodes to the target codec on this instance, after ≥10 samples per
+source codec). HEVC and AV1 encodes never share a learned ratio. A learned
+ratio applies to every file of that codec, including files indexed later;
+predictions are repriced at boot, after each completed encode, and after any
+profile change.
 
 The `savings` block reports *realized* savings — measured from completed
 encodes — as opposed to the `predicted_savings_bytes` figures elsewhere in the
@@ -212,6 +220,12 @@ merged — see the `replacements` block below.
     { "key": "unknown", "files_encoded": 2, "original_bytes": 60000000000,
       "output_bytes": 60000000000, "bytes_saved": 0, "compression_ratio": 1.0 }
   ],
+  "by_target_codec": [
+    { "key": "hevc", "files_encoded": 38, "original_bytes": 760000000000,
+      "output_bytes": 440000000000, "bytes_saved": 320000000000, "compression_ratio": 0.579 },
+    { "key": "av1", "files_encoded": 9, "original_bytes": 220000000000,
+      "output_bytes": 128000000000, "bytes_saved": 92000000000, "compression_ratio": 0.582 }
+  ],
   "by_library": [
     { "key": "movies", "files_encoded": 22, "original_bytes": 600000000000,
       "output_bytes": 350000000000, "bytes_saved": 250000000000, "compression_ratio": 0.583 }
@@ -226,7 +240,8 @@ merged — see the `replacements` block below.
   ],
   "top_wins": [
     { "job_id": 91, "media_file_id": 412, "path": "/movies/Dune (2021)/Dune (2021).mkv",
-      "library_type": "movies", "source_codec": "h264", "width": 3840, "height": 2160,
+      "library_type": "movies", "source_codec": "h264", "result_codec": "hevc",
+      "width": 3840, "height": 2160,
       "original_size_bytes": 48000000000, "output_size_bytes": 24000000000,
       "bytes_saved": 24000000000, "encode_seconds": 7200, "completed_at": 1756252800 }
   ],
@@ -267,8 +282,10 @@ UTC, so the series lines up with the clock the UI renders. Days with no
 encodes are omitted rather than zero-filled.
 
 `source_codec` is captured *before* the encode swaps the file, because the
-swap rewrites `media_files.video_codec` to `hevc` and destroys the original
-value. Rows backfilled from pre-existing job history when the ledger migration
+swap rewrites `media_files.video_codec` to the target codec and destroys the
+original value. `result_codec` is the codec the job encoded to; `by_target_codec`
+groups on it. Encodes that predate AV1 support are recorded as `hevc`, which is
+the only codec they could have produced. Rows backfilled from pre-existing job history when the ledger migration
 first ran carry a null `source_codec` for that reason — it is genuinely
 unrecoverable once the swap has happened, and the migration records null rather
 than guessing.
@@ -280,8 +297,8 @@ which needs a known source codec to be meaningful.
 
 #### Replacements
 
-`summary`, `by_codec`, `by_library`, `by_resolution`, `top_wins`, and `recent`
-are **encode-only**; everything about a replacement lives under `replacements`.
+`summary`, `by_codec`, `by_target_codec`, `by_library`, `by_resolution`,
+`top_wins`, and `recent` are **encode-only**; everything about a replacement lives under `replacements`.
 Lifetime reclaimed storage is therefore `summary.bytes_saved +
 replacements.summary.bytes_delta`, which is what the Insights headline renders.
 
@@ -310,8 +327,10 @@ Ledger rows outlive their media file: pruning a missing file deletes its
 shrink retroactively.
 
 ### `GET /api/candidates`
-One page of ranked re-encode candidates. Excludes files that are already HEVC,
-`missing`, failed to probe, or already queued/completed.
+One page of ranked re-encode candidates. Excludes files that are already in an
+efficient codec (HEVC, AV1, VVC), `missing`, failed to probe, or already
+queued/completed. Ranked by `predicted_savings_bytes`, priced against
+`savings_target_codec`.
 
 **Query params**
 
@@ -348,7 +367,7 @@ the page is full (`len(items) == limit`). Walk pages until `items` is shorter
 than `limit`.
 
 ### `GET /api/files`
-One page of all scanned files (the Library view). Includes already-HEVC, missing,
+One page of all scanned files (the Library view). Includes already-efficient, missing,
 probe-failed, queued, and completed files — each with a `candidate_state` explaining
 eligibility.
 
@@ -362,15 +381,15 @@ eligibility.
 | `height` | resolution bucket filter (same values as `/api/candidates`) |
 | `search` | path substring filter |
 | `status` | `active` or `missing` |
-| `candidate_state` | `candidate`, `already_hevc`, `probe_failed`, `unknown_codec`, `queued`, `completed`, `missing` |
-| `oversized` | `true` → only files flagged oversized (`oversize_ratio ≥` the live `oversize_threshold`), any codec including HEVC |
+| `candidate_state` | `candidate`, `already_efficient`, `probe_failed`, `unknown_codec`, `queued`, `completed`, `missing`. The pre-AV1 name `already_hevc` is still accepted as an alias for `already_efficient` |
+| `oversized` | `true` → only files flagged oversized (`oversize_ratio ≥` the live `oversize_threshold`), any codec including HEVC and AV1 |
 | `limit` | page size (default 50, max 200) |
 | `offset` | page offset |
 
 **Response**
 ```json
 {
-  "items": [ { "id": 5, "path": "/media/movies/a.mkv", "candidate_state": "already_hevc", "...": "..." } ],
+  "items": [ { "id": 5, "path": "/media/movies/a.mkv", "candidate_state": "already_efficient", "...": "..." } ],
   "total_count": 1234
 }
 ```
@@ -392,19 +411,20 @@ value is a `400`.
 
 | Value | Keeps series where |
 |---|---|
-| `converted` | `eligible_count = 0` and `missing_count = 0` — the "All converted" badge |
-| `partial` | some files are done and some are still eligible |
-| `unconverted` | every non-missing file is still eligible |
+| `converted` | `eligible_count = 0`, `queued_count = 0`, and `missing_count = 0` — the "All converted" badge |
+| `partial` | some files are done and some are still eligible or queued |
+| `unconverted` | every non-missing file is still eligible or queued |
 | `missing` | `missing_count > 0` |
 
-"Eligible" is the same gate the savings totals use: active, non-HEVC, probeable,
-known codec, and not already queued/running/verifying/completed.
+"Eligible" is the same gate the savings totals use: active, not already HEVC/AV1, probeable,
+known codec, and not already queued/running/verifying/completed. `queued_count`
+is active files with a `queued`, `running`, or `verifying` job.
 
 ```json
 {
   "series": [
     { "title": "Breaking Bad", "library_type": "tv", "file_count": 12,
-      "eligible_count": 8, "missing_count": 0, "season_count": 2, "total_bytes": 50000000000,
+      "eligible_count": 8, "queued_count": 0, "missing_count": 0, "season_count": 2, "total_bytes": 50000000000,
       "predicted_savings_bytes": 15000000000,
       "poster_path": "/abc123.jpg", "backdrop_path": null }
   ],
@@ -422,7 +442,7 @@ Season breakdown for one TV series.
 ```json
 {
   "seasons": [
-    { "season": 1, "file_count": 6, "eligible_count": 4, "missing_count": 0,
+    { "season": 1, "file_count": 6, "eligible_count": 4, "queued_count": 0, "missing_count": 0,
       "total_bytes": 25000000000, "predicted_savings_bytes": 7000000000,
       "episode_ids": [1, 2, 3, 4, 5, 6] }
   ]
@@ -437,7 +457,7 @@ of library size.
 **Query params:** `sort` (`size_desc` default | `savings_desc`), `search`
 (series-title substring), `progress` (same four values as
 `/api/files/grouped`, applied per season instead of per series), `limit`
-(default 50, max 200), `offset`. `savings_desc` counts only eligible (non-HEVC,
+(default 50, max 200), `offset`. `savings_desc` counts only eligible (not HEVC/AV1,
 probeable, not already queued/done) episodes, matching the per-series season
 breakdown.
 
@@ -445,7 +465,7 @@ breakdown.
 {
   "seasons": [
     { "series_title": "Breaking Bad", "season": 3, "file_count": 6,
-      "eligible_count": 4, "missing_count": 0, "total_bytes": 51000000000,
+      "eligible_count": 4, "queued_count": 0, "missing_count": 0, "total_bytes": 51000000000,
       "predicted_savings_bytes": 14000000000, "poster_path": "/abc.jpg" }
   ],
   "total_count": 42
@@ -494,25 +514,62 @@ Re-probes a caller-specified set of files (a single file, a season's episodes, o
 
 ## Transcode profiles (CRUD)
 
-A profile object: `{ "id", "name", "crf", "preset", "extra_args", "is_default" }`.
+A profile object: `{ "id", "name", "codec", "crf", "preset", "extra_args", "is_default" }`.
+
+`codec` is the target the profile encodes to, and it decides the encoder and
+the vocabulary `crf` and `preset` are validated against:
+
+| `codec` | Encoder | `crf` | `preset` | Defaults |
+|---|---|---|---|---|
+| `hevc` | `libx265` | 0–51 | `ultrafast` … `veryslow`, `placebo` | CRF 26, `medium` |
+| `av1` | `libsvtav1` | 0–63 | `0` (slowest) … `13` (fastest) | CRF 30, `6` |
+
+The default profile's `codec` is `savings_target_codec` — what every predicted
+savings figure is priced against — so creating, updating, or deleting a profile
+reprices the library.
 
 ### `GET /api/profiles`
 ```json
-{ "items": [ { "id": 1, "name": "Space Saver", "crf": 26, "preset": "medium",
+{ "items": [ { "id": 1, "name": "Space Saver", "codec": "hevc", "crf": 26, "preset": "medium",
                "extra_args": null, "is_default": true } ] }
 ```
 
 ### `POST /api/profiles`
-**Body:** `{ "name", "crf" (0–51), "preset", "extra_args"?, "is_default"? }`
+**Body:** `{ "name", "codec"?, "crf", "preset", "extra_args"?, "is_default"? }`
+
+`codec` defaults to `hevc` when omitted, so pre-AV1 clients keep working.
 - `201` → created profile
-- `400` → validation error
+- `400` → validation error: unknown codec, `crf` outside the codec's range, a
+  `preset` the codec's encoder doesn't accept, or a codec whose encoder this
+  host's ffmpeg was not built with
 
 ### `PUT /api/profiles/:id`
-Same body as create.
+Same body and validation as create.
 - `200` → updated profile · `404` → not found · `400` → validation error
 
 ### `DELETE /api/profiles/:id`
 `204 No Content`.
+
+### `GET /api/encoders`
+Every target codec a profile can encode to, whether this host can run it, and
+its CRF/preset vocabulary. Availability is detected once at boot from
+`ffmpeg -encoders`; a distro ffmpeg may ship `libx265` without `libsvtav1`.
+
+```json
+{
+  "items": [
+    { "codec": "hevc", "label": "HEVC", "encoder": "libx265", "available": true,
+      "crf_min": 0, "crf_max": 51, "default_crf": 26,
+      "presets": ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow", "placebo"],
+      "default_preset": "medium" },
+    { "codec": "av1", "label": "AV1", "encoder": "libsvtav1", "available": true,
+      "crf_min": 0, "crf_max": 63, "default_crf": 30,
+      "presets": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"],
+      "default_preset": "6" }
+  ],
+  "savings_target_codec": "hevc"
+}
+```
 
 ---
 
@@ -525,7 +582,7 @@ A job object:
 id, media_file_id, profile_id, status, queued_at, started_at, completed_at,
 original_size_bytes, output_size_bytes, progress_percent, output_path,
 error_message, verification_result, source_path, queue_position, forced,
-encode_preset, encode_crf, encode_extra_args,
+encode_codec, encode_preset, encode_crf, encode_extra_args,
 estimated_duration_seconds, encode_duration_seconds,
 estimate_source, estimate_sample_count, predicted_savings_bytes
 ```
@@ -534,19 +591,19 @@ estimate_source, estimate_sample_count, predicted_savings_bytes
 |---|---|
 | `queue_position` | 1-based for `queued` jobs, `0` otherwise |
 | `forced` | `true` when the job was marked to bypass the encode window |
-| `encode_preset`, `encode_crf`, `encode_extra_args` | Snapshot of the profile settings at queue time. The worker still reads the **live** profile when encoding, but learning and history display use these columns |
+| `encode_codec`, `encode_preset`, `encode_crf`, `encode_extra_args` | Snapshot of the profile settings at queue time. The worker encodes with the **live** profile and restamps these columns with what it actually ran when it claims the job, so learning, the savings ledger, and history reflect the real encode even if the profile was edited in between |
 | `estimated_duration_seconds` | Wall-clock encode estimate in seconds. For `queued`/`running` jobs this is a live, continuously-refreshed prediction. For `completed` jobs this is the frozen queue-time snapshot (`null` for jobs queued before this snapshot was introduced) |
 | `encode_duration_seconds` | Actual wall-clock encode time (`completed_at − started_at`). Populated for `completed` jobs only |
-| `estimate_source` | Where `estimated_duration_seconds` came from: `seed`, `learned_profile`, `learned_preset_crf`, `learned_preset`, or `learned_global`. Only set for `queued`/`running` jobs |
+| `estimate_source` | Where `estimated_duration_seconds` came from: `seed`, `learned_profile`, `learned_preset_crf`, `learned_preset`, or `learned_global` (every completed encode to the same codec). Every tier is scoped to the job's `encode_codec` — x265 timings never estimate an SVT-AV1 job. Only set for `queued`/`running` jobs |
 | `estimate_sample_count` | Number of completed jobs in the bucket that produced the estimate. Omitted for `seed` |
-| `predicted_savings_bytes` | Queue-time prediction of bytes reclaimed, snapshotted so history can compare it against the actual outcome even after the source file has since become HEVC. `null` for jobs queued before this snapshot was introduced |
+| `predicted_savings_bytes` | Queue-time prediction of bytes reclaimed, snapshotted so history can compare it against the actual outcome even after the source file has since been re-encoded. Priced against the queuing profile's codec, which may differ from `savings_target_codec`. `null` for jobs queued before this snapshot was introduced |
 
-**Encode time estimates** are computed at read time from this instance's completed jobs, bucketed by profile first with fallbacks (preset+CRF → preset → global → conservative seed rates per preset). See [`docs/ENCODE-TIME-PLAN.md`](ENCODE-TIME-PLAN.md) for the rate model. Estimates require probed `duration_seconds` on the media file; without duration, no estimate is returned.
+**Encode time estimates** are computed at read time from this instance's completed jobs, bucketed by profile first with fallbacks (preset+CRF → preset → codec-wide → conservative seed rates per codec and preset), every tier scoped to the target codec. See [`docs/ENCODE-TIME-PLAN.md`](ENCODE-TIME-PLAN.md) for the rate model. Estimates require probed `duration_seconds` on the media file; without duration, no estimate is returned.
 
 ### `POST /api/jobs`
 Enqueues one job per eligible file and **echoes the resolved selection** so the
 UI can show an honest confirm step (§9.1). Each created job stores a snapshot
-of the resolved profile's `preset`, `crf`, and `extra_args` on the job row.
+of the resolved profile's `codec`, `preset`, `crf`, and `extra_args` on the job row.
 
 **Body**
 ```json
@@ -559,12 +616,13 @@ of the resolved profile's `preset`, `crf`, and `extra_args` on the job row.
 {
   "profile": { "id": 1, "name": "Space Saver", "...": "..." },
   "queued":  [ { "job_id": 10, "media_file_id": 5, "path": "/media/movies/a.mkv" } ],
-  "skipped": [ { "media_file_id": 6, "reason": "file is already HEVC" } ]
+  "skipped": [ { "media_file_id": 6, "reason": "file is already in an efficient codec" } ]
 }
 ```
-Skip reasons: `file not found`, `file is not active`, `file is already HEVC`,
-`file already has an active or completed job`.
-- `400` → empty `file_ids`, unknown `profile_id`, or no default profile when omitted.
+Skip reasons: `file not found`, `file is not active`, `file is already in an
+efficient codec`, `file already has an active or completed job`.
+- `400` → empty `file_ids`, unknown `profile_id`, no default profile when
+  omitted, or a profile whose encoder this host's ffmpeg was not built with.
 
 ### `GET /api/jobs`
 One page of jobs, optionally filtered by status.
@@ -760,7 +818,7 @@ reported by `GET /api/settings`. Writes a `missing_pruned` event when anything w
 ## Notifications
 
 Reclaim announces newly-indexed **re-encode candidates** — any newly-added active file that
-isn't already HEVC.
+isn't already HEVC or AV1.
 
 **When** — arrivals are collected until nothing new has landed for `notify_delay_seconds`
 (default 900), or until 4× that if files keep trickling in. The quiet period is library-wide.

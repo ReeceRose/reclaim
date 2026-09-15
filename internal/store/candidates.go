@@ -141,7 +141,7 @@ func (m *Media) Candidates(ctx context.Context, q CandidateQuery) ([]MediaFile, 
 	var (
 		where = []string{
 			"status = 'active'",
-			"is_already_hevc = 0",
+			"is_efficient_codec = 0",
 			"probe_error IS NULL",
 			"video_codec IS NOT NULL",
 			jobExclusionSQL,
@@ -195,7 +195,7 @@ func (m *Media) Candidates(ctx context.Context, q CandidateQuery) ([]MediaFile, 
 func (m *Media) CountCandidates(ctx context.Context, filter CandidateFilter) (int64, error) {
 	where := []string{
 		"status = 'active'",
-		"is_already_hevc = 0",
+		"is_efficient_codec = 0",
 		"probe_error IS NULL",
 		"video_codec IS NOT NULL",
 		jobExclusionSQL,
@@ -226,7 +226,7 @@ func (m *Media) CandidatesUnderPathPrefix(ctx context.Context, filter CandidateF
 
 	where := []string{
 		"status = 'active'",
-		"is_already_hevc = 0",
+		"is_efficient_codec = 0",
 		"probe_error IS NULL",
 		"video_codec IS NOT NULL",
 		jobExclusionSQL,
@@ -264,7 +264,7 @@ func (m *Media) CandidatesUnderPathPrefix(ctx context.Context, filter CandidateF
 func (m *Media) CountCandidatesUnderPathPrefix(ctx context.Context, filter CandidateFilter, prefix string) (int64, error) {
 	where := []string{
 		"status = 'active'",
-		"is_already_hevc = 0",
+		"is_efficient_codec = 0",
 		"probe_error IS NULL",
 		"video_codec IS NOT NULL",
 		jobExclusionSQL,
@@ -292,7 +292,7 @@ func (m *Media) CountCandidatesUnderPathPrefix(ctx context.Context, filter Candi
 func (m *Media) AllCandidates(ctx context.Context, filter CandidateFilter) ([]MediaFile, error) {
 	where := []string{
 		"status = 'active'",
-		"is_already_hevc = 0",
+		"is_efficient_codec = 0",
 		"probe_error IS NULL",
 		"video_codec IS NOT NULL",
 		jobExclusionSQL,
@@ -350,7 +350,7 @@ func (m *Media) CandidatesByID(ctx context.Context, ids []int64) ([]MediaFile, e
 		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(chunk)), ",")
 
 		query := mediaQ + ` WHERE status = 'active'
-			AND is_already_hevc = 0
+			AND is_efficient_codec = 0
 			AND probe_error IS NULL
 			AND video_codec IS NOT NULL
 			AND ` + jobExclusionSQL + `

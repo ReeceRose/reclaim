@@ -104,8 +104,8 @@ func TestSupersede_transfersJobsAndLeavesStatsConsistent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if survivor.SizeBytes != 350 || !survivor.IsAlreadyHEVC {
-		t.Errorf("survivor = %d bytes hevc=%v, want its own probe data (350, true)", survivor.SizeBytes, survivor.IsAlreadyHEVC)
+	if survivor.SizeBytes != 350 || !survivor.IsEfficientCodec {
+		t.Errorf("survivor = %d bytes hevc=%v, want its own probe data (350, true)", survivor.SizeBytes, survivor.IsEfficientCodec)
 	}
 
 	var jobs int

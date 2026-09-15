@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"reclaim/internal/media"
 )
 
 func insertCompletedEncodeJob(t *testing.T, st *Store, profileID int64, preset string, crf int, startedAt, completedAt int64, duration float64, width, height int) int64 {
@@ -111,7 +113,7 @@ func TestLearnedEncodeRates_profileBucket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LearnedEncodeRates: %v", err)
 	}
-	lr, ok := lookup.ByProfileID[profile.ID]
+	lr, ok := lookup.ByProfile[media.ProfileRateKey(profile.ID, media.TargetHEVC)]
 	if !ok {
 		t.Fatal("expected profile bucket after 3 samples")
 	}
@@ -140,7 +142,7 @@ func TestLearnedEncodeRates_profileNeedsThreeSamples(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LearnedEncodeRates: %v", err)
 	}
-	if _, ok := lookup.ByProfileID[profile.ID]; ok {
+	if _, ok := lookup.ByProfile[media.ProfileRateKey(profile.ID, media.TargetHEVC)]; ok {
 		t.Fatal("profile bucket should be absent with only 2 samples")
 	}
 }
@@ -165,7 +167,7 @@ func TestLearnedEncodeRates_excludesOutlier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LearnedEncodeRates: %v", err)
 	}
-	lr := lookup.ByProfileID[profile.ID]
+	lr := lookup.ByProfile[media.ProfileRateKey(profile.ID, media.TargetHEVC)]
 	if lr.SampleCount != 3 {
 		t.Fatalf("sample count = %d, want 3 (outlier excluded)", lr.SampleCount)
 	}

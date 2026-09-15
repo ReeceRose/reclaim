@@ -817,7 +817,16 @@ function InsightsContent() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-5 mb-5 max-sm:grid-cols-1">
+      <div
+        className={`grid gap-5 mb-5 ${report.by_target_codec.length > 1 ? "grid-cols-3 max-lg:grid-cols-1" : "grid-cols-2 max-sm:grid-cols-1"}`}
+      >
+        {report.by_target_codec.length > 1 && (
+          <BucketBars
+            buckets={report.by_target_codec}
+            label="Reclaimed by output codec"
+            colorFor={codecCSSColor}
+          />
+        )}
         <BucketBars
           buckets={report.by_codec}
           label="Reclaimed by source codec"
@@ -869,6 +878,20 @@ function InsightsContent() {
                   >
                     {w.source_codec}
                   </Badge>
+                )}
+                {w.result_codec && (
+                  <>
+                    <span className="text-muted-dim text-xs">→</span>
+                    <Badge
+                      className={`font-mono text-xs rounded-lg font-semibold ${CODEC_COLORS[w.result_codec] ?? "text-slate"}`}
+                      style={{
+                        borderColor: `color-mix(in srgb, ${codecCSSColor(w.result_codec)} 30%, transparent)`,
+                        background: `color-mix(in srgb, ${codecCSSColor(w.result_codec)} 10%, transparent)`,
+                      }}
+                    >
+                      {w.result_codec}
+                    </Badge>
+                  </>
                 )}
                 <div className="text-sm font-semibold text-brand tnum shrink-0">
                   −{formatBytes(w.bytes_saved)}

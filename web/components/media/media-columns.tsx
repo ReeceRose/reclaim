@@ -254,7 +254,8 @@ const BASE: Record<MediaColumnId, BaseColumn> = {
       }
       return `${formatInt(item.predicted_savings_bytes)} bytes predicted · ${formatPct(item.predicted_savings_bytes, item.size_bytes)} of the file`;
     },
-    description: "Bytes a HEVC re-encode is predicted to reclaim",
+    description:
+      "Bytes a re-encode with the default profile is predicted to reclaim",
   },
 };
 

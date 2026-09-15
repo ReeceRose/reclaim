@@ -173,7 +173,10 @@ export function TvShowPageContent() {
   }
 
   const activeCount = showData.file_count - showData.missing_count;
-  const convertedCount = Math.max(0, activeCount - showData.eligible_count);
+  const convertedCount = Math.max(
+    0,
+    activeCount - showData.eligible_count - showData.queued_count,
+  );
   const donePct =
     activeCount > 0 ? Math.round((convertedCount / activeCount) * 100) : 0;
 
@@ -381,11 +384,20 @@ export function TvShowPageContent() {
             <EncodeHealthBar
               fileCount={showData.file_count}
               eligibleCount={showData.eligible_count}
+              queuedCount={showData.queued_count}
               missingCount={showData.missing_count}
             />
             <div className="flex justify-between text-xs text-muted-dim mt-1">
               <span>
                 {formatInt(convertedCount)} converted · {donePct}%
+                {showData.queued_count > 0 && (
+                  <>
+                    {" · "}
+                    <span className="text-sky">
+                      {formatInt(showData.queued_count)} queued
+                    </span>
+                  </>
+                )}
               </span>
               <span>
                 {showData.missing_count > 0 &&

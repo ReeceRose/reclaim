@@ -21,9 +21,9 @@ func mockProbe(_ context.Context, path string) (*ffprobe.Result, error) {
 	codec := "h264"
 	dur := 100.0
 	return &ffprobe.Result{
-		VideoCodec:      &codec,
-		DurationSeconds: &dur,
-		IsAlreadyHEVC:   false,
+		VideoCodec:       &codec,
+		DurationSeconds:  &dur,
+		IsEfficientCodec: false,
 	}, nil
 }
 

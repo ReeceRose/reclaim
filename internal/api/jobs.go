@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"sort"
@@ -51,6 +52,15 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 	if err != nil {
 		return serverError(c, err)
 	}
+	target := media.NormalizeTargetCodec(profile.Codec)
+	enc, ok := media.EncoderFor(target)
+	if !ok {
+		return badRequest(c, fmt.Sprintf("profile %q has an unsupported codec %q", profile.Name, profile.Codec))
+	}
+	if !s.encoderAvailable(target) {
+		return badRequest(c, encoderUnavailableMsg(enc))
+	}
+	encodeCodec := string(target)
 
 	type queuedItem struct {
 		JobID       int64  `json:"job_id"`
@@ -84,8 +94,8 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 			skipped = append(skipped, skippedItem{fid, "file is not active"})
 			continue
 		}
-		if f.IsAlreadyHEVC {
-			skipped = append(skipped, skippedItem{fid, "file is already HEVC"})
+		if f.IsEfficientCodec {
+			skipped = append(skipped, skippedItem{fid, "file is already in an efficient codec"})
 			continue
 		}
 		blocked, err := s.store.Jobs.HasBlockingJob(ctx, fid)
@@ -97,8 +107,8 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 			continue
 		}
 
-		predictedSavings := f.PredictedSavingsBytes
-		rate, _, _ := media.ResolveEncodeRate(profile.ID, profile.Preset, profile.CRF, rateLookup)
+		predictedSavings := s.store.SavingsModel.PredictFor(target, f.VideoCodec, f.IsEfficientCodec, f.SizeBytes)
+		rate, _, _ := media.ResolveEncodeRate(profile.ID, target, profile.Preset, profile.CRF, rateLookup)
 		var initialEstimate *int64
 		if est := media.PredictedEncodeSeconds(rate, f.DurationSeconds, f.Width, f.Height); est > 0 {
 			initialEstimate = &est
@@ -110,6 +120,7 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 			Status:                          string(ijobs.StatusQueued),
 			QueuedAt:                        now,
 			OriginalSizeBytes:               f.SizeBytes,
+			EncodeCodec:                     &encodeCodec,
 			EncodePreset:                    &profile.Preset,
 			EncodeCRF:                       &profile.CRF,
 			EncodeExtraArgs:                 profile.ExtraArgs,

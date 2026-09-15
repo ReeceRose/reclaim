@@ -26,11 +26,11 @@ func TestParse(t *testing.T) {
 				AudioCodec:        ptr("aac"),
 				AudioChannels:     ptr(2),
 				ContainerFormat:   ptr("mov,mp4,m4a,3gp,3g2,mj2"),
-				IsAlreadyHEVC:     false,
+				IsEfficientCodec:  false,
 			},
 		},
 		{
-			name:    "hevc mkv — is_already_hevc true",
+			name:    "hevc mkv — is_efficient_codec true",
 			fixture: "testdata/hevc_mkv.json",
 			want: Result{
 				VideoCodec:        ptr("hevc"),
@@ -42,7 +42,7 @@ func TestParse(t *testing.T) {
 				AudioCodec:        ptr("dts"),
 				AudioChannels:     ptr(6),
 				ContainerFormat:   ptr("matroska,webm"),
-				IsAlreadyHEVC:     true,
+				IsEfficientCodec:  true,
 			},
 		},
 		{
@@ -58,7 +58,7 @@ func TestParse(t *testing.T) {
 				AudioCodec:        ptr("mp2"),
 				AudioChannels:     ptr(2),
 				ContainerFormat:   ptr("mpeg"),
-				IsAlreadyHEVC:     false,
+				IsEfficientCodec:  false,
 			},
 		},
 		{
@@ -74,7 +74,7 @@ func TestParse(t *testing.T) {
 				AudioCodec:        nil,
 				AudioChannels:     nil,
 				ContainerFormat:   ptr("mov,mp4,m4a,3gp,3g2,mj2"),
-				IsAlreadyHEVC:     false,
+				IsEfficientCodec:  false,
 			},
 		},
 		{
@@ -90,7 +90,7 @@ func TestParse(t *testing.T) {
 				AudioCodec:        nil,
 				AudioChannels:     nil,
 				ContainerFormat:   ptr("mov,mp4,m4a,3gp,3g2,mj2"),
-				IsAlreadyHEVC:     false,
+				IsEfficientCodec:  false,
 			},
 		},
 	}
@@ -144,8 +144,8 @@ func assertResult(t *testing.T, got, want *Result) {
 	assertPtrString(t, "AudioCodec", got.AudioCodec, want.AudioCodec)
 	assertPtrInt(t, "AudioChannels", got.AudioChannels, want.AudioChannels)
 	assertPtrString(t, "ContainerFormat", got.ContainerFormat, want.ContainerFormat)
-	if got.IsAlreadyHEVC != want.IsAlreadyHEVC {
-		t.Errorf("IsAlreadyHEVC = %v, want %v", got.IsAlreadyHEVC, want.IsAlreadyHEVC)
+	if got.IsEfficientCodec != want.IsEfficientCodec {
+		t.Errorf("IsEfficientCodec = %v, want %v", got.IsEfficientCodec, want.IsEfficientCodec)
 	}
 	// DurationSeconds: compare within 0.001s tolerance
 	if got.DurationSeconds == nil && want.DurationSeconds != nil {

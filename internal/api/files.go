@@ -36,6 +36,7 @@ type librarySeriesSummary struct {
 	LibraryType           string                 `json:"library_type"`
 	FileCount             int                    `json:"file_count"`
 	EligibleCount         int                    `json:"eligible_count"`
+	QueuedCount           int                    `json:"queued_count"`
 	MissingCount          int                    `json:"missing_count"`
 	SeasonCount           int                    `json:"season_count"`
 	TotalBytes            int64                  `json:"total_bytes"`
@@ -169,6 +170,7 @@ func (s *Server) handleGroupedFiles(c *echo.Context) error {
 			LibraryType:           store.LibraryTypeTV,
 			FileCount:             r.FileCount,
 			EligibleCount:         r.EligibleCount,
+			QueuedCount:           r.QueuedCount,
 			MissingCount:          r.MissingCount,
 			SeasonCount:           r.SeasonCount,
 			TotalBytes:            r.TotalBytes,
@@ -210,6 +212,7 @@ func (s *Server) handleGroupedFileSeasons(c *echo.Context) error {
 		Season                int     `json:"season"`
 		FileCount             int     `json:"file_count"`
 		EligibleCount         int     `json:"eligible_count"`
+		QueuedCount           int     `json:"queued_count"`
 		MissingCount          int     `json:"missing_count"`
 		TotalBytes            int64   `json:"total_bytes"`
 		PredictedSavingsBytes int64   `json:"predicted_savings_bytes"`
@@ -221,6 +224,7 @@ func (s *Server) handleGroupedFileSeasons(c *echo.Context) error {
 			Season:                s.Season,
 			FileCount:             s.FileCount,
 			EligibleCount:         s.EligibleCount,
+			QueuedCount:           s.QueuedCount,
 			MissingCount:          s.MissingCount,
 			TotalBytes:            s.TotalBytes,
 			EpisodeIDs:            s.EpisodeIDs,
@@ -268,6 +272,7 @@ func (s *Server) handleSeasonsRanked(c *echo.Context) error {
 		Season                int     `json:"season"`
 		FileCount             int     `json:"file_count"`
 		EligibleCount         int     `json:"eligible_count"`
+		QueuedCount           int     `json:"queued_count"`
 		MissingCount          int     `json:"missing_count"`
 		TotalBytes            int64   `json:"total_bytes"`
 		PredictedSavingsBytes int64   `json:"predicted_savings_bytes"`
@@ -281,6 +286,7 @@ func (s *Server) handleSeasonsRanked(c *echo.Context) error {
 			Season:                r.Season,
 			FileCount:             r.FileCount,
 			EligibleCount:         r.EligibleCount,
+			QueuedCount:           r.QueuedCount,
 			MissingCount:          r.MissingCount,
 			TotalBytes:            r.TotalBytes,
 			PredictedSavingsBytes: r.PredictedSavingsBytes,

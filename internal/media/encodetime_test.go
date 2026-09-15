@@ -27,44 +27,69 @@ func TestPredictedEncodeSeconds_unknownDuration(t *testing.T) {
 	}
 }
 
-func TestResolveEncodeRate_cascade(t *testing.T) {
-	lookup := &EncodeRateLookup{
-		ByProfileID: map[int64]LearnedEncodeRate{1: {Rate: 1.1, SampleCount: 3}},
-		ByPresetCRF: map[string]LearnedEncodeRate{"medium:26": {Rate: 1.5, SampleCount: 5}},
-		ByPreset:    map[string]LearnedEncodeRate{"medium": {Rate: 1.8, SampleCount: 5}},
-		Global:      &LearnedEncodeRate{Rate: 2.0, SampleCount: 10},
+func hevcLookup() *EncodeRateLookup {
+	return &EncodeRateLookup{
+		ByProfile:   map[string]LearnedEncodeRate{ProfileRateKey(1, TargetHEVC): {Rate: 1.1, SampleCount: 3}},
+		ByPresetCRF: map[string]LearnedEncodeRate{PresetCRFKey(TargetHEVC, "medium", 26): {Rate: 1.5, SampleCount: 5}},
+		ByPreset:    map[string]LearnedEncodeRate{PresetKey(TargetHEVC, "medium"): {Rate: 1.8, SampleCount: 5}},
+		ByCodec:     map[string]LearnedEncodeRate{string(TargetHEVC): {Rate: 2.0, SampleCount: 10}},
 	}
+}
+
+func TestResolveEncodeRate_cascade(t *testing.T) {
+	lookup := hevcLookup()
 
 	t.Run("profile hit", func(t *testing.T) {
-		rate, src, n := ResolveEncodeRate(1, "medium", 26, lookup)
+		rate, src, n := ResolveEncodeRate(1, TargetHEVC, "medium", 26, lookup)
 		if rate != 1.1 || src != EncodeRateLearnedProfile || n != 3 {
 			t.Fatalf("got rate=%v src=%q n=%d", rate, src, n)
 		}
 	})
 	t.Run("preset crf hit", func(t *testing.T) {
-		rate, src, n := ResolveEncodeRate(99, "medium", 26, lookup)
+		rate, src, n := ResolveEncodeRate(99, TargetHEVC, "medium", 26, lookup)
 		if rate != 1.5 || src != EncodeRateLearnedPresetCRF || n != 5 {
 			t.Fatalf("got rate=%v src=%q n=%d", rate, src, n)
 		}
 	})
 	t.Run("preset hit", func(t *testing.T) {
-		rate, src, n := ResolveEncodeRate(99, "medium", 22, lookup)
+		rate, src, n := ResolveEncodeRate(99, TargetHEVC, "medium", 22, lookup)
 		if rate != 1.8 || src != EncodeRateLearnedPreset || n != 5 {
 			t.Fatalf("got rate=%v src=%q n=%d", rate, src, n)
 		}
 	})
-	t.Run("global hit", func(t *testing.T) {
-		rate, src, n := ResolveEncodeRate(99, "slow", 22, lookup)
+	t.Run("codec hit", func(t *testing.T) {
+		rate, src, n := ResolveEncodeRate(99, TargetHEVC, "slow", 22, lookup)
 		if rate != 2.0 || src != EncodeRateLearnedGlobal || n != 10 {
 			t.Fatalf("got rate=%v src=%q n=%d", rate, src, n)
 		}
 	})
 	t.Run("seed fallback", func(t *testing.T) {
-		rate, src, n := ResolveEncodeRate(99, "slow", 22, nil)
-		if rate != SeedEncodeRate("slow") || src != EncodeRateSeed || n != 0 {
+		rate, src, n := ResolveEncodeRate(99, TargetHEVC, "slow", 22, nil)
+		if rate != SeedEncodeRate(TargetHEVC, "slow") || src != EncodeRateSeed || n != 0 {
 			t.Fatalf("got rate=%v src=%q n=%d", rate, src, n)
 		}
 	})
+}
+
+// A profile switched from HEVC to AV1 keeps its id, but x265's timings say
+// nothing about SVT-AV1's, so no learned tier may answer for the other codec.
+func TestResolveEncodeRate_neverCrossesCodecs(t *testing.T) {
+	rate, src, n := ResolveEncodeRate(1, TargetAV1, "medium", 26, hevcLookup())
+	if src != EncodeRateSeed || n != 0 || rate != SeedEncodeRate(TargetAV1, "medium") {
+		t.Fatalf("got rate=%v src=%q n=%d, want the AV1 seed", rate, src, n)
+	}
+}
+
+func TestSeedEncodeRate_av1Presets(t *testing.T) {
+	if slow, fast := SeedEncodeRate(TargetAV1, "4"), SeedEncodeRate(TargetAV1, "8"); slow <= fast {
+		t.Fatalf("preset 4 (%v) should be slower than preset 8 (%v)", slow, fast)
+	}
+	if got := SeedEncodeRate(TargetAV1, "bogus"); got != defaultSeedEncodeRates[TargetAV1] {
+		t.Fatalf("unknown AV1 preset = %v, want AV1 default %v", got, defaultSeedEncodeRates[TargetAV1])
+	}
+	if got := SeedEncodeRate("vp10", "medium"); got != defaultSeedEncodeRates[DefaultTargetCodec] {
+		t.Fatalf("unknown codec = %v, want default %v", got, defaultSeedEncodeRates[DefaultTargetCodec])
+	}
 }
 
 func TestNormalizedEncodeRate_outlier(t *testing.T) {

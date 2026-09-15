@@ -1,4 +1,5 @@
 import type { Stats } from "@/lib/api";
+import { isEfficientCodec } from "@/lib/codec";
 import { resolutionBucketLabel } from "@/lib/format";
 
 export type FilterOption = { value: string; label: string };
@@ -12,6 +13,7 @@ const CODEC_LABELS: Record<string, string> = {
   vc1: "VC-1",
   av1: "AV1",
   vp9: "VP9",
+  vvc: "VVC",
   unknown: "Unknown",
 };
 
@@ -55,14 +57,13 @@ function sortByNumericDesc(items: FilterOption[]): FilterOption[] {
 
 export function codecFilterOptions(
   stats: Stats | undefined,
-  opts?: { excludeHEVC?: boolean; excludeUnknown?: boolean },
+  opts?: { excludeEfficient?: boolean; excludeUnknown?: boolean },
 ): FilterOption[] {
   if (!stats) return [];
   return stats.by_codec
     .filter((c) => {
       const codec = c.codec.toLowerCase();
-      if (opts?.excludeHEVC && (codec === "hevc" || codec === "h265"))
-        return false;
+      if (opts?.excludeEfficient && isEfficientCodec(codec)) return false;
       if (opts?.excludeUnknown && codec === "unknown") return false;
       return true;
     })

@@ -42,9 +42,9 @@ func TestHandleFilesIncludesHEVCMissingAndCandidateState(t *testing.T) {
 		PredictedSavingsBytes: 400,
 	})
 	insertAPIMedia(t, st, &store.MediaFile{
-		Path:          "/media/movies/b-hevc.mkv",
-		VideoCodec:    &hevc,
-		IsAlreadyHEVC: true,
+		Path:             "/media/movies/b-hevc.mkv",
+		VideoCodec:       &hevc,
+		IsEfficientCodec: true,
 	})
 	insertAPIMedia(t, st, &store.MediaFile{
 		Path:       "/media/movies/c-missing.mkv",
@@ -70,7 +70,7 @@ func TestHandleFilesIncludesHEVCMissingAndCandidateState(t *testing.T) {
 	if body.Items[0].CandidateState != string(store.CandidateStateCandidate) {
 		t.Fatalf("first state = %q", body.Items[0].CandidateState)
 	}
-	if body.Items[1].CandidateState != string(store.CandidateStateAlreadyHEVC) {
+	if body.Items[1].CandidateState != string(store.CandidateStateAlreadyEfficient) {
 		t.Fatalf("second state = %q", body.Items[1].CandidateState)
 	}
 	if body.Items[2].CandidateState != string(store.CandidateStateMissing) {
@@ -140,13 +140,13 @@ func TestHandleGroupedFilesSummarizesAllTVFiles(t *testing.T) {
 		SeasonNumber:          &season,
 	})
 	insertAPIMedia(t, st, &store.MediaFile{
-		Path:          "/media/tv/Harbor Lights/Season 01/Harbor.Lights.S01E02.mkv",
-		LibraryType:   store.LibraryTypeTV,
-		VideoCodec:    &hevc,
-		IsAlreadyHEVC: true,
-		SizeBytes:     700,
-		SeriesTitle:   &title,
-		SeasonNumber:  &season,
+		Path:             "/media/tv/Harbor Lights/Season 01/Harbor.Lights.S01E02.mkv",
+		LibraryType:      store.LibraryTypeTV,
+		VideoCodec:       &hevc,
+		IsEfficientCodec: true,
+		SizeBytes:        700,
+		SeriesTitle:      &title,
+		SeasonNumber:     &season,
 	})
 
 	w := doReq(h, http.MethodGet, "/api/files/grouped", nil, nil)

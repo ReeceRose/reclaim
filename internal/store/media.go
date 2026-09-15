@@ -27,7 +27,7 @@ type MediaFile struct {
 	AudioCodec            *string
 	AudioChannels         *int
 	ContainerFormat       *string
-	IsAlreadyHEVC         bool
+	IsEfficientCodec      bool
 	PredictedSavingsBytes int64
 	OversizeRatio         float64
 	LastProbedAt          *int64
@@ -100,14 +100,14 @@ func (m *Media) Insert(ctx context.Context, f *MediaFile) (int64, error) {
 			path, library_type, size_bytes, mtime, fingerprint,
 			video_codec, video_codec_profile, width, height, duration_seconds,
 			bitrate_kbps, audio_codec, audio_channels, container_format,
-			is_already_hevc, predicted_savings_bytes, oversize_ratio, last_probed_at, probe_error, status,
+			is_efficient_codec, predicted_savings_bytes, oversize_ratio, last_probed_at, probe_error, status,
 			series_title, season_number, replace_key, first_seen_at,
 			metadata_key, episode_number, parsed_release_date
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		f.Path, f.LibraryType, f.SizeBytes, f.Mtime, f.Fingerprint,
 		f.VideoCodec, f.VideoCodecProfile, f.Width, f.Height, f.DurationSeconds,
 		f.BitrateKbps, f.AudioCodec, f.AudioChannels, f.ContainerFormat,
-		btoi(f.IsAlreadyHEVC), f.PredictedSavingsBytes, f.OversizeRatio, f.LastProbedAt, f.ProbeError, f.Status,
+		btoi(f.IsEfficientCodec), f.PredictedSavingsBytes, f.OversizeRatio, f.LastProbedAt, f.ProbeError, f.Status,
 		f.SeriesTitle, f.SeasonNumber, f.ReplaceKey, time.Now().Unix(),
 		f.MetadataKey, f.EpisodeNumber, f.ParsedReleaseDate,
 	)
@@ -153,7 +153,7 @@ func (m *Media) UpdateProbe(ctx context.Context, f *MediaFile) error {
 			size_bytes = ?, mtime = ?, fingerprint = ?,
 			video_codec = ?, video_codec_profile = ?, width = ?, height = ?,
 			duration_seconds = ?, bitrate_kbps = ?, audio_codec = ?, audio_channels = ?,
-			container_format = ?, is_already_hevc = ?, predicted_savings_bytes = ?,
+			container_format = ?, is_efficient_codec = ?, predicted_savings_bytes = ?,
 			oversize_ratio = ?, last_probed_at = ?, probe_error = ?, status = ?,
 			missing_since = CASE WHEN ? = 'missing' THEN COALESCE(missing_since, ?) END,
 			series_title = ?, season_number = ?, replace_key = ?,
@@ -162,7 +162,7 @@ func (m *Media) UpdateProbe(ctx context.Context, f *MediaFile) error {
 		f.SizeBytes, f.Mtime, f.Fingerprint,
 		f.VideoCodec, f.VideoCodecProfile, f.Width, f.Height,
 		f.DurationSeconds, f.BitrateKbps, f.AudioCodec, f.AudioChannels,
-		f.ContainerFormat, btoi(f.IsAlreadyHEVC), f.PredictedSavingsBytes,
+		f.ContainerFormat, btoi(f.IsEfficientCodec), f.PredictedSavingsBytes,
 		f.OversizeRatio, f.LastProbedAt, f.ProbeError, f.Status,
 		f.Status, time.Now().Unix(),
 		f.SeriesTitle, f.SeasonNumber, f.ReplaceKey,
@@ -643,19 +643,20 @@ func (m *Media) RecordMove(ctx context.Context, keepID, mergeID int64, newPath, 
 	return tx.Commit()
 }
 
-// ReplaceWithEncoded updates a media row after a verified HEVC swap: new size +
-// fingerprint, video_codec forced to hevc, is_already_hevc set, and predicted
-// savings zeroed (it's now HEVC — nothing left to reclaim). The library_stats
-// deltas are applied in the same transaction so the dashboard reflects the
-// reclaimed bytes immediately, and the is_already_hevc flip is what drops the
-// file out of the candidate query, closing the loop.
-func (m *Media) ReplaceWithEncoded(ctx context.Context, id, newSize int64, newFingerprint string, now int64) error {
+// ReplaceWithEncoded updates a media row after a verified swap: new size +
+// fingerprint, video_codec rewritten to the codec the job encoded to,
+// is_efficient_codec set, and predicted savings zeroed (it's now in an
+// efficient codec — nothing left to reclaim). The library_stats deltas are
+// applied in the same transaction so the dashboard reflects the reclaimed bytes
+// immediately, and the is_efficient_codec flip is what drops the file out of
+// the candidate query, closing the loop.
+func (m *Media) ReplaceWithEncoded(ctx context.Context, id, newSize int64, newFingerprint, codec string, now int64) error {
 	tx, err := m.w.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if err := m.ReplaceWithEncodedTx(ctx, tx, id, newSize, newFingerprint, now); err != nil {
+	if err := m.ReplaceWithEncodedTx(ctx, tx, id, newSize, newFingerprint, codec, now); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -663,7 +664,7 @@ func (m *Media) ReplaceWithEncoded(ctx context.Context, id, newSize int64, newFi
 
 // ReplaceWithEncodedTx is like ReplaceWithEncoded but runs inside the caller's
 // transaction so it can be bundled with job completion in one commit.
-func (m *Media) ReplaceWithEncodedTx(ctx context.Context, tx *sql.Tx, id, newSize int64, newFingerprint string, now int64) error {
+func (m *Media) ReplaceWithEncodedTx(ctx context.Context, tx *sql.Tx, id, newSize int64, newFingerprint, codec string, now int64) error {
 	old, err := loadStatRow(ctx, tx, id)
 	if err != nil {
 		return err
@@ -672,10 +673,10 @@ func (m *Media) ReplaceWithEncodedTx(ctx context.Context, tx *sql.Tx, id, newSiz
 		return err
 	}
 
-	// The file is now HEVC at a new (smaller) size, so its old oversize ratio —
-	// computed from the pre-encode size and source codec — is stale. Recompute it
-	// against the new size and hevc ceiling so the Library flag stays honest
-	// without waiting for the next scan.
+	// The file is now in the target codec at a new (smaller) size, so its old
+	// oversize ratio — computed from the pre-encode size and source codec — is
+	// stale. Recompute it against the new size and the target's ceiling so the
+	// Library flag stays honest without waiting for the next scan.
 	var width, height *int
 	var duration *float64
 	if err := tx.QueryRowContext(ctx,
@@ -683,17 +684,17 @@ func (m *Media) ReplaceWithEncodedTx(ctx context.Context, tx *sql.Tx, id, newSiz
 	).Scan(&width, &height, &duration); err != nil {
 		return err
 	}
-	hevc := "hevc"
-	oversize := media.OversizeRatio(&hevc, width, height, newSize, duration)
+	oversize := media.OversizeRatio(&codec, width, height, newSize, duration)
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE media_files SET
-			size_bytes = ?, fingerprint = ?, video_codec = 'hevc',
-			is_already_hevc = 1, predicted_savings_bytes = 0, oversize_ratio = ?,
+			size_bytes = ?, fingerprint = ?, video_codec = ?,
+			is_efficient_codec = ?, predicted_savings_bytes = 0, oversize_ratio = ?,
 			mtime = ?, last_probed_at = ?, probe_error = NULL, status = ?,
 			missing_since = NULL
 		WHERE id = ?`,
-		newSize, newFingerprint, oversize, now, now, MediaStatusActive, id,
+		newSize, newFingerprint, codec, btoi(media.IsEfficientCodec(&codec)), oversize,
+		now, now, MediaStatusActive, id,
 	); err != nil {
 		return err
 	}
@@ -705,8 +706,35 @@ func (m *Media) ReplaceWithEncodedTx(ctx context.Context, tx *sql.Tx, id, newSiz
 	return applyContribution(ctx, tx, updated, +1)
 }
 
+// PricedCodecs returns the distinct lowercased video codecs of the active files
+// that carry a savings prediction — probed, and not already in an efficient
+// codec — so a savings model refresh can reprice each of them.
+func (m *Media) PricedCodecs(ctx context.Context) ([]string, error) {
+	rows, err := m.r.QueryContext(ctx, `
+		SELECT DISTINCT LOWER(video_codec)
+		FROM media_files
+		WHERE status = 'active'
+		  AND is_efficient_codec = 0
+		  AND size_bytes > 0
+		  AND COALESCE(video_codec, '') != ''
+		ORDER BY 1`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var codec string
+		if err := rows.Scan(&codec); err != nil {
+			return nil, err
+		}
+		out = append(out, codec)
+	}
+	return out, rows.Err()
+}
+
 // UpdatePredictedSavingsByCodec rewrites predicted_savings_bytes for every
-// active, non-HEVC file whose video_codec matches codec, using the supplied
+// active, non-efficient file whose video_codec matches codec, using the supplied
 // ratio (output/original). It returns the number of rows whose value changed,
 // so a refresh that moves nothing can skip the stats rebuild. The caller is
 // responsible for calling Stats.Recompute after this to keep library_stats in
@@ -716,7 +744,7 @@ func (m *Media) UpdatePredictedSavingsByCodec(ctx context.Context, codec string,
 		UPDATE media_files
 		SET predicted_savings_bytes = CAST(size_bytes * ?1 AS INTEGER)
 		WHERE status = 'active'
-		  AND is_already_hevc = 0
+		  AND is_efficient_codec = 0
 		  AND size_bytes > 0
 		  AND LOWER(COALESCE(video_codec, '')) = ?2
 		  AND predicted_savings_bytes != CAST(size_bytes * ?1 AS INTEGER)`,
@@ -750,7 +778,7 @@ const mediaQ = `
 	SELECT id, path, library_type, size_bytes, mtime, fingerprint,
 		video_codec, video_codec_profile, width, height, duration_seconds,
 		bitrate_kbps, audio_codec, audio_channels, container_format,
-		is_already_hevc, predicted_savings_bytes, oversize_ratio, last_probed_at, probe_error, status,
+		is_efficient_codec, predicted_savings_bytes, oversize_ratio, last_probed_at, probe_error, status,
 		series_title, season_number, replace_key,
 		metadata_key, episode_number, parsed_release_date,
 		` + releaseDateSQL + ` AS release_date
@@ -774,7 +802,7 @@ func scanMedia(s rowScanner) (*MediaFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	f.IsAlreadyHEVC = isHEVC != 0
+	f.IsEfficientCodec = isHEVC != 0
 	f.MetadataKey = metadataKey.String
 	return &f, nil
 }

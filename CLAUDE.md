@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Reclaim is a self-hosted media codec audit and re-encode tool. It scans Plex/NAS libraries via `ffprobe`, ranks files by predicted HEVC savings, and lets the user manually queue re-encodes that run through `ffmpeg` in a configurable overnight window. The Go binary serves both the REST API and the embedded Next.js static frontend as a single container with no external runtime dependencies.
+Reclaim is a self-hosted media codec audit and re-encode tool. It scans Plex/NAS libraries via `ffprobe`, ranks files by predicted HEVC or AV1 savings, and lets the user manually queue re-encodes that run through `ffmpeg` (`libx265` or `libsvtav1`, per profile) in a configurable overnight window. The Go binary serves both the REST API and the embedded Next.js static frontend as a single container with no external runtime dependencies.
 
 ## Testing UI changes
 
@@ -131,9 +131,34 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 
 `store.Open` returns a single `*Store` with typed sub-stores as fields. The write pool is `MaxOpenConns=1` (SQLite single-writer); the read pool is `MaxOpenConns=25`. Migrations run via goose embedded SQL in `internal/store/migrations/`.
 
+### Target codecs (HEVC and AV1)
+
+`internal/media/codec.go` is the registry: `TargetCodec` (`hevc`|`av1`), and per
+codec an `Encoder` naming the ffmpeg encoder (`libx265`|`libsvtav1`), its CRF
+range (0–51 | 0–63), and its preset vocabulary (x265 names | SVT-AV1 `0`–`13`).
+A profile's `codec` column (migration `00019`, default `hevc`) selects one;
+`api/profiles.go` validates CRF and preset against it, and refuses a codec whose
+encoder `startup.DetectEncoders` did not find in `ffmpeg -encoders` at boot
+(surfaced on `GET /api/encoders`). Queueing on such a profile is refused too.
+
+Sources are split separately from targets. `media.IsEfficientCodec` (HEVC, AV1,
+VVC) drives `media_files.is_efficient_codec` (renamed from `is_already_hevc` in
+`00019`, which also flagged existing AV1 rows and emptied `library_stats` for a
+boot rebuild): efficient files are never candidates whatever the target, since
+moving between them costs a generation of quality for little or negative size.
+The candidate state is `already_efficient`; `already_hevc` stays accepted as a
+filter alias.
+
+The job row snapshots `encode_codec` beside preset/CRF at queue time. The worker
+encodes with the live profile, and `Jobs.SetEncodeSettings` restamps the whole
+snapshot when it claims a job, so the ledger, encode-time learning, and
+`tryCompletePostSwap` (which matches the probed codec against the job's target)
+all see what actually ran. `CommitEncodeSwap` resolves the codec from that row,
+and `ReplaceWithEncodedTx` writes it as the file's new `video_codec`.
+
 ### Worker safety model
 
-The worker encodes to a `.reclaim-tmp.<ext>` temp file, verifies it with ffprobe (duration ±1s, stream counts, resolution), then atomically swaps: `original → .reclaim-backup`, `tmp → original`, delete backup. A crash between steps is recovered by `sweepOrphans` on next boot: a backup present with its original missing means the swap was interrupted and the backup is restored.
+The worker encodes to a `.reclaim-tmp.<ext>` temp file, verifies it with ffprobe (duration ±1s, stream counts, resolution, and `codec_match` — the output's video codec must be the profile's target, since extra args can override `-c:v`), then atomically swaps: `original → .reclaim-backup`, `tmp → original`, delete backup. A crash between steps is recovered by `sweepOrphans` on next boot: a backup present with its original missing means the swap was interrupted and the backup is restored.
 
 ### Missing-file lifecycle
 
@@ -302,7 +327,7 @@ The hub broadcasts: `job_started`, `job_progress` (with `percent`), `job_complet
 
 `GET /api/candidates` supports 10 sort options via `?sort=`: `savings_desc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`, `release_desc`, `release_asc`. Filters: `library_type` (`movies`|`tv`), `video_codec`, `height` (`uhd8k`|`uhd`|`qhd`|`fhd`|`hd`|`sd`|`unknown`, or legacy numeric heights), `search` (path substring).
 
-`GET /api/files` is the Library view — same filters plus `status` (`active`|`missing`) and `candidate_state` (`candidate`|`already_hevc`|`probe_failed`|`unknown_codec`|`queued`|`completed`|`missing`). Sort options: `path_asc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`, `oversize_desc`, `release_desc`, `release_asc`.
+`GET /api/files` is the Library view — same filters plus `status` (`active`|`missing`) and `candidate_state` (`candidate`|`already_efficient`|`probe_failed`|`unknown_codec`|`queued`|`completed`|`missing`; `already_hevc` is a legacy alias). Sort options: `path_asc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`, `oversize_desc`, `release_desc`, `release_asc`.
 
 ### Release dates
 
@@ -321,8 +346,8 @@ Pagination: the default `savings_desc` sort uses keyset cursors (`after_savings`
 ### Realized savings ledger
 
 `library_stats` only ever holds *predictions*: `ReplaceWithEncodedTx` zeroes a
-file's `predicted_savings_bytes` and rewrites `video_codec` to `hevc` the moment
-an encode lands, so the library aggregates can say what is left to reclaim but
+file's `predicted_savings_bytes` and rewrites `video_codec` to the target codec
+the moment an encode lands, so the library aggregates can say what is left to reclaim but
 never what was actually reclaimed. `savings_ledger` (migration `00015`) is the
 append-only record that fills that gap — one row per completed encode, written
 by `Savings.RecordTx` inside the same `CommitEncodeSwap` transaction as the job
@@ -350,19 +375,29 @@ excludes them.
 
 `Jobs.LearnedRatios` reads the ledger rather than joining `transcode_jobs` to
 `media_files`. The old query grouped by the post-encode `media_files.video_codec`,
-which is always `hevc`, so the source codec's bucket was never found and the
-savings model never actually refined. The ratio is byte-weighted
+which is always the target codec, so the source codec's bucket was never found
+and the savings model never actually refined. The ratio is byte-weighted
 (`SUM(output)/SUM(original)`), since predictions are summed into remaining
-savings and scored against realized bytes.
+savings and scored against realized bytes. It is also scoped to one target:
+`RecordTx` stamps encode rows' `result_codec` from the job's `encode_codec`
+(`00019` backfilled history as `hevc`), and `LearnedRatios(ctx, target, n)`
+filters on it — h264 shrinks further under SVT-AV1 than x265, so pooling would
+mis-price both. `Savings.ByTargetCodec` backs the Insights output-codec card.
 
 `store.SavingsModel` is the only thing that should compute
-`predicted_savings_bytes`. It caches `LearnedRatios` in memory and `Predict`
-prefers the learned ratio over the seed, so `probeAndStore` prices new and
-re-probed files on observed results. `Refresh` reloads the cache, reprices every
-active file of every learned codec (only rows whose value changes), and
-rebuilds `library_stats` if any moved; it runs at the end of `store.Open` and
-after both encode completion paths. `GET /api/stats` reads `ratio_source` off
-the same cache.
+`predicted_savings_bytes`. A file stores one prediction, so the library is
+priced against one target — the default profile's codec (`Target()`, surfaced
+as `savings_target_codec` on `GET /api/stats` and `/api/encoders`). Seed ratios
+live in `media.seedRatios[target][source]`. It caches learned ratios for every
+target in memory; `Predict` prices against the library target and `PredictFor`
+against any other (the queue handler uses it for a non-default profile), each
+preferring the learned ratio over the seed, so `probeAndStore` prices new and
+re-probed files on observed results. `Refresh` re-reads the default profile's
+codec, reloads the cache, reprices every priced codec present in the library
+(`Media.PricedCodecs`; only rows whose value changes), and rebuilds
+`library_stats` if any moved; it runs at the end of `store.Open`, after both
+encode completion paths, and after every profile create/update/delete.
+`GET /api/stats` reads `ratio_source` off the same cache.
 
 The ledger's `source` column (migration `00016`) widened it from "bytes this
 encoder reclaimed" to "bytes reclaimed by any means": `encode` rows come from
@@ -388,5 +423,5 @@ shifted by the `TIMEZONE` offset so the series matches the clock the UI shows.
 
 ### Encode time estimates
 
-Per-job encode duration estimates on the Queue page learn from completed jobs on this instance, bucketed by **profile first** with fallbacks (preset+CRF → preset → global → seed rates). Settings are snapshotted on the job row at queue time (`encode_preset`, `encode_crf`, `encode_extra_args`, migration `00009`); the worker still reads the live profile when encoding. `GET /api/jobs` returns `estimated_duration_seconds` / `estimate_source` for queued and running jobs, `encode_duration_seconds` for completed jobs, and `queue_total_estimated_seconds` on the first page. See `docs/ENCODE-TIME-PLAN.md` and `docs/API.md` § Jobs.
+Per-job encode duration estimates on the Queue page learn from completed jobs on this instance, bucketed by **profile first** with fallbacks (preset+CRF → preset → codec-wide → seed rates). Every tier is keyed by target codec (`media.ProfileRateKey`/`PresetCRFKey`/`PresetKey`, `EncodeRateLookup.ByCodec`) and seeds are per codec and preset, so x265 timings never estimate an SVT-AV1 job. Settings are snapshotted on the job row at queue time (`encode_codec`, `encode_preset`, `encode_crf`, `encode_extra_args`, migrations `00009`/`00019`); the worker reads the live profile when encoding and restamps the snapshot with what it ran. `GET /api/jobs` returns `estimated_duration_seconds` / `estimate_source` for queued and running jobs, `encode_duration_seconds` for completed jobs, and `queue_total_estimated_seconds` on the first page. See `docs/ENCODE-TIME-PLAN.md` and `docs/API.md` § Jobs.
 

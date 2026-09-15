@@ -35,3 +35,39 @@ export const CODEC_BORDER: Record<string, string> = {
   vc1: "border-violet/30 bg-violet/10",
   av1: "border-sky/32 bg-sky/10",
 };
+
+const EFFICIENT_CODECS = new Set(["hevc", "h265", "av1", "vvc", "h266"]);
+
+/**
+ * isEfficientCodec mirrors media.IsEfficientCodec on the server: files already
+ * in one of these codecs are never re-encode candidates, whatever the target.
+ */
+export function isEfficientCodec(codec: string | null | undefined): boolean {
+  return !!codec && EFFICIENT_CODECS.has(codec.toLowerCase());
+}
+
+const TARGET_CODEC_LABELS: Record<string, string> = {
+  hevc: "HEVC",
+  av1: "AV1",
+};
+
+const TARGET_CODEC_ENCODERS: Record<string, string> = {
+  hevc: "libx265",
+  av1: "libsvtav1",
+};
+
+/** targetCodecLabel names a profile's output codec, defaulting to HEVC. */
+export function targetCodecLabel(codec: string | null | undefined): string {
+  const c = codec || "hevc";
+  return TARGET_CODEC_LABELS[c] ?? c.toUpperCase();
+}
+
+/** encodeSettingsLabel renders a profile or job's encoder settings on one line. */
+export function encodeSettingsLabel(
+  codec: string | null | undefined,
+  crf: number,
+  preset: string,
+): string {
+  const c = codec || "hevc";
+  return `${TARGET_CODEC_ENCODERS[c] ?? c} · CRF ${crf} · preset ${preset}`;
+}

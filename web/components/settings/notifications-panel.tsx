@@ -88,9 +88,9 @@ export function NotificationsPanel({
             Tell me when new re-encode candidates arrive
           </Label>
           <p className="text-xs text-muted-dim mt-1">
-            Any newly-indexed file that isn&rsquo;t already HEVC — h264, mpeg4,
-            VC-1, and the rest. Files already HEVC, or already queued, stay
-            quiet.
+            Any newly-indexed file that isn&rsquo;t already HEVC or AV1 — h264,
+            mpeg4, VC-1, and the rest. Files already HEVC or AV1, or already
+            queued, stay quiet.
           </p>
         </div>
       </div>

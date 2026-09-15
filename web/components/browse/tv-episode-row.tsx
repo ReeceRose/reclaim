@@ -18,7 +18,8 @@ export function TvEpisodeRow<S extends string>({
   href: string;
 }) {
   const dimmed =
-    ep.candidate_state === "already_hevc" || ep.candidate_state === "completed";
+    ep.candidate_state === "already_efficient" ||
+    ep.candidate_state === "completed";
   return (
     <Link
       href={href}

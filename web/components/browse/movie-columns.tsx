@@ -34,7 +34,7 @@ export const MOVIE_COLUMNS = mediaColumns<MediaFile>([
         );
       }
       if (
-        item.candidate_state === "already_hevc" ||
+        item.candidate_state === "already_efficient" ||
         item.candidate_state === "completed"
       ) {
         return (

@@ -779,12 +779,12 @@ func (s *Scanner) probeAndStore(
 		f.AudioCodec = result.AudioCodec
 		f.AudioChannels = result.AudioChannels
 		f.ContainerFormat = result.ContainerFormat
-		f.IsAlreadyHEVC = result.IsAlreadyHEVC
+		f.IsEfficientCodec = result.IsEfficientCodec
 		f.LastProbedAt = &now
 		// Compute the savings estimate at probe time and store it so the
 		// candidate ranking and dashboard never have to recompute it per query.
 		f.PredictedSavingsBytes = s.store.SavingsModel.Predict(
-			result.VideoCodec, result.IsAlreadyHEVC, size,
+			result.VideoCodec, result.IsEfficientCodec, size,
 		)
 		// Compute the oversize ratio (bitrate vs. codec/resolution expectation)
 		// so the Library "oversized" flag, filter, and sort are pure SQL.

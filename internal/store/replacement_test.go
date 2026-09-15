@@ -268,7 +268,7 @@ func TestLearnedRatios_ignoresReplacements(t *testing.T) {
 		}
 	}
 
-	ratios, err := s.Jobs.LearnedRatios(ctx, 3)
+	ratios, err := s.Jobs.LearnedRatios(ctx, "hevc", 3)
 	if err != nil {
 		t.Fatal(err)
 	}

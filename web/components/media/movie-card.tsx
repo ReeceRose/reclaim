@@ -7,7 +7,7 @@ import { CodecBadge } from "./codec-badge";
 export function MovieCard({ file, href }: { file: MediaFile; href: string }) {
   const title = baseName(file.path).replace(/\.[^/.]+$/, "");
   const isConverted =
-    file.candidate_state === "already_hevc" ||
+    file.candidate_state === "already_efficient" ||
     file.candidate_state === "completed";
   const isCandidate = file.candidate_state === "candidate";
   const imageURL =

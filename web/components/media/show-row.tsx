@@ -11,7 +11,9 @@ export function ShowRow({
   href: string;
   expanded?: boolean;
 }) {
-  const fullyConverted = show.eligible_count === 0 && show.missing_count === 0;
+  const nothingEligible = show.eligible_count === 0 && show.missing_count === 0;
+  const fullyConverted = nothingEligible && show.queued_count === 0;
+  const allQueued = nothingEligible && show.queued_count > 0;
   const allMissing =
     show.file_count > 0 && show.missing_count === show.file_count;
   const hasChevron = expanded !== undefined;
@@ -60,6 +62,10 @@ export function ShowRow({
           </span>
         ) : fullyConverted ? (
           <span className="text-xs font-medium text-green">All converted</span>
+        ) : allQueued ? (
+          <span className="text-xs font-medium text-sky">
+            {formatInt(show.queued_count)} queued
+          </span>
         ) : show.predicted_savings_bytes > 0 ? (
           <span className="text-xs font-semibold text-brand font-mono">
             -{formatBytes(show.predicted_savings_bytes)}

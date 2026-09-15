@@ -15,7 +15,9 @@ export function ShowCard({
     .replace(/^(the |a |an )/i, "")
     .charAt(0)
     .toUpperCase();
-  const fullyConverted = show.eligible_count === 0 && show.missing_count === 0;
+  const nothingEligible = show.eligible_count === 0 && show.missing_count === 0;
+  const fullyConverted = nothingEligible && show.queued_count === 0;
+  const allQueued = nothingEligible && show.queued_count > 0;
   const allMissing =
     show.file_count > 0 && show.missing_count === show.file_count;
   const imageURL =
@@ -93,6 +95,10 @@ export function ShowCard({
             <span className="text-xs font-medium text-green">
               All converted
             </span>
+          ) : allQueued ? (
+            <span className="text-xs font-medium text-sky">
+              {formatInt(show.queued_count)} queued
+            </span>
           ) : show.predicted_savings_bytes > 0 ? (
             <span className="text-xs font-semibold text-brand">
               -{formatBytes(show.predicted_savings_bytes)}
@@ -104,6 +110,7 @@ export function ShowCard({
       <EncodeHealthBar
         fileCount={show.file_count}
         eligibleCount={show.eligible_count}
+        queuedCount={show.queued_count}
         missingCount={show.missing_count}
       />
     </Link>

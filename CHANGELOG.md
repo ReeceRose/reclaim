@@ -5,6 +5,33 @@ source of truth: `scripts/release.sh` writes each entry here, commits it, tags t
 commit, and publishes the same text as the GitHub Release. The running binary embeds
 this file, so the in-app release notes always match the build you are on.
 
+## v0.0.44 — 2026-09-20
+
+The queue page is now split into paginated Queued and History tabs, so a large backlog no longer buries completed jobs.
+
+### What's Changed
+
+#### Features
+
+- The Queue page now has separate **Queued** and **History** tabs, each with its own numbered pager, so hundreds of pending jobs no longer push finished encodes out of reach.
+- The currently running job stays pinned above the tabs while you page through either list.
+- Your active tab and page are kept in the URL, so a queue view can be bookmarked, refreshed, or shared without losing your place.
+
+#### Fixes
+
+- Queue totals, per-status counts, and history summaries now describe the whole filtered set on every page instead of only the rows currently on screen — the page totals and the sidebar queue badge always agree.
+
+#### Improvements
+
+- `GET /api/jobs` returns summary counts and estimated queue time alongside any page of results; see `docs/API.md` for the new fields.
+- Updated Go and frontend dependencies (including Next.js, React, and the SQLite driver) and moved builds to Node 24.
+
+### Docker
+
+```
+docker pull ghcr.io/ReeceRose/reclaim:0.0.44
+```
+
 ## v0.0.43 — 2026-09-20
 
 Release notes now ship inside Reclaim — read what changed without leaving the app.

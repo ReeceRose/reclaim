@@ -5,6 +5,31 @@ source of truth: `scripts/release.sh` writes each entry here, commits it, tags t
 commit, and publishes the same text as the GitHub Release. The running binary embeds
 this file, so the in-app release notes always match the build you are on.
 
+## v0.0.43 — 2026-09-20
+
+Release notes now ship inside Reclaim — read what changed without leaving the app.
+
+### What's Changed
+
+#### Features
+
+- The sidebar version number is now a button that opens release notes for every version, read straight from the changelog bundled with your build.
+- After upgrading, a "What's New" indicator points at the notes for the version you just moved to. It clears once you open the panel.
+- New `GET /api/releases` endpoint returns the parsed release history, and `POST /api/releases/seen` marks it read.
+
+#### Improvements
+
+- Release notes make no outbound requests, so they work on air-gapped installs and can never show notes for a different version than the one running.
+- Fresh installs are stamped with their starting version at first boot, so a brand-new instance isn't shown a changelog for releases it never upgraded through.
+- The release script now writes the changelog entry, commits it, tags that commit, and publishes the identical text to GitHub — the tag always points at a tree whose changelog already describes it.
+- Notes render through a small purpose-built Markdown renderer covering exactly the formatting releases use.
+
+### Docker
+
+```
+docker pull ghcr.io/ReeceRose/reclaim:0.0.43
+```
+
 ## v0.0.42 — 2026-09-20
 
 Documentation and polish for the AV1 encoding support added in v0.0.41.

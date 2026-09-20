@@ -455,11 +455,24 @@ export interface Job {
   predicted_savings_bytes?: number | null;
 }
 
+export interface HistorySummary {
+  completed_count: number;
+  failed_count: number;
+  cancelled_count: number;
+  original_size_bytes: number;
+  output_size_bytes: number;
+  bytes_saved: number;
+  encode_seconds: number;
+}
+
 export interface JobsListResult {
   items: Job[];
   total_count?: number;
   queue_total_estimated_seconds?: number;
   queued_count?: number;
+  queue_total_original_bytes?: number;
+  queue_total_predicted_savings_bytes?: number;
+  history?: HistorySummary;
 }
 
 export interface MissingFilesSummary {

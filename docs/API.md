@@ -664,18 +664,46 @@ One page of jobs, optionally filtered by status.
   ],
   "total_count": 42,
   "queue_total_estimated_seconds": 8400,
-  "queued_count": 8
+  "queued_count": 8,
+  "queue_total_original_bytes": 732000000000,
+  "queue_total_predicted_savings_bytes": 401000000000,
+  "history": {
+    "completed_count": 31,
+    "failed_count": 2,
+    "cancelled_count": 0,
+    "original_size_bytes": 1240000000000,
+    "output_size_bytes": 480000000000,
+    "bytes_saved": 760000000000,
+    "encode_seconds": 756000
+  }
 }
 ```
 
-`total_count` is included on the first page only (`offset=0`) and reflects the
-requested `status` filter. `queue_total_estimated_seconds` and `queued_count`
-are also first-page-only, but are always computed over the **entire**
-queued+running set regardless of the requested `status`/page — they sum
-per-job estimates for all queued jobs plus remaining time for any running job
-(estimated total minus elapsed since `started_at`) — so they stay accurate
-once the queue list itself is paginated. Both are included only when the
-request's `status` includes (or omits) `queued`, and omitted when zero.
+Every summary field describes the **whole** matching set, not this request's
+page, and is returned on every page — numbered pagination needs `total_count`
+to size the pager, and the header totals must not vanish when the client steps
+off `offset=0`.
+
+`total_count` reflects the requested `status` filter. The `queue_*` fields and
+`queued_count` are computed over the entire queued+running set regardless of
+the requested `status`/page, and are returned only when the request's `status`
+includes (or omits) `queued`, and omitted when the queue is empty:
+
+- `queue_total_estimated_seconds` sums per-job estimates for all queued jobs
+  plus remaining time for any running job (estimated total minus elapsed since
+  `started_at`).
+- `queue_total_original_bytes` and `queue_total_predicted_savings_bytes` sum
+  `original_size_bytes` and `predicted_savings_bytes` over **queued jobs only**,
+  matching `queued_count`. The running job is excluded: part of its output is
+  already on disk as the temp file, so counting it as outstanding would
+  overstate what is left to reclaim.
+
+The `history` block is returned only when the request's `status` includes (or
+omits) `completed` or `failed`, and aggregates non-dismissed jobs matching that
+filter. Byte and duration figures cover completed jobs only — a failed job never
+swapped a file, so it has no output size to weigh in. `bytes_saved` is
+`original_size_bytes - output_size_bytes`, and `encode_seconds` sums
+`completed_at - started_at` across completed jobs.
 
 ### `POST /api/jobs/:id/cancel`
 Cancels a `queued`/`running`/`verifying` job. The worker kills the ffmpeg process

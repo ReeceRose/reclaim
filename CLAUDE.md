@@ -348,6 +348,29 @@ The frontend uses the **Next.js App Router** (`web/app/`). **Important:** `web/A
 
 The hub broadcasts: `job_started`, `job_progress` (with `percent`), `job_completed`, `job_failed`, `job_cancelled`, `jobs_queued`, `event_created`. The scanner broadcasts `scan_started`, `scan_completed`, and `scan_failed` during scans, and `event_created` for its `file_superseded` / `file_replaced` reconciliations. The notifier broadcasts `event_created` for its `candidates_added` batches.
 
+### Queue page
+
+`web/app/(app)/queue/page.tsx` splits the queue and the history into two tabs
+(`?tab=queued|history`, `?page=N`) rather than stacking them: with a few hundred
+queued jobs, an infinite list meant history was unreachable. Each tab pages
+independently through `components/ui/pagination.tsx` (`pageWindow` elides the
+middle of a long pager but always keeps the first and last page one click away).
+Tab and page are written through a single `useQueryParams().set` call —
+`useQueryParam` reads the live URL from a ref that only refreshes after a render,
+so two successive single-key writes in one handler would drop the first.
+
+The running job is pinned above the tabs. The queued tab's totals come from the
+shell's own `["jobs", "queued-count"]` query (`GET /api/jobs?status=queued&limit=1`),
+so the page and the sidebar badge share one request and cannot disagree. Every
+summary field on `GET /api/jobs` — `total_count`, the `queue_*` totals, the
+`history` block — describes the whole filtered set and is returned on every page,
+since a numbered pager needs the count off page 1 too.
+
+Per-job byte figures are predictions, not measurements: a queued row shows
+`original_size_bytes → original - predicted_savings_bytes`, the snapshot
+`Jobs.Create` took from `SavingsModel.PredictFor` at queue time. History rows
+score that snapshot against what actually landed.
+
 ### Candidate pagination & filtering
 
 `GET /api/candidates` supports 10 sort options via `?sort=`: `savings_desc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`, `release_desc`, `release_asc`. Filters: `library_type` (`movies`|`tv`), `video_codec`, `height` (`uhd8k`|`uhd`|`qhd`|`fhd`|`hd`|`sd`|`unknown`, or legacy numeric heights), `search` (path substring).

@@ -155,6 +155,18 @@ type jobDTO struct {
 	PredictedSavingsBytes *int64 `json:"predicted_savings_bytes,omitempty"`
 }
 
+// historySummaryDTO totals the finished jobs behind the history list, so the
+// page header can report them without the client summing a page at a time.
+type historySummaryDTO struct {
+	CompletedCount    int64 `json:"completed_count"`
+	FailedCount       int64 `json:"failed_count"`
+	CancelledCount    int64 `json:"cancelled_count"`
+	OriginalSizeBytes int64 `json:"original_size_bytes"`
+	OutputSizeBytes   int64 `json:"output_size_bytes"`
+	BytesSaved        int64 `json:"bytes_saved"`
+	EncodeSeconds     int64 `json:"encode_seconds"`
+}
+
 func toJobDTO(j *store.TranscodeJob, position int, lookup *media.EncodeRateLookup) jobDTO {
 	dto := jobDTO{
 		ID:                    j.ID,

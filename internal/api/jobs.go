@@ -212,51 +212,74 @@ func (s *Server) handleListJobs(c *echo.Context) error {
 		out = append(out, toJobDTO(&jobs[i], positions[jobs[i].ID], lookup))
 	}
 
+	// The summary blocks describe the whole filtered set rather than this
+	// request's page, and are returned on every page: numbered pagination needs
+	// total_count to know how many pages there are, and the header totals must
+	// not vanish when the user steps off page 1.
 	resp := map[string]any{"items": out}
-	if offset == 0 {
-		if total, err := s.store.Jobs.CountJobs(ctx, statuses); err == nil {
-			resp["total_count"] = total
-		}
+	if total, err := s.store.Jobs.CountJobs(ctx, statuses); err == nil {
+		resp["total_count"] = total
+	}
 
-		// queue_total_estimated_seconds/queued_count summarize the *entire*
-		// queue, independent of this request's page, so they stay accurate
-		// once the queue list itself is paginated.
-		if includesStatus(statuses, string(ijobs.StatusQueued)) {
-			queueJobs, err := s.store.Jobs.ListWithPath(ctx, store.JobListQuery{
-				Statuses: []string{string(ijobs.StatusQueued), string(ijobs.StatusRunning)},
-				NoLimit:  true,
-			})
-			if err == nil {
-				var queueTotalEstimated int64
-				var queuedCount int64
-				for i := range queueJobs {
-					dto := toJobDTO(&queueJobs[i], positions[queueJobs[i].ID], lookup)
-					switch queueJobs[i].Status {
-					case string(ijobs.StatusQueued):
-						queuedCount++
-						if dto.EstimatedDurationSeconds != nil {
-							queueTotalEstimated += *dto.EstimatedDurationSeconds
-						}
-					case string(ijobs.StatusRunning):
-						if dto.EstimatedDurationSeconds != nil {
-							remaining := *dto.EstimatedDurationSeconds
-							if queueJobs[i].StartedAt != nil {
-								elapsed := time.Now().Unix() - *queueJobs[i].StartedAt
-								remaining -= elapsed
-								if remaining < 0 {
-									remaining = 0
-								}
+	if includesStatus(statuses, string(ijobs.StatusQueued)) {
+		queueJobs, err := s.store.Jobs.ListWithPath(ctx, store.JobListQuery{
+			Statuses: []string{string(ijobs.StatusQueued), string(ijobs.StatusRunning)},
+			NoLimit:  true,
+		})
+		if err == nil {
+			var queueTotalEstimated int64
+			var queuedCount, queuedOriginal, queuedPredictedSavings int64
+			for i := range queueJobs {
+				dto := toJobDTO(&queueJobs[i], positions[queueJobs[i].ID], lookup)
+				switch queueJobs[i].Status {
+				case string(ijobs.StatusQueued):
+					queuedCount++
+					// Byte totals are queued-only, matching queued_count. The
+					// running job's bytes are already partly on disk as the temp
+					// output, so counting them as outstanding would overstate.
+					queuedOriginal += queueJobs[i].OriginalSizeBytes
+					if dto.PredictedSavingsBytes != nil {
+						queuedPredictedSavings += *dto.PredictedSavingsBytes
+					}
+					if dto.EstimatedDurationSeconds != nil {
+						queueTotalEstimated += *dto.EstimatedDurationSeconds
+					}
+				case string(ijobs.StatusRunning):
+					if dto.EstimatedDurationSeconds != nil {
+						remaining := *dto.EstimatedDurationSeconds
+						if queueJobs[i].StartedAt != nil {
+							elapsed := time.Now().Unix() - *queueJobs[i].StartedAt
+							remaining -= elapsed
+							if remaining < 0 {
+								remaining = 0
 							}
-							queueTotalEstimated += remaining
 						}
+						queueTotalEstimated += remaining
 					}
 				}
-				if queueTotalEstimated > 0 {
-					resp["queue_total_estimated_seconds"] = queueTotalEstimated
-				}
-				if queuedCount > 0 {
-					resp["queued_count"] = queuedCount
-				}
+			}
+			if queueTotalEstimated > 0 {
+				resp["queue_total_estimated_seconds"] = queueTotalEstimated
+			}
+			if queuedCount > 0 {
+				resp["queued_count"] = queuedCount
+				resp["queue_total_original_bytes"] = queuedOriginal
+				resp["queue_total_predicted_savings_bytes"] = queuedPredictedSavings
+			}
+		}
+	}
+
+	if includesStatus(statuses, string(ijobs.StatusCompleted)) ||
+		includesStatus(statuses, string(ijobs.StatusFailed)) {
+		if h, err := s.store.Jobs.HistorySummary(ctx, statuses); err == nil {
+			resp["history"] = historySummaryDTO{
+				CompletedCount:    h.CompletedCount,
+				FailedCount:       h.FailedCount,
+				CancelledCount:    h.CancelledCount,
+				OriginalSizeBytes: h.OriginalSizeBytes,
+				OutputSizeBytes:   h.OutputSizeBytes,
+				BytesSaved:        h.OriginalSizeBytes - h.OutputSizeBytes,
+				EncodeSeconds:     h.EncodeSeconds,
 			}
 		}
 	}

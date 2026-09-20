@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 
 # ── Stage 1: Build the Next.js frontend ──────────────────────────────────────
-FROM node:22-alpine AS frontend-build
+FROM node:24-alpine AS frontend-build
 WORKDIR /build
-RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml ./
+RUN npm install -g "$(node -p 'require("./package.json").packageManager.split("+")[0]')"
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 COPY web/ ./

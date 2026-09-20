@@ -159,6 +159,50 @@ func (j *Jobs) CountJobs(ctx context.Context, statuses []string) (int64, error) 
 	return n, nil
 }
 
+// HistorySummary aggregates every finished job the history view can show, so
+// the UI can report totals without paging through the whole list. Byte figures
+// cover completed jobs only: a failed job never swapped a file, so it has no
+// output size to weigh in.
+type HistorySummary struct {
+	CompletedCount    int64
+	FailedCount       int64
+	CancelledCount    int64
+	OriginalSizeBytes int64
+	OutputSizeBytes   int64
+	EncodeSeconds     int64
+}
+
+// HistorySummary returns those totals over non-dismissed jobs matching an
+// optional status filter.
+func (j *Jobs) HistorySummary(ctx context.Context, statuses []string) (HistorySummary, error) {
+	query := `
+		SELECT
+			COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status = 'completed' THEN original_size_bytes ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status = 'completed' THEN COALESCE(output_size_bytes, original_size_bytes) ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status = 'completed' AND started_at IS NOT NULL AND completed_at > started_at
+				THEN completed_at - started_at ELSE 0 END), 0)
+		FROM transcode_jobs WHERE dismissed_at IS NULL`
+	var args []any
+	if len(statuses) > 0 {
+		query += " AND status IN (" + placeholders(len(statuses)) + ")"
+		for _, s := range statuses {
+			args = append(args, s)
+		}
+	}
+	var h HistorySummary
+	err := j.r.QueryRowContext(ctx, query, args...).Scan(
+		&h.CompletedCount, &h.FailedCount, &h.CancelledCount,
+		&h.OriginalSizeBytes, &h.OutputSizeBytes, &h.EncodeSeconds,
+	)
+	if err != nil {
+		return HistorySummary{}, err
+	}
+	return h, nil
+}
+
 // QueuedPositions returns 1-based queue positions for every queued job.
 func (j *Jobs) QueuedPositions(ctx context.Context) (map[int64]int, error) {
 	rows, err := j.r.QueryContext(ctx, `

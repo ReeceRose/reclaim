@@ -358,15 +358,21 @@ function DashboardContent() {
               className="flex items-center gap-3 mb-3.5 last:mb-0 text-sm"
             >
               <div className="min-w-20 shrink-0 font-semibold flex items-center gap-1.5 flex-wrap">
-                <Badge
-                  className={`font-mono text-xs rounded-lg font-semibold ${CODEC_COLORS[c.codec.toLowerCase()] ?? "text-slate"}`}
-                  style={{
-                    borderColor: `color-mix(in srgb, ${codecCSSColor(c.codec)} 30%, transparent)`,
-                    background: `color-mix(in srgb, ${codecCSSColor(c.codec)} 10%, transparent)`,
-                  }}
+                <Link
+                  href={`/library?codec=${encodeURIComponent(c.codec)}`}
+                  data-tooltip={`Browse ${c.codec} files`}
+                  className="rounded-lg transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                 >
-                  {c.codec}
-                </Badge>
+                  <Badge
+                    className={`font-mono text-xs rounded-lg font-semibold cursor-pointer ${CODEC_COLORS[c.codec.toLowerCase()] ?? "text-slate"}`}
+                    style={{
+                      borderColor: `color-mix(in srgb, ${codecCSSColor(c.codec)} 30%, transparent)`,
+                      background: `color-mix(in srgb, ${codecCSSColor(c.codec)} 10%, transparent)`,
+                    }}
+                  >
+                    {c.codec}
+                  </Badge>
+                </Link>
               </div>
               <div className="flex-1 h-2.5 bg-surface-2 rounded-md overflow-hidden">
                 <div

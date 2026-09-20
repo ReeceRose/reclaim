@@ -5,6 +5,7 @@ import {
   Download,
   ExternalLink,
   Eye,
+  Film,
   FolderSearch,
   HardDrive,
   Image,
@@ -57,8 +58,14 @@ const features = [
   {
     icon: Shield,
     title: "Verify before swap",
-    body: "Every encode is checked (duration ±1 s, stream counts, resolution) before the original is touched.",
+    body: "Every encode is checked (duration ±1 s, stream counts, resolution, and that the video really is in the codec you asked for) before the original is touched.",
     accent: "var(--green)",
+  },
+  {
+    icon: Film,
+    title: "HEVC or AV1",
+    body: "Each profile targets HEVC (libx265) or AV1 (SVT-AV1) — AV1 is roughly a fifth smaller at the same quality, though far fewer players can decode it, so check your clients first. Files already in either codec are never re-encoded.",
+    accent: "var(--violet)",
   },
   {
     icon: Image,
@@ -488,6 +495,14 @@ export function Throughput() {
             </tbody>
           </table>
         </div>
+
+        <p className="mt-4 text-sm leading-relaxed text-muted-fg">
+          Figures are for x265 on a typical homelab CPU. SVT-AV1 has its own
+          scale — presets <code className="font-mono text-xs">0</code> (slowest)
+          to <code className="font-mono text-xs">13</code> — with the middle of
+          the range landing in similar territory. Reclaim estimates each job
+          from your own completed encodes, kept separately per codec.
+        </p>
       </div>
     </section>
   );

@@ -12,9 +12,15 @@ function DashboardMock() {
     },
     {
       label: "hevc",
-      pct: 38,
+      pct: 30,
       color: "var(--green)",
-      meta: "3,110 (26%) · 9.8 TB (17%)",
+      meta: "2,470 (20%) · 7.6 TB (13%)",
+    },
+    {
+      label: "av1",
+      pct: 8,
+      color: "var(--sky)",
+      meta: "640 (5%) · 2.2 TB (4%)",
     },
     {
       label: "mpeg2",
@@ -103,7 +109,7 @@ function DashboardMock() {
                     "color-mix(in srgb, var(--green) 45%, transparent)",
                 }}
               />
-              Already HEVC · 9.8 TB · 17%
+              Already HEVC/AV1 · 9.8 TB · 17%
             </span>
           </div>
         </div>

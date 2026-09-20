@@ -35,7 +35,9 @@ dev: $(DEV_DIR)
 	cd web && NEXT_PUBLIC_WS_BASE=ws://localhost:8080 pnpm run dev & \
 	wait
 
-VERSION := $(shell git describe --tags --exact-match 2>/dev/null || echo dev)
+# Tags carry a leading "v"; the version string does not (CI's docker metadata
+# action strips it too, and the UI adds it back for display).
+VERSION := $(patsubst v%,%,$(shell git describe --tags --exact-match 2>/dev/null || echo dev))
 COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 LDFLAGS := -X reclaim/internal/version.Version=$(VERSION) -X reclaim/internal/version.Commit=$(COMMIT)
 

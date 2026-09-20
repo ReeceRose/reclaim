@@ -105,7 +105,7 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 3. `store.Open()` — opens SQLite (WAL mode, two pools: 1 writer / 25 readers), runs goose migrations, bootstraps defaults
 4. `config.NewLive(cfg)` — creates the runtime-mutable settings holder (encode window, scan interval, probe concurrency); read by the scanner and worker on every use so PUT `/api/settings` takes effect without a restart
 5. `scanner.New()` + `sc.Start(ctx)` — runs startup scan, starts fsnotify watcher, schedules periodic rescans; `notify.New()` + `nt.Run(ctx)` batches the new candidates it finds
-6. `api.New()` — wires routes on Echo v5; full route list: `/healthz`, `/api/{setup,login,logout,session}`, `/api/{stats,files,candidates}{,/grouped,/grouped/seasons,/grouped/episodes}`, `/api/stats/savings`, `/api/files/:id`, `/api/scan{,/full}`, `/api/profiles{,/:id}`, `/api/jobs{,/:id/cancel,/:id/force,/:id}`, `/api/events{,/:id}`, `/api/settings{,/credentials,/prune-missing,/notify-test}`, `/api/metadata{,/search,/refresh}`, `/api/ws`
+6. `api.New()` — wires routes on Echo v5; full route list: `/healthz`, `/api/{setup,login,logout,session}`, `/api/{stats,files,candidates}{,/grouped,/grouped/seasons,/grouped/episodes}`, `/api/stats/savings`, `/api/files/:id`, `/api/scan{,/full}`, `/api/profiles{,/:id}`, `/api/jobs{,/:id/cancel,/:id/force,/:id}`, `/api/events{,/:id}`, `/api/settings{,/credentials,/prune-missing,/notify-test}`, `/api/metadata{,/search,/refresh}`, `/api/releases{,/seen}`, `/api/ws`
 7. `worker.New()` + `wk.Run(ctx)` — encode loop; polls for queued jobs inside the window
 
 ### Package map
@@ -125,6 +125,7 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 | `internal/tmdb` | Rate-limited TMDB API client (3 req/s) — movie/TV search, detail fetching, image URL helpers |
 | `internal/metadata` | Background fetcher: runs after each scan, populates `media_metadata` with staleness rules (14/30/90 days by status) |
 | `internal/notify` | Batches newly-added re-encode candidates into one `candidates_added` event + optional webhook |
+| `internal/changelog` | Parses the embedded `CHANGELOG.md` into per-release entries |
 | `web/` | Next.js 16 static export embedded into the binary via `web/embed.go` |
 
 ### Store
@@ -279,6 +280,30 @@ logged only — `POST /api/settings/notify-test` is where a webhook error is vis
 returns the receiver's own message. The `notify_*` settings live in the `settings` row
 (migration `00014`), not `config.Live`: there is no env var behind a webhook URL typed into the
 UI, so it has to survive restarts.
+
+### Release notes
+
+`CHANGELOG.md` at the repo root is the release source of truth. `scripts/release.sh`
+writes the entry, commits it, tags *that* commit, and publishes the same text as the
+GitHub Release via `--notes-file` — so the tag always points at a tree whose changelog
+already describes it.
+
+`changelog.go` (package `reclaim`, at the root only because `go:embed` cannot reach
+outside its own directory) embeds the file; `internal/changelog` parses it. `##` is
+reserved for version headings (`## v0.0.42 — 2026-09-20`) and is how entries are split,
+so generated notes start at `###`; fenced blocks are skipped when detecting boundaries.
+`GET /api/releases` serves the parsed entries and makes no outbound request — the notes
+ship with the build, so they work air-gapped and can never describe a different version
+than the one running. The sidebar version is the entry point (`web/components/release-notes.tsx`),
+rendered by `web/components/ui/markdown.tsx`, a deliberately partial Markdown renderer
+covering the subset `release.sh` emits — release notes never touch `dangerouslySetInnerHTML`.
+
+The upgrade prompt rides on `settings.last_seen_version` (migration `00020`): `whats_new`
+is true when it differs from `version.Version` and an entry for that version exists.
+Opening the panel POSTs `/api/releases/seen`. `Settings.SeedLastSeenVersion`, called from
+`main.go` *before* setup completes, stamps a fresh install so a first-run user is not shown
+a changelog for a release they never upgraded through; an existing install is left unstamped
+and is offered the notes on its first boot on a release-notes-capable build.
 
 ### Authentication
 

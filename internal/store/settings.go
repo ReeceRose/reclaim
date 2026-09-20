@@ -113,6 +113,38 @@ func (s *Settings) SetClockFormat(ctx context.Context, format string) error {
 	return err
 }
 
+// LastSeenVersion returns the build version the user has already been shown
+// release notes for. Empty means never acknowledged.
+func (s *Settings) LastSeenVersion(ctx context.Context) string {
+	var v sql.NullString
+	if err := s.r.QueryRowContext(ctx,
+		"SELECT last_seen_version FROM settings WHERE id = 1",
+	).Scan(&v); err != nil || !v.Valid {
+		return ""
+	}
+	return v.String
+}
+
+// SetLastSeenVersion records that this build's release notes have been seen.
+func (s *Settings) SetLastSeenVersion(ctx context.Context, v string) error {
+	_, err := s.w.ExecContext(ctx,
+		"UPDATE settings SET last_seen_version = ? WHERE id = 1", strings.TrimSpace(v),
+	)
+	return err
+}
+
+// SeedLastSeenVersion stamps the running version on an instance that has never
+// acknowledged one *and* has not finished first-run setup — that combination
+// only describes a fresh install, which should not be shown a changelog for a
+// release it was never upgraded from. An existing install is left empty so its
+// first boot on a release-notes-capable build does offer them.
+func (s *Settings) SeedLastSeenVersion(ctx context.Context, v string) error {
+	if s.LastSeenVersion(ctx) != "" || s.IsSetupComplete() {
+		return nil
+	}
+	return s.SetLastSeenVersion(ctx, v)
+}
+
 // CompleteSetup stores bcrypt-hashed credentials and marks setup as done.
 func (s *Settings) CompleteSetup(ctx context.Context, username, plaintext string) error {
 	if s.IsSetupComplete() {

@@ -77,9 +77,17 @@ Clears the session cookie. `204 No Content`.
 Whoami / setup-state probe used by the SPA on load. Reachable unauthenticated.
 
 ```json
-{ "setup_complete": true, "authenticated": true, "username": "admin" }
+{
+  "setup_complete": true,
+  "authenticated": true,
+  "username": "admin",
+  "version": "0.0.42",
+  "commit": "7398c12"
+}
 ```
-When unauthenticated: `authenticated: false`, `username: null`.
+When unauthenticated: `authenticated: false`, `username: null`. `version` is
+`"dev"` on an untagged build. Release notes for `version` come from
+[`GET /api/releases`](#get-apireleases).
 
 ### `PUT /api/settings/credentials`
 Changes username/password on an already-configured instance (re-bcrypts; never
@@ -941,6 +949,52 @@ With `key` + `media_type`, force-refreshes a single entry immediately.
 ```
 - `200` → `{ "status": "ok" }` (single key) or `{ "status": "queued" }` (full run)
 - `503` → metadata fetcher unavailable (key not configured)
+
+---
+
+## Release notes
+
+Served from `CHANGELOG.md`, which is compiled into the binary by `changelog.go`.
+No request leaves the server: the notes ship with the build, so they work on an
+air-gapped install and can never describe a version other than the one running.
+`scripts/release.sh` writes the entry, commits it, and tags that commit, which
+is what keeps the two in step.
+
+### `GET /api/releases`
+Every entry in the embedded changelog, newest first.
+
+```json
+{
+  "current_version": "0.0.42",
+  "repo_url": "https://github.com/ReeceRose/reclaim",
+  "whats_new": false,
+  "releases": [
+    {
+      "tag": "v0.0.42",
+      "version": "0.0.42",
+      "date": "2026-09-20",
+      "body": "Documentation and polish…\n\n### What's Changed\n…",
+      "url": "https://github.com/ReeceRose/reclaim/releases/tag/v0.0.42",
+      "current": true
+    }
+  ]
+}
+```
+- `body` is raw Markdown — headings at `###` and below, flat bullet lists,
+  paragraphs, fenced code, and inline code/bold/links. The frontend renders that
+  subset itself rather than accepting HTML.
+- `current` marks the entry matching the running build. No entry is current on a
+  `dev` build, or on a build whose tag postdates its changelog.
+- `whats_new` is `true` when the running version differs from the one whose notes
+  were last acknowledged *and* notes for it exist. Always `false` on a `dev`
+  build. A fresh install is stamped at first boot, so it is never greeted with a
+  changelog for a release it did not upgrade through.
+
+### `POST /api/releases/seen`
+Records the running version as acknowledged, clearing `whats_new` until the next
+upgrade. The frontend calls this when the release-notes panel is opened.
+
+- `204` → stamped
 
 ---
 

@@ -20,6 +20,9 @@ func (s *Store) bootstrapIfNeeded(ctx context.Context) error {
 	if err := s.ensureClockFormat(ctx); err != nil {
 		return fmt.Errorf("ensure clock_format: %w", err)
 	}
+	if err := s.ensureLastSeenVersion(ctx); err != nil {
+		return fmt.Errorf("ensure last_seen_version: %w", err)
+	}
 
 	needsStats, err := s.Stats.needsRebuild(ctx)
 	if err != nil {
@@ -120,6 +123,19 @@ func (s *Store) ensureClockFormat(ctx context.Context) error {
 	}
 	_, err = s.w.ExecContext(ctx,
 		`ALTER TABLE settings ADD COLUMN clock_format TEXT NOT NULL DEFAULT '`+DefaultClockFormat+`'`,
+	)
+	return err
+}
+
+// ensureLastSeenVersion repairs databases where migration 00020 was recorded
+// but the column is absent, which would make every settings read of it fail.
+func (s *Store) ensureLastSeenVersion(ctx context.Context) error {
+	has, err := tableHasColumn(ctx, s.w, "settings", "last_seen_version")
+	if err != nil || has {
+		return err
+	}
+	_, err = s.w.ExecContext(ctx,
+		`ALTER TABLE settings ADD COLUMN last_seen_version TEXT NOT NULL DEFAULT ''`,
 	)
 	return err
 }

@@ -23,6 +23,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY cmd/ cmd/
 COPY internal/ internal/
 COPY web/embed.go web/embed.go
+# CHANGELOG.md is embedded by changelog.go (release notes are served offline).
+COPY CHANGELOG.md changelog.go ./
 
 ARG VERSION=dev
 ARG COMMIT=unknown

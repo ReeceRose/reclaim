@@ -236,6 +236,7 @@ Both renames happen in the same directory and are recovered on next boot if inte
 | Doc | Audience |
 |---|---|
 | [`docs/DOCKER.md`](docs/DOCKER.md) | Homelab deployment (Unraid, Synology, Compose, `docker run`) |
-| [`docs/RELEASES.md`](docs/RELEASES.md) | Pulling versioned images from GHCR |
+| [`docs/RELEASES.md`](docs/RELEASES.md) | Pulling versioned images from GHCR, and how release notes are cut |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release notes — also readable in the app by clicking the version in the sidebar |
 | [`docs/API.md`](docs/API.md) | REST + WebSocket reference for scripting and integrations |
 | [`docs/ENCODE-TIME-PLAN.md`](docs/ENCODE-TIME-PLAN.md) | Encode time estimation design (rate model, learning buckets, API fields) |

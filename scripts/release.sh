@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 # Usage: ./scripts/release.sh [major|minor|patch|vX.Y.Z]
+#
+# CHANGELOG.md is the source of truth for release notes: this script writes the
+# new entry there, commits it, tags that commit, and publishes the same text as
+# the GitHub Release. The binary embeds CHANGELOG.md (see changelog.go), so the
+# in-app release notes always describe the build serving them.
 set -euo pipefail
 
+cd "$(dirname "$0")/.."
+
 BUMP=${1:-patch}
+CHANGELOG=CHANGELOG.md
 
 # Get the latest semver tag (default to v0.0.0 if none exist)
 LATEST=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
@@ -27,6 +35,19 @@ fi
 
 REPO=$(git remote get-url origin | sed 's/.*github.com[:/]//' | sed 's/\.git$//')
 
+# The changelog commit has to land on a branch, not a detached HEAD.
+BRANCH=$(git symbolic-ref --short -q HEAD || true)
+if [[ -z "$BRANCH" ]]; then
+  echo "Error: HEAD is detached. Check out a branch before releasing." >&2
+  exit 1
+fi
+
+# A changelog edited by hand would be swept into the release commit.
+if ! git diff --quiet -- "$CHANGELOG" || ! git diff --cached --quiet -- "$CHANGELOG"; then
+  echo "Error: ${CHANGELOG} has uncommitted changes. Commit or stash them first." >&2
+  exit 1
+fi
+
 if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "Warning: you have uncommitted changes. They will NOT be included in this release."
   git status --short
@@ -38,6 +59,7 @@ fi
 
 echo "Current tag : ${LATEST}"
 echo "New tag     : ${NEW_TAG}"
+echo "Branch      : ${BRANCH}"
 echo ""
 read -r -p "Create and push ${NEW_TAG}? [y/N] " CONFIRM
 [[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 0; }
@@ -55,6 +77,8 @@ DIFF_STAT=$(git diff --stat "${LATEST}..HEAD" 2>/dev/null || git diff --stat HEA
 echo ""
 echo "Generating changelog with Claude..."
 
+# Headings start at level 3: CHANGELOG.md reserves `##` for version headings,
+# and internal/changelog splits entries on exactly that.
 PROMPT="You are writing a GitHub release changelog for Reclaim — a self-hosted media codec audit and re-encode tool for Plex/NAS libraries.
 
 Release: ${NEW_TAG}
@@ -68,41 +92,93 @@ ${DIFF_STAT}
 
 Write a concise, user-focused release changelog in GitHub-flavoured Markdown. Format it as:
 - A short opening sentence describing the overall theme of this release (one line, no heading)
-- A \"## What's Changed\" section with bullet points grouped by type (Features, Fixes, Improvements). Use plain English, not commit message jargon. Skip merge commits and version bump commits.
-- A \"## Docker\" section with the exact pull command: \`docker pull ghcr.io/${REPO}:${NEW_TAG#v}\`
+- A \"### What's Changed\" section with bullet points grouped under \"#### Features\", \"#### Fixes\", and \"#### Improvements\" subheadings. Use plain English, not commit message jargon. Skip merge commits and version bump commits.
+- A \"### Docker\" section with the exact pull command: \`docker pull ghcr.io/${REPO}:${NEW_TAG#v}\`
 
-Keep it tight — no filler, no 'this release includes' boilerplate. Max ~200 words."
+Rules:
+- Output the Markdown directly. Do NOT wrap the whole response in a code fence, and do NOT add any preamble such as 'Here is the changelog'.
+- Do NOT include a title heading with the version number — that is added automatically.
+- Headings must start at level 3 (###). Never use # or ##.
+- Keep it tight — no filler, no 'this release includes' boilerplate. Max ~200 words."
 
-NOTES=$(claude -p "$PROMPT" 2>/dev/null || true)
+NOTES_FILE=$(mktemp)
+trap 'rm -f "$NOTES_FILE"' EXIT
 
-if [[ -z "$NOTES" ]]; then
+claude -p "$PROMPT" > "$NOTES_FILE" 2>/dev/null || true
+
+# Strip a wrapping ```markdown fence if the model added one anyway, and drop any
+# leading `##`/`#` version title so the entry starts at its own prose.
+awk '
+  NR == 1 && /^```(markdown|md)?[[:space:]]*$/ { wrapped = 1; next }
+  { lines[++n] = $0 }
+  END {
+    last = n
+    if (wrapped) { while (last > 0 && lines[last] ~ /^[[:space:]]*$/) last--; if (lines[last] == "```") last-- }
+    start = 1
+    while (start <= last && lines[start] ~ /^[[:space:]]*$/) start++
+    if (lines[start] ~ /^#{1,2} v?[0-9]+\.[0-9]+\.[0-9]+/) {
+      start++
+      while (start <= last && lines[start] ~ /^[[:space:]]*$/) start++
+    }
+    for (i = start; i <= last; i++) print lines[i]
+  }
+' "$NOTES_FILE" > "${NOTES_FILE}.clean" && mv "${NOTES_FILE}.clean" "$NOTES_FILE"
+
+if [[ ! -s "$NOTES_FILE" ]]; then
   echo "Claude not available — using raw commit list."
-  NOTES="## What's Changed
+  cat > "$NOTES_FILE" <<EOF
+### What's Changed
 
 ${COMMITS}
 
-## Docker
+### Docker
 
 \`\`\`
 docker pull ghcr.io/${REPO}:${NEW_TAG#v}
-\`\`\`"
+\`\`\`
+EOF
 fi
 
 echo ""
 echo "--- Release notes preview ---"
-echo "$NOTES"
+cat "$NOTES_FILE"
 echo "-----------------------------"
 echo ""
 read -r -p "Proceed with these notes? [y/N] " CONFIRM2
 [[ "$CONFIRM2" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 0; }
 
-# Tag, push, and create the GitHub release
+# Insert the entry above the newest existing one, keeping the file newest-first.
+[[ -f "$CHANGELOG" ]] || printf '# Changelog\n' > "$CHANGELOG"
+RELEASE_DATE=$(date -u +%Y-%m-%d)
+
+awk -v hdr="## ${NEW_TAG} — ${RELEASE_DATE}" -v notes="$NOTES_FILE" '
+  function emit(  line) {
+    print hdr
+    print ""
+    while ((getline line < notes) > 0) print line
+    close(notes)
+    print ""
+    inserted = 1
+  }
+  !inserted && /^## v?[0-9]+\.[0-9]+\.[0-9]+/ { emit() }
+  { print }
+  END { if (!inserted) { print ""; emit() } }
+' "$CHANGELOG" > "${CHANGELOG}.tmp" && mv "${CHANGELOG}.tmp" "$CHANGELOG"
+
+echo "Updated ${CHANGELOG}."
+
+# Tag the commit that carries the notes, so the embedded changelog in the built
+# binary includes this release's own entry.
+git add "$CHANGELOG"
+git commit -m "Release ${NEW_TAG}"
+git push origin "$BRANCH"
+
 git tag -a "$NEW_TAG" -m "Release ${NEW_TAG}"
 git push origin "$NEW_TAG"
 
 gh release create "$NEW_TAG" \
   --title "Reclaim ${NEW_TAG}" \
-  --notes "$NOTES"
+  --notes-file "$NOTES_FILE"
 
 echo ""
 echo "Released: https://github.com/${REPO}/releases/tag/${NEW_TAG}"

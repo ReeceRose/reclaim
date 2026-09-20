@@ -1,7 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useUnreadCount } from "@/components/notification-panel";
+import { useReleases } from "@/components/release-notes";
 import { useClockFormat } from "@/hooks/use-clock-format";
 import { useNow } from "@/hooks/use-now";
 import { useWS } from "@/hooks/use-ws";
@@ -9,7 +11,11 @@ import { api, type ScanProgress } from "@/lib/api";
 import { isEfficientCodec } from "@/lib/codec";
 import { formatInt, formatVersion, windowInfo } from "@/lib/format";
 
-export function useShellData() {
+export function useShellData({
+  onOpenReleaseNotes,
+}: {
+  onOpenReleaseNotes: () => void;
+}) {
   useWS();
   const now = useNow();
   const clockFormat = useClockFormat();
@@ -65,6 +71,23 @@ export function useShellData() {
     queryKey: ["jobs", "queued-count"],
     queryFn: () => api.jobs({ status: "queued", limit: 1 }),
   });
+  const { data: releases } = useReleases();
+  const hasNewRelease = releases?.whats_new ?? false;
+
+  // Announce an upgrade once per mount. Opening the panel acknowledges it
+  // server-side, so this cannot recur on the next load; the ref only stops a
+  // second toast within this session.
+  const upgradeToasted = useRef(false);
+  useEffect(() => {
+    if (!hasNewRelease || upgradeToasted.current) return;
+    upgradeToasted.current = true;
+    toast.success(`Updated to ${releases?.current_version}`, {
+      description: "See what changed in this release.",
+      duration: 10_000,
+      action: { label: "Release notes", onClick: onOpenReleaseNotes },
+    });
+  }, [hasNewRelease, releases?.current_version, onOpenReleaseNotes]);
+
   const { data: eventsData } = useQuery({
     queryKey: ["events"],
     queryFn: () => api.events({ limit: 50 }),
@@ -146,6 +169,7 @@ export function useShellData() {
     username,
     initials,
     version,
+    hasNewRelease,
     handleLogout,
   };
 }

@@ -82,6 +82,22 @@ export interface Session {
   commit: string;
 }
 
+export interface ReleaseNote {
+  tag: string;
+  version: string;
+  date: string;
+  body: string;
+  url: string;
+  current: boolean;
+}
+
+export interface ReleasesResponse {
+  current_version: string;
+  repo_url: string;
+  whats_new: boolean;
+  releases: ReleaseNote[];
+}
+
 export interface CodecStat {
   codec: string;
   file_count: number;
@@ -742,6 +758,10 @@ export const api = {
 
   // Settings
   settings: () => request<Settings>("GET", "/api/settings"),
+
+  // Release notes (embedded changelog — no outbound request from the server)
+  releases: () => request<ReleasesResponse>("GET", "/api/releases"),
+  markReleaseSeen: () => request<void>("POST", "/api/releases/seen"),
   updateSettings: (
     s: Partial<
       Pick<

@@ -215,6 +215,10 @@ func (s *Server) Handler() http.Handler {
 	api.POST("/settings/prune-missing", s.handlePruneMissing)
 	api.POST("/settings/notify-test", s.handleNotifyTest)
 
+	// Release notes (embedded changelog).
+	api.GET("/releases", s.handleListReleases)
+	api.POST("/releases/seen", s.handleAckRelease)
+
 	// Metadata (TMDB).
 	api.GET("/metadata", s.handleMetadataGet)
 	api.GET("/metadata/search", s.handleMetadataSearch)

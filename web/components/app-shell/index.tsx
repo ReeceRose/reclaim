@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { NotificationPanel } from "@/components/notification-panel";
+import { ReleaseNotesPanel } from "@/components/release-notes";
 import { TooltipLayer } from "@/components/ui/tooltip-layer";
 import { MobileBottomNav, MobileHeader } from "./mobile-nav";
 import { Sidebar } from "./sidebar";
@@ -9,7 +10,9 @@ import { useShellData } from "./use-shell-data";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [notifOpen, setNotifOpen] = useState(false);
-  const shell = useShellData();
+  const [releaseNotesOpen, setReleaseNotesOpen] = useState(false);
+  const openReleaseNotes = useCallback(() => setReleaseNotesOpen(true), []);
+  const shell = useShellData({ onOpenReleaseNotes: openReleaseNotes });
 
   return (
     <div className="grid grid-cols-[230px_1fr] sm:min-h-screen max-sm:grid-cols-1 max-sm:grid-rows-[auto_1fr] max-sm:h-dvh">
@@ -25,7 +28,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         username={shell.username}
         initials={shell.initials}
         version={shell.version}
+        hasNewRelease={shell.hasNewRelease}
         onOpenNotifications={() => setNotifOpen(true)}
+        onOpenReleaseNotes={openReleaseNotes}
         onLogout={shell.handleLogout}
       />
 
@@ -40,6 +45,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       <NotificationPanel open={notifOpen} onOpenChange={setNotifOpen} />
+
+      <ReleaseNotesPanel
+        open={releaseNotesOpen}
+        onOpenChange={setReleaseNotesOpen}
+      />
 
       <MobileBottomNav pathname={shell.pathname} />
 

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { Settings } from "@/lib/api";
 import type { windowInfo } from "@/lib/format";
 import { BrandLink } from "./brand-link";
@@ -22,7 +24,9 @@ export function Sidebar({
   username,
   initials,
   version,
+  hasNewRelease,
   onOpenNotifications,
+  onOpenReleaseNotes,
   onLogout,
 }: {
   pathname: string;
@@ -36,7 +40,9 @@ export function Sidebar({
   username: string;
   initials: string;
   version: string | null;
+  hasNewRelease: boolean;
   onOpenNotifications: () => void;
+  onOpenReleaseNotes: () => void;
   onLogout: () => void;
 }) {
   return (
@@ -94,7 +100,20 @@ export function Sidebar({
 
       <div className="border-t border-line-soft px-4 py-3.5">
         {version && (
-          <div className="text-xs text-muted-dim mb-3">Version: {version}</div>
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={onOpenReleaseNotes}
+            data-tooltip="View release notes"
+            className="mb-3 w-full justify-start gap-2 px-1.5 text-xs font-normal text-muted-dim hover:text-text cursor-pointer"
+          >
+            <span className="truncate">Version: {version}</span>
+            {hasNewRelease && (
+              <Badge className="ml-auto bg-brand-soft px-2 py-px font-bold text-brand">
+                New
+              </Badge>
+            )}
+          </Button>
         )}
         {encodeWindow && settings && (
           <div className="flex items-center gap-3 mb-3">

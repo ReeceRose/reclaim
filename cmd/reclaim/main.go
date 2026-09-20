@@ -19,6 +19,7 @@ import (
 	"reclaim/internal/scanner"
 	"reclaim/internal/startup"
 	"reclaim/internal/store"
+	"reclaim/internal/version"
 	"reclaim/internal/worker"
 	"reclaim/web"
 )
@@ -75,6 +76,13 @@ func main() {
 			os.Exit(1)
 		}
 		slog.Warn("RESET_AUTH: credentials cleared — first-run setup required")
+	}
+
+	// Must run before setup completes: it is the unfinished setup that marks
+	// this install as new, and a new install should not be shown release notes
+	// for a version it never upgraded from.
+	if err := db.Settings.SeedLastSeenVersion(context.Background(), version.Version); err != nil {
+		slog.Warn("could not stamp initial version", "err", err)
 	}
 
 	if !db.Settings.IsSetupComplete() {

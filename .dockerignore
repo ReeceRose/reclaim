@@ -17,5 +17,7 @@ landing/
 # Docs and repo metadata
 docs/
 *.md
+# ...except the changelog, which changelog.go embeds for in-app release notes.
+!CHANGELOG.md
 .git/
 .gitignore

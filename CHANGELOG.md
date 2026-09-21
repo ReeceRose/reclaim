@@ -5,6 +5,28 @@ source of truth: `scripts/release.sh` writes each entry here, commits it, tags t
 commit, and publishes the same text as the GitHub Release. The running binary embeds
 this file, so the in-app release notes always match the build you are on.
 
+## v0.0.45 — 2026-09-21
+
+The queue can now be searched, filtered and reordered, and it's easier to see when it will finish.
+
+### What's Changed
+
+#### Features
+- **Queue search and filters:** narrow the queued tab by path, library, source codec, profile, or forced jobs. Your filters are saved in the URL, and the history tab can be searched by path.
+- **Queue reordering:** send jobs to the top or bottom, or move them up or down one place. Jobs now run in the order you set.
+- **Bulk actions on filtered results:** move, sort, or cancel everything that matches the current filter in one go. Sorting a subset, such as one show, leaves the rest of the queue where it was.
+- **Projected finish day:** the queue's total estimate now accounts for your encode window. It shows the day the queue is expected to finish, not just a total running time.
+
+#### Improvements
+- **Quarter-hour window times:** the encode window's start and end can now be set in 15-minute steps.
+- Filtered queue views show their own totals, while queue positions and overall totals still reflect the whole queue.
+
+### Docker
+
+```
+docker pull ghcr.io/ReeceRose/reclaim:0.0.45
+```
+
 ## v0.0.44 — 2026-09-20
 
 The queue page is now split into paginated Queued and History tabs, so a large backlog no longer buries completed jobs.

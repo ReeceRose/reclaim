@@ -253,3 +253,40 @@ func TestWindowState(t *testing.T) {
 		})
 	}
 }
+
+func TestProjectQueueFinish(t *testing.T) {
+	at := func(day, h, m int) time.Time {
+		return time.Date(2026, 1, day, h, m, 0, 0, time.UTC)
+	}
+	hours := func(hs ...float64) []time.Duration {
+		out := make([]time.Duration, len(hs))
+		for i, h := range hs {
+			out[i] = time.Duration(h * float64(time.Hour))
+		}
+		return out
+	}
+	cases := []struct {
+		name           string
+		now            time.Time
+		start, end     time.Duration
+		running        time.Duration
+		forced, queued []time.Duration
+		want           time.Time
+	}{
+		{"closed waits for open", at(1, 12, 0), 0, 8 * time.Hour, 0, nil, hours(1), at(2, 1, 0)},
+		{"open fits tonight", at(2, 1, 0), 0, 8 * time.Hour, 0, nil, hours(2, 3), at(2, 6, 0)},
+		{"last pull overruns close", at(2, 1, 0), 0, 8 * time.Hour, 0, nil, hours(6, 3), at(2, 10, 0)},
+		{"spills to next night", at(2, 1, 0), 0, 8 * time.Hour, 0, nil, hours(6, 3, 1), at(3, 1, 0)},
+		{"running job ignores window", at(2, 7, 0), 0, 8 * time.Hour, 2 * time.Hour, nil, hours(1), at(3, 1, 0)},
+		{"forced jobs ignore window", at(1, 12, 0), 0, 8 * time.Hour, 0, hours(2), nil, at(1, 14, 0)},
+		{"always open is a plain sum", at(1, 12, 0), 3 * time.Hour, 3 * time.Hour, time.Hour, hours(1), hours(1, 1), at(1, 16, 0)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := ProjectQueueFinish(c.now, c.start, c.end, c.running, c.forced, c.queued)
+			if !got.Equal(c.want) {
+				t.Errorf("finish = %v, want %v", got, c.want)
+			}
+		})
+	}
+}

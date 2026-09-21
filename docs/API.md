@@ -664,6 +664,7 @@ One page of jobs, optionally filtered by status.
   ],
   "total_count": 42,
   "queue_total_estimated_seconds": 8400,
+  "queue_estimated_finish_at": 1790000000,
   "queued_count": 8,
   "queue_total_original_bytes": 732000000000,
   "queue_total_predicted_savings_bytes": 401000000000,
@@ -692,6 +693,12 @@ includes (or omits) `queued`, and omitted when the queue is empty:
 - `queue_total_estimated_seconds` sums per-job estimates for all queued jobs
   plus remaining time for any running job (estimated total minus elapsed since
   `started_at`).
+- `queue_estimated_finish_at` (unix seconds) projects when the queue drains by
+  replaying those estimates against the encode window: the running job and any
+  forced jobs run immediately, and every other job starts only while the window
+  is open — but, like the worker, runs to completion once started, so a night
+  can overrun the window's end by up to one job. Returned alongside
+  `queue_total_estimated_seconds`.
 - `queue_total_original_bytes` and `queue_total_predicted_savings_bytes` sum
   `original_size_bytes` and `predicted_savings_bytes` over **queued jobs only**,
   matching `queued_count`. The running job is excluded: part of its output is

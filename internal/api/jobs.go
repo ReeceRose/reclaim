@@ -12,6 +12,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"reclaim/internal/config"
 	ijobs "reclaim/internal/jobs"
 	"reclaim/internal/media"
 	"reclaim/internal/store"
@@ -229,6 +230,8 @@ func (s *Server) handleListJobs(c *echo.Context) error {
 		if err == nil {
 			var queueTotalEstimated int64
 			var queuedCount, queuedOriginal, queuedPredictedSavings int64
+			var runningLeft time.Duration
+			var forcedDurations, queuedDurations []time.Duration
 			for i := range queueJobs {
 				dto := toJobDTO(&queueJobs[i], positions[queueJobs[i].ID], lookup)
 				switch queueJobs[i].Status {
@@ -243,6 +246,12 @@ func (s *Server) handleListJobs(c *echo.Context) error {
 					}
 					if dto.EstimatedDurationSeconds != nil {
 						queueTotalEstimated += *dto.EstimatedDurationSeconds
+						d := time.Duration(*dto.EstimatedDurationSeconds) * time.Second
+						if queueJobs[i].Forced {
+							forcedDurations = append(forcedDurations, d)
+						} else {
+							queuedDurations = append(queuedDurations, d)
+						}
 					}
 				case string(ijobs.StatusRunning):
 					if dto.EstimatedDurationSeconds != nil {
@@ -255,11 +264,18 @@ func (s *Server) handleListJobs(c *echo.Context) error {
 							}
 						}
 						queueTotalEstimated += remaining
+						runningLeft += time.Duration(remaining) * time.Second
 					}
 				}
 			}
 			if queueTotalEstimated > 0 {
 				resp["queue_total_estimated_seconds"] = queueTotalEstimated
+				finish := config.ProjectQueueFinish(
+					time.Now().In(s.live.Location()),
+					s.live.EncodeWindowStart(), s.live.EncodeWindowEnd(),
+					runningLeft, forcedDurations, queuedDurations,
+				)
+				resp["queue_estimated_finish_at"] = finish.Unix()
 			}
 			if queuedCount > 0 {
 				resp["queued_count"] = queuedCount

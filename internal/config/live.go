@@ -259,6 +259,26 @@ func WindowState(now time.Time, start, end time.Duration) (open bool, until time
 	return open, until
 }
 
+// ProjectQueueFinish predicts when the worker will drain its queue, replaying
+// its loop against the window: the running job finishes wherever it is, forced
+// jobs run back to back regardless of the window, and each remaining job starts
+// only while the window is open — a job pulled just before close still runs to
+// completion, so a night can overrun its end by up to one job. now must be in
+// the window's location, since WindowState reads its wall clock.
+func ProjectQueueFinish(now time.Time, start, end, running time.Duration, forced, queued []time.Duration) time.Time {
+	t := now.Add(running)
+	for _, d := range forced {
+		t = t.Add(d)
+	}
+	for _, d := range queued {
+		if open, until := WindowState(t, start, end); !open {
+			t = t.Add(until)
+		}
+		t = t.Add(d)
+	}
+	return t
+}
+
 // FormatHHMM renders a since-midnight duration back to "HH:MM" for the API.
 func FormatHHMM(d time.Duration) string {
 	h := int(d / time.Hour)

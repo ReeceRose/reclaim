@@ -469,6 +469,7 @@ export interface JobsListResult {
   items: Job[];
   total_count?: number;
   queue_total_estimated_seconds?: number;
+  queue_estimated_finish_at?: number;
   queued_count?: number;
   queue_total_original_bytes?: number;
   queue_total_predicted_savings_bytes?: number;

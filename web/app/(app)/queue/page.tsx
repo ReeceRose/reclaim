@@ -7,6 +7,7 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
+import { InfoIcon } from "lucide-react";
 import Link from "next/link";
 import { type ReactNode, Suspense } from "react";
 import { toast } from "sonner";
@@ -44,6 +45,7 @@ import {
   formatBytes,
   formatDurationCompact,
   formatInt,
+  formatZoneDay,
   relativeTime,
   windowInfo,
 } from "@/lib/format";
@@ -212,17 +214,33 @@ function VerifyChecks({ json }: { json: string | null }) {
 function SummaryStrip({
   items,
 }: {
-  items: { label: string; value: ReactNode; sub?: ReactNode; tone?: string }[];
+  items: {
+    label: string;
+    value: ReactNode;
+    sub?: ReactNode;
+    tone?: string;
+    info?: string;
+  }[];
 }) {
   return (
     <div
-      className="grid grid-cols-2 gap-x-6 gap-y-4 border border-line rounded-(--radius) px-5 py-4 mb-5 sm:grid-cols-3 lg:grid-cols-5"
+      className="grid grid-cols-2 gap-x-6 gap-y-4 border border-line rounded-(--radius) px-5 py-4 mb-5 sm:grid-cols-3 lg:grid-cols-6"
       style={{ background: "var(--surface)" }}
     >
       {items.map((item) => (
         <div key={item.label} className="min-w-0">
-          <div className="text-xs uppercase tracking-wider font-bold text-muted-fg">
+          <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider font-bold text-muted-fg">
             {item.label}
+            {item.info && (
+              <button
+                type="button"
+                aria-label={item.info}
+                data-tooltip={item.info}
+                className="inline-flex text-muted-dim hover:text-muted-fg focus-visible:text-muted-fg outline-none cursor-help"
+              >
+                <InfoIcon className="size-3.5" />
+              </button>
+            )}
           </div>
           <div
             className={cn(
@@ -905,6 +923,13 @@ function QueueContent() {
   const queuedSavings = queueSummary?.queue_total_predicted_savings_bytes ?? 0;
   const queuedSeconds = queueSummary?.queue_total_estimated_seconds ?? 0;
   const win = windowInfo(settingsData, now, clockFormat);
+  const finishDay = queueSummary?.queue_estimated_finish_at
+    ? formatZoneDay(
+        new Date(queueSummary.queue_estimated_finish_at * 1000),
+        now,
+        settingsData.timezone,
+      )
+    : null;
 
   const isQueued = tab === QUEUE_TAB.QUEUED;
 
@@ -980,11 +1005,18 @@ function QueueContent() {
                   },
                   {
                     label: "Estimated time",
+                    info: "A projection from past encodes on this instance, not a guarantee — real encode times vary with each file's content.",
                     value: formatDurationCompact(queuedSeconds),
                     sub:
                       running.length > 0
                         ? "includes the running job"
                         : undefined,
+                  },
+                  {
+                    label: "Estimated finish",
+                    info: "A projection from the estimated time and the encode window, not a guarantee — it shifts as encodes run faster or slower than predicted.",
+                    value: finishDay?.day ?? "—",
+                    sub: finishDay?.date,
                   },
                 ]}
               />

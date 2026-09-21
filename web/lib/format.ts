@@ -129,6 +129,43 @@ export function formatZoneClock(
 }
 
 /**
+ * formatZoneDay names the calendar day of an instant in the given zone relative
+ * to now — "Today", "Tomorrow", or a weekday within the week — alongside its
+ * short date. Past a week the date alone is the name.
+ */
+export function formatZoneDay(
+  at: Date,
+  now: Date,
+  zone: string,
+): { day: string; date: string | null } | null {
+  try {
+    const ymd = (d: Date) =>
+      new Intl.DateTimeFormat("en-CA", { timeZone: zone }).format(d);
+    const days = Math.round(
+      (Date.parse(ymd(at)) - Date.parse(ymd(now))) / 86_400_000,
+    );
+    const date = new Intl.DateTimeFormat("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      timeZone: zone,
+    }).format(at);
+    if (days <= 0) return { day: "Today", date };
+    if (days === 1) return { day: "Tomorrow", date };
+    if (days < 7) {
+      const weekday = new Intl.DateTimeFormat("en-US", {
+        weekday: "long",
+        timeZone: zone,
+      }).format(at);
+      return { day: weekday, date };
+    }
+    return { day: date, date: null };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * windowInfo labels the encode window from the state the server reported. Open/
  * closed and the transition instant are decided server-side, in the configured
  * timezone, because that is the clock the worker gates on — computing them from

@@ -474,7 +474,36 @@ export interface JobsListResult {
   queue_total_original_bytes?: number;
   queue_total_predicted_savings_bytes?: number;
   history?: HistorySummary;
+  filtered_queue?: FilteredQueueSummary;
 }
+
+/** JobFilter narrows the job list; bulk queue actions accept the same shape. */
+export interface JobFilter {
+  search?: string;
+  library_type?: string;
+  video_codec?: string;
+  profile_id?: number;
+  forced?: boolean;
+}
+
+export interface FilteredQueueSummary {
+  count: number;
+  original_size_bytes: number;
+  predicted_savings_bytes: number;
+  estimated_seconds: number;
+}
+
+export type QueueSelection = { job_ids: number[] } | { filter: JobFilter };
+
+export type QueuePosition = "top" | "up" | "down" | "bottom";
+
+export type QueueSortKey =
+  | "savings_per_hour_desc"
+  | "savings_desc"
+  | "duration_asc"
+  | "size_desc"
+  | "path_asc"
+  | "queued_at_asc";
 
 export interface MissingFilesSummary {
   count: number;
@@ -738,12 +767,31 @@ export const api = {
       file_ids: fileIds,
       profile_id: profileId ?? null,
     }),
-  jobs: (params?: {
-    status?: string;
-    order?: "queue" | "recent";
-    limit?: number;
-    offset?: number;
-  }) => request<JobsListResult>("GET", `/api/jobs${buildQuery(params ?? {})}`),
+  jobs: (
+    params?: JobFilter & {
+      status?: string;
+      order?: "queue" | "recent";
+      limit?: number;
+      offset?: number;
+    },
+  ) =>
+    request<JobsListResult>(
+      "GET",
+      `/api/jobs${buildQuery({ ...params, forced: params?.forced || undefined })}`,
+    ),
+  reorderJobs: (selection: QueueSelection, position: QueuePosition) =>
+    request<{ moved: number; position: QueuePosition }>(
+      "POST",
+      "/api/jobs/reorder",
+      { ...selection, position },
+    ),
+  sortQueue: (by: QueueSortKey, filter?: JobFilter) =>
+    request<{ sorted: number; by: QueueSortKey }>("POST", "/api/jobs/sort", {
+      by,
+      filter: filter ?? null,
+    }),
+  cancelJobs: (selection: QueueSelection) =>
+    request<{ cancelled: number }>("POST", "/api/jobs/cancel", selection),
   cancelJob: (id: number) =>
     request<{ job_id: number; status: string }>(
       "POST",

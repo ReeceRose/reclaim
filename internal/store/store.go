@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	_ "modernc.org/sqlite"
 )
@@ -193,6 +194,54 @@ func (s *Store) CancelJob(ctx context.Context, jobID, cancelledAt int64, meta st
 		return 0, err
 	}
 	return id, tx.Commit()
+}
+
+// CancelQueuedJobs cancels every job in ids that is still queued, in one
+// transaction with a single job_cancelled event covering them all — a bulk
+// cancel of a few hundred jobs should not bury the event log. Running jobs are
+// left alone: stopping one means killing ffmpeg, which is the worker's job.
+// Returns how many were cancelled and the event id (0 when none were).
+func (s *Store) CancelQueuedJobs(ctx context.Context, ids []int64, cancelledAt int64) (int, int64, error) {
+	if len(ids) == 0 {
+		return 0, 0, nil
+	}
+	tx, err := s.w.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback()
+
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, cancelledAt)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	res, err := tx.ExecContext(ctx,
+		`UPDATE transcode_jobs SET status = 'cancelled', completed_at = ?
+		 WHERE status = 'queued' AND id IN (`+placeholders(len(ids))+`)`, args...)
+	if err != nil {
+		return 0, 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, 0, err
+	}
+	if n == 0 {
+		return 0, 0, nil
+	}
+	title := "Cancelled " + strconv.FormatInt(n, 10) + " queued jobs"
+	if n == 1 {
+		title = "Job cancelled"
+	}
+	eventID, err := s.Events.InsertTx(ctx, tx, EventJobCancelled, SeverityInfo, title,
+		`{"count":`+strconv.FormatInt(n, 10)+`}`)
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, 0, err
+	}
+	return int(n), eventID, nil
 }
 
 // buildDSN embeds SQLite PRAGMAs as URI query parameters so they are applied

@@ -633,10 +633,14 @@ efficient codec`, `file already has an active or completed job`.
   omitted, or a profile whose encoder this host's ffmpeg was not built with.
 
 ### `GET /api/jobs`
-One page of jobs, optionally filtered by status.
+One page of jobs, optionally filtered by status and path.
 **Query:**
 - `status` — optional, comma-separated (e.g. `queued`, `completed,failed`). Omit for all statuses.
-- `order` — `queue` (default): oldest-queued-first, matching `queue_position` order. `recent`: newest-completed-first (falls back to `queued_at` for jobs never started) — use for history views.
+- `search` — optional, case-insensitive substring match on the source file path.
+- `library_type`, `video_codec` — optional, exact match on the media file. For a job that has not run yet, `video_codec` is the source codec.
+- `profile_id` — optional, the queuing profile.
+- `forced=true` — optional, only jobs marked with Run now.
+- `order` — `queue` (default): queue order, matching `queue_position` and the order the worker claims jobs in. New jobs join the back; `POST /api/jobs/reorder` moves them. `recent`: newest-completed-first (falls back to `queued_at` for jobs never started) — use for history views.
 - `limit` (default 50, max 200), `offset`.
 
 **Response**
@@ -685,7 +689,22 @@ page, and is returned on every page — numbered pagination needs `total_count`
 to size the pager, and the header totals must not vanish when the client steps
 off `offset=0`.
 
-`total_count` reflects the requested `status` filter. The `queue_*` fields and
+`total_count` reflects the requested `status` and filters. The filters narrow
+nothing else: `queue_position` stays the job's position in the whole queue, and
+the summary blocks keep describing the unfiltered set. Instead, a filtered
+request whose `status` includes `queued` gets a `filtered_queue` block totalling
+the matching queued jobs:
+
+```json
+"filtered_queue": {
+  "count": 32,
+  "original_size_bytes": 131000000000,
+  "predicted_savings_bytes": 86000000000,
+  "estimated_seconds": 98000
+}
+```
+
+The `queue_*` fields and
 `queued_count` are computed over the entire queued+running set regardless of
 the requested `status`/page, and are returned only when the request's `status`
 includes (or omits) `queued`, and omitted when the queue is empty:
@@ -711,6 +730,58 @@ filter. Byte and duration figures cover completed jobs only — a failed job nev
 swapped a file, so it has no output size to weigh in. `bytes_saved` is
 `original_size_bytes - output_size_bytes`, and `encode_seconds` sums
 `completed_at - started_at` across completed jobs.
+
+### Bulk queue actions
+
+The next endpoints act on a set of `queued` jobs, named by `job_ids` or selected
+by `filter` — every queued job matching the same fields `GET /api/jobs` takes
+(`search`, `library_type`, `video_codec`, `profile_id`, `forced`). Give one or
+the other. Ids that are not `queued` (running, finished, or unknown) are
+skipped; the running job is never touched.
+
+### `POST /api/jobs/reorder`
+Moves the selected jobs to the front or back of the queue (`top`/`bottom`),
+keeping their relative order, or one place (`up`/`down`), swapping each with
+its neighbour in the whole queue. A run of selected jobs steps as a block, and
+a job already at the end it is heading for stays put. `moved` counts the jobs
+that actually changed place. Forced jobs still run ahead of the rest outside
+the encode window.
+
+**Body**
+```json
+{ "job_ids": [10, 12], "position": "top" }
+{ "filter": { "search": "Oz - S04" }, "position": "bottom" }
+```
+- `200` → `{ "moved": 2, "position": "top" }`
+- `400` → `position` not `top`/`bottom`/`up`/`down`, neither or both of `job_ids`/`filter`
+
+### `POST /api/jobs/sort`
+Rewrites the queue order by a key. With `filter`, only the matching jobs are
+sorted, dealt back into the positions they already hold, so the rest of the
+queue keeps its places; without it the whole queue is sorted. Ties keep their
+current order, and jobs missing the figure a key needs sort last.
+
+| `by` | Order |
+|---|---|
+| `savings_per_hour_desc` | predicted savings ÷ estimated encode time, highest first — the most bytes reclaimed per window hour |
+| `savings_desc` | predicted savings, highest first |
+| `duration_asc` | estimated encode time, shortest first |
+| `size_desc` | source size, largest first |
+| `path_asc` | source path, case-insensitive — keeps a show's episodes in order |
+| `queued_at_asc` | when the job was queued — undoes manual moves |
+
+**Body** — `{ "by": "savings_per_hour_desc", "filter": { "library_type": "tv" } }`
+- `200` → `{ "sorted": 519, "by": "savings_per_hour_desc" }`
+- `400` → unknown `by`
+
+### `POST /api/jobs/cancel`
+Cancels the selected queued jobs in one transaction, writing a single
+`job_cancelled` event for the batch (metadata `{ "count": n }`) rather than
+one per job.
+
+**Body** — `{ "filter": { "search": "Oz" } }` or `{ "job_ids": [10, 12] }`
+- `200` → `{ "cancelled": 18 }`
+- `400` → neither or both of `job_ids`/`filter`
 
 ### `POST /api/jobs/:id/cancel`
 Cancels a `queued`/`running`/`verifying` job. The worker kills the ffmpeg process
@@ -1050,6 +1121,7 @@ Every message is a typed envelope:
 | `scan_completed` | `{ "scan_run_id", "files_scanned", "files_added", "files_updated", "files_moved", "files_removed", "errors" }` | a scan finishes |
 | `scan_failed` | `{ "error": "..." }` | a scan errors |
 | `jobs_queued` | `{ "count", "profile_id" }` | jobs are enqueued |
+| `jobs_reordered` | `{ "count", "position" }` or `{ "count", "sort" }` | queued jobs are moved to the top or bottom, or sorted |
 | `job_started` | `{ "job_id", "media_file_id" }` | worker begins an encode |
 | `job_progress` | `{ "job_id", "percent" }` | ffmpeg progress (throttled ~1/s to DB) |
 | `job_completed` | `{ "job_id", "output_size_bytes", ... }` | encode + verify + swap succeeded |

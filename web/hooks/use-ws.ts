@@ -8,6 +8,7 @@ import { type AppEvent, type ScanProgress, wsURL } from "@/lib/api";
 const SCAN_EVENTS = new Set(["scan_started", "scan_completed", "scan_failed"]);
 const JOB_MUTATE_EVENTS = new Set([
   "jobs_queued",
+  "jobs_reordered",
   "job_completed",
   "job_failed",
   "job_cancelled",

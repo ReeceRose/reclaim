@@ -7,9 +7,22 @@ import {
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import { InfoIcon } from "lucide-react";
+import {
+  ArrowDownIcon,
+  ArrowDownToLineIcon,
+  ArrowUpIcon,
+  ArrowUpToLineIcon,
+  InfoIcon,
+  SearchIcon,
+} from "lucide-react";
 import Link from "next/link";
-import { type ReactNode, Suspense } from "react";
+import {
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useState,
+  useTransition,
+} from "react";
 import { toast } from "sonner";
 import { BROWSE_ROUTES } from "@/app/(app)/browse/browse";
 import {
@@ -17,6 +30,12 @@ import {
   QUEUE_QUERY_PARAMS,
   QUEUE_TAB,
 } from "@/app/(app)/queue/queue";
+import {
+  ConfirmQueueAction,
+  QUEUE_SORT_OPTIONS,
+  QueueSearch,
+  QueueToolbar,
+} from "@/components/queue/queue-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -34,11 +53,16 @@ import { parseQueryEnum, useQueryParams } from "@/hooks/use-query-params";
 import {
   api,
   type Job,
+  type JobFilter,
   type JobsListResult,
   type Profile,
+  type QueuePosition,
+  type QueueSelection,
+  type QueueSortKey,
   type VerificationResult,
 } from "@/lib/api";
 import { encodeSettingsLabel, targetCodecLabel } from "@/lib/codec";
+import { codecFilterOptions, libraryFilterOptions } from "@/lib/filter-options";
 import {
   baseName,
   dirName,
@@ -433,27 +457,104 @@ function RunningCard({
   );
 }
 
+type QueueMove = QueuePosition;
+
+const QUEUE_MOVES: {
+  to: QueueMove;
+  label: string;
+  icon: ReactNode;
+}[] = [
+  { to: "top", label: "Move to top", icon: <ArrowUpToLineIcon /> },
+  { to: "up", label: "Move up one", icon: <ArrowUpIcon /> },
+  { to: "down", label: "Move down one", icon: <ArrowDownIcon /> },
+  { to: "bottom", label: "Move to bottom", icon: <ArrowDownToLineIcon /> },
+];
+
+function NoMatches({ description }: { description: string }) {
+  return (
+    <EmptyState
+      icon={<SearchIcon className="w-5 h-5" />}
+      title="No matches"
+      description={description}
+    />
+  );
+}
+
+function MatchSummary({
+  total,
+  summary,
+}: {
+  total: number;
+  summary: JobsListResult["filtered_queue"];
+}) {
+  const savings = summary?.predicted_savings_bytes ?? 0;
+  const size = summary?.original_size_bytes ?? 0;
+  return (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+      <span className="font-semibold text-text">
+        {formatInt(total)} matching {total === 1 ? "job" : "jobs"}
+      </span>
+      {summary && size > 0 && (
+        <>
+          <span aria-hidden="true">·</span>
+          <span className="font-mono">
+            {formatBytes(size)} → {formatBytes(Math.max(size - savings, 0))}
+          </span>
+          {savings > 0 && (
+            <span className="font-mono text-green font-semibold">
+              -{formatBytes(savings)}
+            </span>
+          )}
+        </>
+      )}
+      {summary && summary.estimated_seconds > 0 && (
+        <>
+          <span aria-hidden="true">·</span>
+          <span className="font-mono">
+            ~{formatDurationCompact(summary.estimated_seconds)}
+          </span>
+        </>
+      )}
+    </span>
+  );
+}
+
 function QueuedList({
   page,
   setPage,
+  filter,
+  filtered,
+  queuedCount,
   profileByID,
   onForce,
   onCancel,
+  onMove,
+  onMoveMatches,
+  onCancelMatches,
   forcePending,
   cancelPending,
+  movePending,
 }: {
   page: number;
   setPage: (page: number) => void;
+  filter: JobFilter;
+  filtered: boolean;
+  queuedCount: number;
   profileByID: Map<number, Profile>;
   onForce: (id: number) => void;
   onCancel: (id: number) => void;
+  onMove: (id: number, to: QueueMove) => void;
+  onMoveMatches: (to: QueueMove) => void;
+  onCancelMatches: (count: number) => void;
   forcePending: boolean;
   cancelPending: boolean;
+  movePending: boolean;
 }) {
   const { data, isPlaceholderData } = useQuery<JobsListResult>({
-    queryKey: ["jobs", "queued", page],
+    queryKey: ["jobs", "queued", filter, page],
     queryFn: () =>
       api.jobs({
+        ...filter,
         status: "queued",
         order: "queue",
         limit: QUEUE_PAGE_SIZE,
@@ -476,6 +577,10 @@ function QueuedList({
   const total = data.total_count ?? jobs.length;
 
   if (jobs.length === 0) {
+    if (filtered)
+      return (
+        <NoMatches description="Nothing in the queue matches these filters." />
+      );
     return (
       <EmptyState
         icon={
@@ -506,6 +611,42 @@ function QueuedList({
 
   return (
     <div className={cn(isPlaceholderData && "opacity-60 transition-opacity")}>
+      {filtered && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-3 text-xs text-muted-fg">
+          <MatchSummary total={total} summary={data.filtered_queue} />
+          <div className="flex flex-wrap gap-2 ml-auto">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onMoveMatches("top")}
+              disabled={movePending}
+              className="rounded-xl text-xs"
+            >
+              <ArrowUpToLineIcon />
+              Move all to top
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onMoveMatches("bottom")}
+              disabled={movePending}
+              className="rounded-xl text-xs"
+            >
+              <ArrowDownToLineIcon />
+              Move all to bottom
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onCancelMatches(total)}
+              disabled={cancelPending}
+              className="rounded-xl text-xs text-red border-red/30 hover:bg-red-soft hover:text-red"
+            >
+              Cancel all
+            </Button>
+          </div>
+        </div>
+      )}
       {jobs.map((job) => (
         <div
           key={job.id}
@@ -537,6 +678,27 @@ function QueuedList({
             </Badge>
           )}
           <div className="flex gap-2 basis-full justify-end sm:basis-auto sm:ml-0">
+            <div className="flex">
+              {QUEUE_MOVES.map((m) => (
+                <Button
+                  key={m.to}
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() => onMove(job.id, m.to)}
+                  disabled={
+                    movePending ||
+                    (m.to === "top" || m.to === "up"
+                      ? job.queue_position === 1
+                      : job.queue_position === queuedCount)
+                  }
+                  aria-label={m.label}
+                  data-tooltip={m.label}
+                  className="text-muted-fg hover:bg-surface-2 hover:text-text"
+                >
+                  {m.icon}
+                </Button>
+              ))}
+            </div>
             {!job.forced && (
               <Button
                 size="sm"
@@ -566,7 +728,7 @@ function QueuedList({
         pageCount={Math.max(1, Math.ceil(total / QUEUE_PAGE_SIZE))}
         onPageChange={setPage}
         totalItems={total}
-        itemLabel="queued"
+        itemLabel={filtered ? "matching" : "queued"}
       />
     </div>
   );
@@ -575,20 +737,23 @@ function QueuedList({
 function HistoryList({
   page,
   setPage,
+  search,
   onDelete,
   deletePending,
 }: {
   page: number;
   setPage: (page: number) => void;
+  search: string;
   onDelete: (id: number) => void;
   deletePending: boolean;
 }) {
   const { data, isPlaceholderData } = useQuery<JobsListResult>({
-    queryKey: ["jobs", "history", page],
+    queryKey: ["jobs", "history", search, page],
     queryFn: () =>
       api.jobs({
         status: "completed,failed",
         order: "recent",
+        search: search || undefined,
         limit: QUEUE_PAGE_SIZE,
         offset: (page - 1) * QUEUE_PAGE_SIZE,
       }),
@@ -610,6 +775,10 @@ function HistoryList({
   const summary = data.history;
 
   if (jobs.length === 0) {
+    if (search)
+      return (
+        <NoMatches description={`Nothing in history matches “${search}”.`} />
+      );
     return (
       <EmptyState
         icon={
@@ -817,7 +986,7 @@ function HistoryList({
           pageCount={Math.max(1, Math.ceil(total / QUEUE_PAGE_SIZE))}
           onPageChange={setPage}
           totalItems={total}
-          itemLabel="jobs"
+          itemLabel={search ? "matching" : "jobs"}
         />
       </div>
     </>
@@ -849,6 +1018,53 @@ function QueueContent() {
       [QUEUE_QUERY_PARAMS.TAB]: next === QUEUE_TAB.QUEUED ? null : next,
       [QUEUE_QUERY_PARAMS.PAGE]: null,
     });
+
+  const searchFromUrl = get(QUEUE_QUERY_PARAMS.SEARCH) ?? "";
+  const [searchInput, setSearchInput] = useState(searchFromUrl);
+  const [, startTransition] = useTransition();
+  useEffect(() => {
+    setSearchInput(searchFromUrl);
+  }, [searchFromUrl]);
+  useEffect(() => {
+    if (searchInput.trim() === searchFromUrl) return;
+    const t = setTimeout(() => {
+      startTransition(() =>
+        set({
+          [QUEUE_QUERY_PARAMS.SEARCH]: searchInput.trim() || null,
+          [QUEUE_QUERY_PARAMS.PAGE]: null,
+        }),
+      );
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput, searchFromUrl, set]);
+
+  const library = get(QUEUE_QUERY_PARAMS.LIBRARY) ?? "";
+  const codec = get(QUEUE_QUERY_PARAMS.CODEC) ?? "";
+  const profileParam = get(QUEUE_QUERY_PARAMS.PROFILE) ?? "";
+  const forced = get(QUEUE_QUERY_PARAMS.FORCED) === "true" ? "true" : "";
+  const setFilterParam = (key: string, value: string) =>
+    set({ [key]: value || null, [QUEUE_QUERY_PARAMS.PAGE]: null });
+  const profileID = Number.parseInt(profileParam, 10) || undefined;
+  const filter: JobFilter = {
+    search: searchFromUrl || undefined,
+    library_type: library || undefined,
+    video_codec: codec || undefined,
+    profile_id: profileID,
+    forced: forced === "true" || undefined,
+  };
+  const filtered = Object.values(filter).some((v) => v !== undefined);
+
+  const { data: stats } = useQuery({
+    queryKey: ["stats"],
+    queryFn: api.stats,
+    staleTime: 30_000,
+  });
+
+  const [confirm, setConfirm] = useState<
+    | { kind: "sort"; by: QueueSortKey }
+    | { kind: "cancel"; count: number }
+    | null
+  >(null);
 
   const { data: runningData } = useSuspenseQuery({
     queryKey: ["jobs", "running"],
@@ -901,6 +1117,45 @@ function QueueContent() {
     onError: () => toast.error("Force failed"),
   });
 
+  const moveMutation = useMutation({
+    mutationFn: ({ target, to }: { target: QueueSelection; to: QueueMove }) =>
+      api.reorderJobs(target, to),
+    onSuccess: ({ moved, position }) => {
+      if (position === "top" || position === "bottom")
+        toast.success(
+          `Moved ${formatInt(moved)} ${moved === 1 ? "job" : "jobs"} to the ${position} of the queue`,
+        );
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: () => toast.error("Reorder failed"),
+  });
+
+  const sortMutation = useMutation({
+    mutationFn: (by: QueueSortKey) =>
+      api.sortQueue(by, filtered ? filter : undefined),
+    onSuccess: ({ sorted, by }) => {
+      const label = QUEUE_SORT_OPTIONS.find((o) => o.value === by)?.label;
+      toast.success(
+        `Sorted ${formatInt(sorted)} ${sorted === 1 ? "job" : "jobs"}${label ? ` · ${label}` : ""}`,
+      );
+      setConfirm(null);
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: () => toast.error("Sort failed"),
+  });
+
+  const bulkCancelMutation = useMutation({
+    mutationFn: () => api.cancelJobs({ filter }),
+    onSuccess: ({ cancelled }) => {
+      toast.success(
+        `Cancelled ${formatInt(cancelled)} ${cancelled === 1 ? "job" : "jobs"}`,
+      );
+      setConfirm(null);
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: () => toast.error("Cancel failed"),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteJob(id),
     onSuccess: () => {
@@ -932,6 +1187,15 @@ function QueueContent() {
     : null;
 
   const isQueued = tab === QUEUE_TAB.QUEUED;
+
+  const profileOptions = (profilesData.items ?? []).map((p) => ({
+    value: String(p.id),
+    label: p.name,
+  }));
+  const sortLabel =
+    confirm?.kind === "sort"
+      ? QUEUE_SORT_OPTIONS.find((o) => o.value === confirm.by)
+      : undefined;
 
   return (
     <>
@@ -1021,23 +1285,102 @@ function QueueContent() {
                 ]}
               />
             )}
+            {queuedCount > 0 && (
+              <QueueToolbar
+                search={searchInput}
+                onSearchChange={setSearchInput}
+                library={library}
+                libraryOptions={libraryFilterOptions(stats, {
+                  excludeUnknown: true,
+                })}
+                onLibraryChange={(v) =>
+                  setFilterParam(QUEUE_QUERY_PARAMS.LIBRARY, v)
+                }
+                codec={codec}
+                codecOptions={codecFilterOptions(stats, {
+                  excludeEfficient: true,
+                  excludeUnknown: true,
+                })}
+                onCodecChange={(v) =>
+                  setFilterParam(QUEUE_QUERY_PARAMS.CODEC, v)
+                }
+                profile={profileID ? String(profileID) : ""}
+                profileOptions={profileOptions}
+                onProfileChange={(v) =>
+                  setFilterParam(QUEUE_QUERY_PARAMS.PROFILE, v)
+                }
+                forced={forced}
+                onForcedChange={(v) =>
+                  setFilterParam(QUEUE_QUERY_PARAMS.FORCED, v)
+                }
+                onSort={(by) => setConfirm({ kind: "sort", by })}
+                sortDisabled={sortMutation.isPending}
+                filtered={filtered}
+              />
+            )}
             <QueuedList
               page={page}
               setPage={setPage}
+              filter={filter}
+              filtered={filtered}
+              queuedCount={queuedCount}
               profileByID={profileByID}
               onForce={(id) => forceMutation.mutate(id)}
               onCancel={(id) => cancelMutation.mutate(id)}
+              onMove={(id, to) =>
+                moveMutation.mutate({ target: { job_ids: [id] }, to })
+              }
+              onMoveMatches={(to) =>
+                moveMutation.mutate({ target: { filter }, to })
+              }
+              onCancelMatches={(count) => setConfirm({ kind: "cancel", count })}
               forcePending={forceMutation.isPending}
-              cancelPending={cancelMutation.isPending}
+              cancelPending={
+                cancelMutation.isPending || bulkCancelMutation.isPending
+              }
+              movePending={moveMutation.isPending}
+            />
+            <ConfirmQueueAction
+              open={confirm !== null}
+              onOpenChange={(open) => !open && setConfirm(null)}
+              title={
+                confirm?.kind === "cancel"
+                  ? `Cancel ${formatInt(confirm.count)} queued ${confirm.count === 1 ? "job" : "jobs"}?`
+                  : `Sort ${filtered ? "matching jobs" : "the queue"} · ${sortLabel?.label ?? ""}`
+              }
+              description={
+                confirm?.kind === "cancel"
+                  ? "Every queued job matching the current filters is cancelled. The running job is left alone, and cancelled files can be queued again from Candidates."
+                  : `${sortLabel?.hint ?? ""} ${filtered ? "Only the matching jobs move, within the places they already hold." : "This replaces the current order, including any jobs you moved by hand."}`
+              }
+              confirmLabel={confirm?.kind === "cancel" ? "Cancel jobs" : "Sort"}
+              destructive={confirm?.kind === "cancel"}
+              pending={sortMutation.isPending || bulkCancelMutation.isPending}
+              onConfirm={() => {
+                if (confirm?.kind === "cancel") bulkCancelMutation.mutate();
+                else if (confirm?.kind === "sort")
+                  sortMutation.mutate(confirm.by);
+              }}
             />
           </>
         ) : (
-          <HistoryList
-            page={page}
-            setPage={setPage}
-            onDelete={(id) => deleteMutation.mutate(id)}
-            deletePending={deleteMutation.isPending}
-          />
+          <>
+            <div className="mb-4">
+              <QueueSearch
+                value={searchInput}
+                onChange={setSearchInput}
+                placeholder="Search history…"
+                label="Search job history"
+              />
+            </div>
+            <HistoryList
+              page={page}
+              setPage={setPage}
+              search={searchFromUrl}
+              onDelete={(id) => deleteMutation.mutate(id)}
+              deletePending={deleteMutation.isPending}
+            />
+          </>
         )}
       </div>
     </>

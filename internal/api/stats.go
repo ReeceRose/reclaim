@@ -325,7 +325,7 @@ func (s *Server) handleSavings(c *echo.Context) error {
 
 	outcomes := map[string]int64{}
 	for _, st := range []string{"completed", "failed", "cancelled"} {
-		n, err := s.store.Jobs.CountJobs(ctx, []string{st})
+		n, err := s.store.Jobs.CountJobs(ctx, []string{st}, store.JobFilter{})
 		if err != nil {
 			return serverError(c, err)
 		}

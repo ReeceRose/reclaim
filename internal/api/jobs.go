@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -170,10 +171,29 @@ func includesStatus(statuses []string, target string) bool {
 	return len(statuses) == 0 || slices.Contains(statuses, target)
 }
 
-// handleListJobs returns one page of jobs, optionally filtered by status,
-// with a 1-based queue position attached to queued jobs. Pass
+// parseJobFilter reads the JobFilter query params shared by GET /api/jobs:
+// search, library_type, video_codec, profile_id, and forced=true.
+func parseJobFilter(c *echo.Context) (store.JobFilter, error) {
+	f := store.JobFilter{
+		Search:      strings.TrimSpace(c.QueryParam("search")),
+		LibraryType: c.QueryParam("library_type"),
+		VideoCodec:  c.QueryParam("video_codec"),
+		ForcedOnly:  c.QueryParam("forced") == "true",
+	}
+	if raw := c.QueryParam("profile_id"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return f, badRequest(c, "invalid profile_id")
+		}
+		f.ProfileID = id
+	}
+	return f, nil
+}
+
+// handleListJobs returns one page of jobs, optionally filtered by status and
+// the JobFilter params, with a 1-based queue position attached to queued jobs. Pass
 // `order=recent` to sort by completion time (for history views) instead of
-// the default oldest-queued-first order (for queue views).
+// the default queue order (for queue views).
 func (s *Server) handleListJobs(c *echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -183,6 +203,10 @@ func (s *Server) handleListJobs(c *echo.Context) error {
 	}
 
 	statuses := parseStatusFilter(c.QueryParam("status"))
+	filter, err := parseJobFilter(c)
+	if err != nil {
+		return err
+	}
 	orderBy := ""
 	if c.QueryParam("order") == "recent" {
 		orderBy = "recent"
@@ -190,6 +214,7 @@ func (s *Server) handleListJobs(c *echo.Context) error {
 
 	jobs, err := s.store.Jobs.ListWithPath(ctx, store.JobListQuery{
 		Statuses: statuses,
+		Filter:   filter,
 		OrderBy:  orderBy,
 		Limit:    limit,
 		Offset:   offset,
@@ -216,10 +241,37 @@ func (s *Server) handleListJobs(c *echo.Context) error {
 	// The summary blocks describe the whole filtered set rather than this
 	// request's page, and are returned on every page: numbered pagination needs
 	// total_count to know how many pages there are, and the header totals must
-	// not vanish when the user steps off page 1.
+	// not vanish when the user steps off page 1. total_count honours the filter
+	// — it sizes the pager — while the queue and history totals keep describing
+	// the whole queue, as positions do; a filtered queue view gets its own
+	// filtered_queue block instead.
 	resp := map[string]any{"items": out}
-	if total, err := s.store.Jobs.CountJobs(ctx, statuses); err == nil {
+	if total, err := s.store.Jobs.CountJobs(ctx, statuses, filter); err == nil {
 		resp["total_count"] = total
+	}
+
+	if filter.Active() && includesStatus(statuses, string(ijobs.StatusQueued)) {
+		matches, err := s.store.Jobs.ListWithPath(ctx, store.JobListQuery{
+			Statuses: []string{string(ijobs.StatusQueued)},
+			Filter:   filter,
+			NoLimit:  true,
+		})
+		if err != nil {
+			return serverError(c, err)
+		}
+		var fq filteredQueueDTO
+		for i := range matches {
+			dto := toJobDTO(&matches[i], 0, lookup)
+			fq.Count++
+			fq.OriginalSizeBytes += matches[i].OriginalSizeBytes
+			if dto.PredictedSavingsBytes != nil {
+				fq.PredictedSavingsBytes += *dto.PredictedSavingsBytes
+			}
+			if dto.EstimatedDurationSeconds != nil {
+				fq.EstimatedSeconds += *dto.EstimatedDurationSeconds
+			}
+		}
+		resp["filtered_queue"] = fq
 	}
 
 	if includesStatus(statuses, string(ijobs.StatusQueued)) {
@@ -302,25 +354,244 @@ func (s *Server) handleListJobs(c *echo.Context) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
-// queuePositions assigns 1-based positions to queued jobs ordered by queue time.
-func queuePositions(jobs []store.TranscodeJob) map[int64]int {
-	queued := make([]store.TranscodeJob, 0)
-	for _, j := range jobs {
-		if j.Status == string(ijobs.StatusQueued) {
-			queued = append(queued, j)
-		}
+// filteredQueueDTO totals the queued jobs a filtered GET /api/jobs matches,
+// so the UI can show what a show or season costs before prioritising it.
+type filteredQueueDTO struct {
+	Count                 int64 `json:"count"`
+	OriginalSizeBytes     int64 `json:"original_size_bytes"`
+	PredictedSavingsBytes int64 `json:"predicted_savings_bytes"`
+	EstimatedSeconds      int64 `json:"estimated_seconds"`
+}
+
+// jobFilterBody is JobFilter as a JSON body, for the bulk queue actions.
+type jobFilterBody struct {
+	Search      string `json:"search"`
+	LibraryType string `json:"library_type"`
+	VideoCodec  string `json:"video_codec"`
+	ProfileID   int64  `json:"profile_id"`
+	Forced      bool   `json:"forced"`
+}
+
+func (b jobFilterBody) toFilter() store.JobFilter {
+	return store.JobFilter{
+		Search:      strings.TrimSpace(b.Search),
+		LibraryType: b.LibraryType,
+		VideoCodec:  b.VideoCodec,
+		ProfileID:   b.ProfileID,
+		ForcedOnly:  b.Forced,
 	}
-	sort.Slice(queued, func(a, b int) bool {
-		if queued[a].QueuedAt != queued[b].QueuedAt {
-			return queued[a].QueuedAt < queued[b].QueuedAt
+}
+
+// queueSelection names the queued jobs a bulk action applies to: explicit
+// job_ids, or every queued job matching filter — the same match GET /api/jobs
+// applies, so a filtered view can be acted on wholesale without the client
+// paging through every match to collect ids.
+type queueSelection struct {
+	JobIDs []int64        `json:"job_ids"`
+	Filter *jobFilterBody `json:"filter"`
+}
+
+// resolve returns the selected ids, or a message for a malformed selection.
+func (q queueSelection) resolve(ctx context.Context, st *store.Store) ([]int64, string, error) {
+	ids := dedupeIDs(q.JobIDs)
+	switch {
+	case len(ids) > 0 && q.Filter != nil:
+		return nil, "specify job_ids or filter, not both", nil
+	case len(ids) > 0:
+		return ids, "", nil
+	case q.Filter != nil:
+		ids, err := st.Jobs.QueuedIDs(ctx, q.Filter.toFilter())
+		return ids, "", err
+	default:
+		return nil, "job_ids or filter is required", nil
+	}
+}
+
+type reorderJobsRequest struct {
+	queueSelection
+	Position string `json:"position"`
+}
+
+// handleReorderJobs moves queued jobs to the top or bottom of the queue, or
+// one place up or down it.
+func (s *Server) handleReorderJobs(c *echo.Context) error {
+	ctx := c.Request().Context()
+	var req reorderJobsRequest
+	if err := c.Bind(&req); err != nil {
+		return badRequest(c, "invalid JSON body")
+	}
+	switch req.Position {
+	case "top", "bottom", "up", "down":
+	default:
+		return badRequest(c, `position must be "top", "bottom", "up", or "down"`)
+	}
+
+	ids, msg, err := req.resolve(ctx, s.store)
+	if err != nil {
+		return serverError(c, err)
+	}
+	if msg != "" {
+		return badRequest(c, msg)
+	}
+
+	var moved int
+	switch req.Position {
+	case "up", "down":
+		moved, err = s.store.Jobs.StepQueued(ctx, ids, req.Position == "up")
+	default:
+		moved, err = s.store.Jobs.MoveQueued(ctx, ids, req.Position == "top")
+	}
+	if err != nil {
+		return serverError(c, err)
+	}
+	if moved > 0 {
+		s.hub.Broadcast("jobs_reordered", map[string]any{"count": moved, "position": req.Position})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"moved": moved, "position": req.Position})
+}
+
+// queueSortKeys are the orders POST /api/jobs/sort can rewrite the queue into.
+// Each compares two queued jobs and reports whether a should run first; jobs
+// missing the figure a key needs sort after those that have it.
+var queueSortKeys = map[string]func(a, b jobDTO) bool{
+	"savings_desc": func(a, b jobDTO) bool {
+		return desc(a.PredictedSavingsBytes, b.PredictedSavingsBytes)
+	},
+	"savings_per_hour_desc": func(a, b jobDTO) bool {
+		return desc(savingsPerSecond(a), savingsPerSecond(b))
+	},
+	"duration_asc": func(a, b jobDTO) bool {
+		return asc(a.EstimatedDurationSeconds, b.EstimatedDurationSeconds)
+	},
+	"size_desc": func(a, b jobDTO) bool {
+		return a.OriginalSizeBytes > b.OriginalSizeBytes
+	},
+	"path_asc": func(a, b jobDTO) bool {
+		return strings.ToLower(derefStr(a.SourcePath)) < strings.ToLower(derefStr(b.SourcePath))
+	},
+	"queued_at_asc": func(a, b jobDTO) bool {
+		if a.QueuedAt != b.QueuedAt {
+			return a.QueuedAt < b.QueuedAt
 		}
-		return queued[a].ID < queued[b].ID
+		return a.ID < b.ID
+	},
+}
+
+func savingsPerSecond(j jobDTO) *float64 {
+	if j.PredictedSavingsBytes == nil || j.EstimatedDurationSeconds == nil || *j.EstimatedDurationSeconds <= 0 {
+		return nil
+	}
+	v := float64(*j.PredictedSavingsBytes) / float64(*j.EstimatedDurationSeconds)
+	return &v
+}
+
+func desc[T int64 | float64](a, b *T) bool {
+	if a == nil || b == nil {
+		return a != nil && b == nil
+	}
+	return *a > *b
+}
+
+func asc[T int64 | float64](a, b *T) bool {
+	if a == nil || b == nil {
+		return a != nil && b == nil
+	}
+	return *a < *b
+}
+
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+type sortQueueRequest struct {
+	Filter *jobFilterBody `json:"filter"`
+	By     string         `json:"by"`
+}
+
+// handleSortQueue rewrites the queue order by one of queueSortKeys. With a
+// filter, only the matching jobs are sorted, among the positions they already
+// hold; the rest of the queue keeps its places. Ties keep their current order.
+func (s *Server) handleSortQueue(c *echo.Context) error {
+	ctx := c.Request().Context()
+	var req sortQueueRequest
+	if err := c.Bind(&req); err != nil {
+		return badRequest(c, "invalid JSON body")
+	}
+	less, ok := queueSortKeys[req.By]
+	if !ok {
+		return badRequest(c, "unknown sort key")
+	}
+	var filter store.JobFilter
+	if req.Filter != nil {
+		filter = req.Filter.toFilter()
+	}
+
+	queued, err := s.store.Jobs.ListWithPath(ctx, store.JobListQuery{
+		Statuses: []string{string(ijobs.StatusQueued)},
+		Filter:   filter,
+		NoLimit:  true,
 	})
-	pos := make(map[int64]int, len(queued))
-	for i, j := range queued {
-		pos[j.ID] = i + 1
+	if err != nil {
+		return serverError(c, err)
 	}
-	return pos
+	lookup, err := s.store.Jobs.LearnedEncodeRates(ctx)
+	if err != nil {
+		return serverError(c, err)
+	}
+	dtos := make([]jobDTO, len(queued))
+	for i := range queued {
+		dtos[i] = toJobDTO(&queued[i], 0, lookup)
+	}
+	sort.SliceStable(dtos, func(a, b int) bool { return less(dtos[a], dtos[b]) })
+	ids := make([]int64, len(dtos))
+	for i, d := range dtos {
+		ids[i] = d.ID
+	}
+
+	n, err := s.store.Jobs.ApplyQueueOrder(ctx, ids)
+	if err != nil {
+		return serverError(c, err)
+	}
+	if n > 0 {
+		s.hub.Broadcast("jobs_reordered", map[string]any{"count": n, "sort": req.By})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"sorted": n, "by": req.By})
+}
+
+// handleBulkCancel cancels every queued job in the selection. The running job
+// is never included — cancel it by id, which hands the kill to the worker.
+func (s *Server) handleBulkCancel(c *echo.Context) error {
+	ctx := c.Request().Context()
+	var req queueSelection
+	if err := c.Bind(&req); err != nil {
+		return badRequest(c, "invalid JSON body")
+	}
+	ids, msg, err := req.resolve(ctx, s.store)
+	if err != nil {
+		return serverError(c, err)
+	}
+	if msg != "" {
+		return badRequest(c, msg)
+	}
+	n, eventID, err := s.store.CancelQueuedJobs(ctx, ids, time.Now().Unix())
+	if err != nil {
+		return serverError(c, err)
+	}
+	if n > 0 {
+		s.hub.Broadcast("job_cancelled", map[string]any{"count": n})
+		s.hub.Broadcast("event_created", map[string]any{
+			"id":         eventID,
+			"type":       store.EventJobCancelled,
+			"severity":   store.SeverityInfo,
+			"message":    fmt.Sprintf("Cancelled %d queued jobs", n),
+			"created_at": time.Now().Unix(),
+			"metadata":   map[string]any{"count": n},
+		})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"cancelled": n})
 }
 
 // handleCancelJob cancels a queued/running/verifying job. The worker performs

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -189,5 +190,193 @@ func TestJobsHistorySummaryExcludesDismissed(t *testing.T) {
 	}
 	if got := num(t, hist, "bytes_saved"); got != 0 {
 		t.Errorf("history.bytes_saved = %v, want 0", got)
+	}
+}
+
+// queuedFileOrder lists the queued jobs' media file ids in queue order, along
+// with the job id behind each.
+func queuedFileOrder(t *testing.T, h http.Handler, cookie *http.Cookie, query string) (files, jobIDs []int64) {
+	t.Helper()
+	w := doReq(h, http.MethodGet, "/api/jobs?status=queued&order=queue"+query, nil, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	for _, it := range decodeBody(t, w)["items"].([]any) {
+		m := it.(map[string]any)
+		files = append(files, int64(m["media_file_id"].(float64)))
+		jobIDs = append(jobIDs, int64(m["id"].(float64)))
+	}
+	return files, jobIDs
+}
+
+func TestJobsSearchFiltersPageAndCount(t *testing.T) {
+	_, h, st, _ := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+	ids := seedQueuedJobs(t, h, st, cookie, 1000, 2000, 3000)
+
+	files, _ := queuedFileOrder(t, h, cookie, "&search=SEEDB")
+	if len(files) != 1 || files[0] != ids[1] {
+		t.Fatalf("search: want [%d], got %v", ids[1], files)
+	}
+	body := decodeBody(t, doReq(h, http.MethodGet, "/api/jobs?status=queued&search=seedb", nil, cookie))
+	if got := num(t, body, "total_count"); got != 1 {
+		t.Errorf("total_count: want 1, got %v", got)
+	}
+	if got := num(t, body, "queued_count"); got != 3 {
+		t.Errorf("queued_count describes the whole queue: want 3, got %v", got)
+	}
+	fq := body["filtered_queue"].(map[string]any)
+	if num(t, fq, "count") != 1 || num(t, fq, "original_size_bytes") != 2000 {
+		t.Errorf("filtered_queue totals the match only: got %v", fq)
+	}
+	item := body["items"].([]any)[0].(map[string]any)
+	if got := num(t, item, "queue_position"); got != 2 {
+		t.Errorf("queue_position is queue-wide: want 2, got %v", got)
+	}
+}
+
+func TestJobsReorder(t *testing.T) {
+	_, h, st, _ := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+	ids := seedQueuedJobs(t, h, st, cookie, 1000, 2000, 3000, 4000)
+	_, jobIDs := queuedFileOrder(t, h, cookie, "")
+
+	w := doReq(h, http.MethodPost, "/api/jobs/reorder", map[string]any{
+		"job_ids": []int64{jobIDs[3], jobIDs[2]}, "position": "top",
+	}, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("reorder top: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	files, _ := queuedFileOrder(t, h, cookie, "")
+	want := []int64{ids[2], ids[3], ids[0], ids[1]}
+	if !slices.Equal(files, want) {
+		t.Fatalf("after top: want %v, got %v", want, files)
+	}
+
+	w = doReq(h, http.MethodPost, "/api/jobs/reorder", map[string]any{
+		"filter": map[string]any{"search": "seedc"}, "position": "bottom",
+	}, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("reorder bottom: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	files, _ = queuedFileOrder(t, h, cookie, "")
+	want = []int64{ids[3], ids[0], ids[1], ids[2]}
+	if !slices.Equal(files, want) {
+		t.Fatalf("after bottom: want %v, got %v", want, files)
+	}
+
+	// Up/down swap with the neighbour; a job already at the end stays put.
+	files, jobIDs = queuedFileOrder(t, h, cookie, "")
+	jobOf := make(map[int64]int64, len(files))
+	for i, f := range files {
+		jobOf[f] = jobIDs[i]
+	}
+	for _, step := range []struct {
+		files    []int64
+		position string
+		want     []int64
+	}{
+		{[]int64{ids[1]}, "up", []int64{ids[3], ids[1], ids[0], ids[2]}},
+		{[]int64{ids[3]}, "up", []int64{ids[3], ids[1], ids[0], ids[2]}},
+		{[]int64{ids[3], ids[0]}, "down", []int64{ids[1], ids[3], ids[2], ids[0]}},
+		{[]int64{ids[0]}, "down", []int64{ids[1], ids[3], ids[2], ids[0]}},
+		{[]int64{ids[2], ids[0]}, "up", []int64{ids[1], ids[2], ids[0], ids[3]}},
+	} {
+		sel := make([]int64, len(step.files))
+		for i, f := range step.files {
+			sel[i] = jobOf[f]
+		}
+		w := doReq(h, http.MethodPost, "/api/jobs/reorder", map[string]any{"job_ids": sel, "position": step.position}, cookie)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: want 200, got %d (%s)", step.position, w.Code, w.Body.String())
+		}
+		files, _ = queuedFileOrder(t, h, cookie, "")
+		if !slices.Equal(files, step.want) {
+			t.Fatalf("%s %v: want %v, got %v", step.position, step.files, step.want, files)
+		}
+	}
+	want = []int64{ids[1]}
+
+	job, err := st.Jobs.ClaimNextQueued(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if job.MediaFileID != want[0] {
+		t.Errorf("worker claims queue order: want file %d, got %d", want[0], job.MediaFileID)
+	}
+
+	for _, body := range []map[string]any{
+		{"job_ids": []int64{jobIDs[0]}, "position": "middle"},
+		{"position": "top"},
+		{"job_ids": []int64{jobIDs[0]}, "filter": map[string]any{"search": "x"}, "position": "top"},
+	} {
+		if w := doReq(h, http.MethodPost, "/api/jobs/reorder", body, cookie); w.Code != http.StatusBadRequest {
+			t.Errorf("%v: want 400, got %d", body, w.Code)
+		}
+	}
+}
+
+func TestJobsSortQueue(t *testing.T) {
+	_, h, st, _ := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+	ids := seedQueuedJobs(t, h, st, cookie, 2000, 4000, 1000, 3000)
+
+	w := doReq(h, http.MethodPost, "/api/jobs/sort", map[string]any{"by": "size_desc"}, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("sort: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	files, _ := queuedFileOrder(t, h, cookie, "")
+	if want := []int64{ids[1], ids[3], ids[0], ids[2]}; !slices.Equal(files, want) {
+		t.Fatalf("size_desc: want %v, got %v", want, files)
+	}
+
+	w = doReq(h, http.MethodPost, "/api/jobs/sort", map[string]any{
+		"by": "queued_at_asc", "filter": map[string]any{"search": "seed"},
+	}, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("sort all: want 200, got %d", w.Code)
+	}
+	files, _ = queuedFileOrder(t, h, cookie, "")
+	if !slices.Equal(files, ids) {
+		t.Fatalf("queued_at_asc restores the original order: want %v, got %v", ids, files)
+	}
+
+	// Sorting a subset deals it back into the slots it held (1st and 3rd),
+	// leaving the jobs between them where they were.
+	_, jobIDs := queuedFileOrder(t, h, cookie, "")
+	if _, err := st.Jobs.ApplyQueueOrder(context.Background(), []int64{jobIDs[2], jobIDs[0]}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	files, _ = queuedFileOrder(t, h, cookie, "")
+	if want := []int64{ids[2], ids[1], ids[0], ids[3]}; !slices.Equal(files, want) {
+		t.Fatalf("subset sort: want %v, got %v", want, files)
+	}
+
+	if w := doReq(h, http.MethodPost, "/api/jobs/sort", map[string]any{"by": "nope"}, cookie); w.Code != http.StatusBadRequest {
+		t.Errorf("unknown key: want 400, got %d", w.Code)
+	}
+}
+
+func TestJobsBulkCancel(t *testing.T) {
+	_, h, st, _ := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+	ids := seedQueuedJobs(t, h, st, cookie, 1000, 2000, 3000)
+
+	w := doReq(h, http.MethodPost, "/api/jobs/cancel", map[string]any{
+		"filter": map[string]any{"search": "seeda"},
+	}, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("bulk cancel: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	if got := num(t, decodeBody(t, w), "cancelled"); got != 1 {
+		t.Errorf("cancelled: want 1, got %v", got)
+	}
+	files, _ := queuedFileOrder(t, h, cookie, "")
+	if want := ids[1:]; !slices.Equal(files, want) {
+		t.Fatalf("remaining: want %v, got %v", want, files)
+	}
+
+	if w := doReq(h, http.MethodPost, "/api/jobs/cancel", map[string]any{}, cookie); w.Code != http.StatusBadRequest {
+		t.Errorf("empty selection: want 400, got %d", w.Code)
 	}
 }

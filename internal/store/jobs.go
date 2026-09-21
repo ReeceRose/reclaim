@@ -56,8 +56,9 @@ func (j *Jobs) Create(ctx context.Context, job *TranscodeJob) (int64, error) {
 		INSERT INTO transcode_jobs (
 			media_file_id, profile_id, status, queued_at, original_size_bytes,
 			encode_codec, encode_preset, encode_crf, encode_extra_args,
-			predicted_savings_bytes, initial_estimated_duration_seconds
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			predicted_savings_bytes, initial_estimated_duration_seconds, queue_order
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+			(SELECT COALESCE(MAX(queue_order), 0) + 1 FROM transcode_jobs))`,
 		job.MediaFileID, job.ProfileID, job.Status, job.QueuedAt, job.OriginalSizeBytes,
 		job.EncodeCodec, job.EncodePreset, job.EncodeCRF, job.EncodeExtraArgs,
 		job.PredictedSavingsBytes, job.InitialEstimatedDurationSeconds,
@@ -72,13 +73,31 @@ func (j *Jobs) GetByID(ctx context.Context, id int64) (*TranscodeJob, error) {
 	return scanJob(j.r.QueryRowContext(ctx, jobQ+" WHERE id = ?", id))
 }
 
+// JobFilter narrows a job list by properties of the job and its media file.
+// Zero values mean "no filter". Library type and video codec are read off the
+// media row, which for a job that has not run yet still describes the source.
+type JobFilter struct {
+	Search      string // case-insensitive substring match against the path
+	LibraryType string
+	VideoCodec  string
+	ProfileID   int64
+	ForcedOnly  bool
+}
+
+// Active reports whether any field narrows the list.
+func (f JobFilter) Active() bool {
+	return strings.TrimSpace(f.Search) != "" || f.LibraryType != "" ||
+		f.VideoCodec != "" || f.ProfileID != 0 || f.ForcedOnly
+}
+
 // JobListQuery pages the combined queue + history list.
 type JobListQuery struct {
 	// Statuses, when non-empty, restricts results to jobs whose status is
 	// any of these values (SQL IN).
 	Statuses []string
-	// OrderBy selects sort order: "" (default) orders oldest-first by
-	// queued_at, matching queue position order; "recent" orders newest-first
+	Filter   JobFilter
+	// OrderBy selects sort order: "" (default) orders by queue_order,
+	// matching queue position order; "recent" orders newest-first
 	// by completion time (falling back to queued_at for jobs never started),
 	// for the history view.
 	OrderBy string
@@ -103,18 +122,12 @@ func (j *Jobs) ListWithPath(ctx context.Context, q JobListQuery) ([]TranscodeJob
 		limit = maxJobLimit
 	}
 
-	query := jobWithPathQ + " WHERE j.dismissed_at IS NULL"
-	var args []any
-	if len(q.Statuses) > 0 {
-		query += " AND j.status IN (" + placeholders(len(q.Statuses)) + ")"
-		for _, s := range q.Statuses {
-			args = append(args, s)
-		}
-	}
+	where, args := jobListWhere(q.Statuses, q.Filter)
+	query := jobWithPathQ + where
 	if q.OrderBy == "recent" {
 		query += " ORDER BY COALESCE(j.completed_at, j.queued_at) DESC, j.id DESC"
 	} else {
-		query += " ORDER BY j.queued_at ASC, j.id ASC"
+		query += " ORDER BY " + queueOrderSQL
 	}
 	if !q.NoLimit {
 		query += " LIMIT ? OFFSET ?"
@@ -138,20 +151,52 @@ func (j *Jobs) ListWithPath(ctx context.Context, q JobListQuery) ([]TranscodeJob
 	return out, rows.Err()
 }
 
-func placeholders(n int) string {
-	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
-}
+// queueOrderSQL is the order the worker drains the queue in. Every query that
+// lists or claims queued jobs must use it, or positions and claims disagree.
+const queueOrderSQL = "j.queue_order ASC, j.id ASC"
 
-// CountJobs returns how many non-dismissed jobs match an optional status filter.
-func (j *Jobs) CountJobs(ctx context.Context, statuses []string) (int64, error) {
-	query := `SELECT COUNT(*) FROM transcode_jobs WHERE dismissed_at IS NULL`
+// jobListWhere builds the WHERE clause shared by ListWithPath and CountJobs,
+// over jobWithPathQ's aliases (j = transcode_jobs, m = media_files).
+func jobListWhere(statuses []string, f JobFilter) (string, []any) {
+	where := " WHERE j.dismissed_at IS NULL"
 	var args []any
 	if len(statuses) > 0 {
-		query += " AND status IN (" + placeholders(len(statuses)) + ")"
+		where += " AND j.status IN (" + placeholders(len(statuses)) + ")"
 		for _, s := range statuses {
 			args = append(args, s)
 		}
 	}
+	if s := strings.TrimSpace(f.Search); s != "" {
+		where += " AND LOWER(COALESCE(m.path, j.output_path, '')) LIKE '%' || LOWER(?) || '%'"
+		args = append(args, s)
+	}
+	if f.LibraryType != "" {
+		where += " AND m.library_type = ?"
+		args = append(args, f.LibraryType)
+	}
+	if f.VideoCodec != "" {
+		where += " AND m.video_codec = ?"
+		args = append(args, f.VideoCodec)
+	}
+	if f.ProfileID != 0 {
+		where += " AND j.profile_id = ?"
+		args = append(args, f.ProfileID)
+	}
+	if f.ForcedOnly {
+		where += " AND j.forced = 1"
+	}
+	return where, args
+}
+
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
+}
+
+// CountJobs returns how many non-dismissed jobs match an optional status
+// filter and JobFilter.
+func (j *Jobs) CountJobs(ctx context.Context, statuses []string, f JobFilter) (int64, error) {
+	where, args := jobListWhere(statuses, f)
+	query := `SELECT COUNT(*) FROM transcode_jobs j LEFT JOIN media_files m ON m.id = j.media_file_id` + where
 	var n int64
 	if err := j.r.QueryRowContext(ctx, query, args...).Scan(&n); err != nil {
 		return 0, err
@@ -206,9 +251,9 @@ func (j *Jobs) HistorySummary(ctx context.Context, statuses []string) (HistorySu
 // QueuedPositions returns 1-based queue positions for every queued job.
 func (j *Jobs) QueuedPositions(ctx context.Context) (map[int64]int, error) {
 	rows, err := j.r.QueryContext(ctx, `
-		SELECT id FROM transcode_jobs
-		WHERE status = 'queued'
-		ORDER BY queued_at, id`)
+		SELECT j.id FROM transcode_jobs j
+		WHERE j.status = 'queued'
+		ORDER BY `+queueOrderSQL)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +331,7 @@ func (j *Jobs) ClaimNextQueued(ctx context.Context, startedAt int64) (*Transcode
 	defer tx.Rollback()
 
 	job, err := scanJob(tx.QueryRowContext(ctx,
-		jobQ+" WHERE status = 'queued' ORDER BY queued_at, id LIMIT 1"))
+		jobQ+" j WHERE status = 'queued' ORDER BY "+queueOrderSQL+" LIMIT 1"))
 	if err != nil {
 		return nil, err // ErrNotFound when empty
 	}
@@ -582,6 +627,245 @@ func (j *Jobs) Force(ctx context.Context, id int64) error {
 	return nil
 }
 
+// QueuedIDs returns the ids of every queued job matching f, in queue order. A
+// zero filter matches the whole queue.
+func (j *Jobs) QueuedIDs(ctx context.Context, f JobFilter) ([]int64, error) {
+	where, args := jobListWhere([]string{string(jobs.StatusQueued)}, f)
+	rows, err := j.r.QueryContext(ctx,
+		`SELECT j.id FROM transcode_jobs j LEFT JOIN media_files m ON m.id = j.media_file_id`+
+			where+" ORDER BY "+queueOrderSQL, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// MoveQueued moves the given queued jobs to the front (toTop) or back of the
+// queue, keeping their relative order. Ids that are not queued — already
+// claimed, cancelled, or unknown — are skipped, and the number actually moved
+// is returned. The running job is unaffected: it has already left the queue.
+func (j *Jobs) MoveQueued(ctx context.Context, ids []int64, toTop bool) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	tx, err := j.w.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	slots, err := queuedSlotsTx(ctx, tx, ids)
+	if err != nil {
+		return 0, err
+	}
+	if len(slots) == 0 {
+		return 0, nil
+	}
+	moving := make([]int64, len(slots))
+	for i, sl := range slots {
+		moving[i] = sl.id
+	}
+
+	// Top counts down from the smallest queued position; bottom counts up from
+	// the largest position of any row, so a later Create's MAX+1 still lands
+	// behind everything moved here.
+	var start int64
+	if toTop {
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COALESCE(MIN(queue_order), 0) FROM transcode_jobs WHERE status = 'queued'`,
+		).Scan(&start); err != nil {
+			return 0, err
+		}
+		start -= int64(len(moving))
+	} else {
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COALESCE(MAX(queue_order), 0) FROM transcode_jobs`,
+		).Scan(&start); err != nil {
+			return 0, err
+		}
+		start++
+	}
+
+	orders := make([]int64, len(moving))
+	for i := range orders {
+		orders[i] = start + int64(i)
+	}
+	if err := setQueueOrdersTx(ctx, tx, moving, orders); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return len(moving), nil
+}
+
+// StepQueued moves each of the given queued jobs one place up (or down) the
+// whole queue, swapping it with its neighbour. A run of selected jobs moves as
+// a block, and one already at the end it is heading for stays put, so a
+// selection never overtakes itself. Ids that are not queued are skipped;
+// the number of jobs that actually moved is returned.
+func (j *Jobs) StepQueued(ctx context.Context, ids []int64, up bool) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	selected := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		selected[id] = true
+	}
+
+	tx, err := j.w.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx,
+		`SELECT j.id, j.queue_order FROM transcode_jobs j WHERE j.status = 'queued' ORDER BY `+queueOrderSQL)
+	if err != nil {
+		return 0, err
+	}
+	var seq []int64
+	var orders []int64
+	for rows.Next() {
+		var id, order int64
+		if err := rows.Scan(&id, &order); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		seq = append(seq, id)
+		orders = append(orders, order)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	moved := 0
+	if up {
+		for i := 1; i < len(seq); i++ {
+			if selected[seq[i]] && !selected[seq[i-1]] {
+				seq[i-1], seq[i] = seq[i], seq[i-1]
+				moved++
+			}
+		}
+	} else {
+		for i := len(seq) - 2; i >= 0; i-- {
+			if selected[seq[i]] && !selected[seq[i+1]] {
+				seq[i], seq[i+1] = seq[i+1], seq[i]
+				moved++
+			}
+		}
+	}
+	if moved == 0 {
+		return 0, nil
+	}
+	if err := setQueueOrdersTx(ctx, tx, seq, orders); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return moved, nil
+}
+
+// ApplyQueueOrder reorders the given queued jobs among themselves: ids is the
+// order they should run in, and they are dealt back into the positions they
+// already hold between them. Jobs outside ids keep their places, so sorting
+// one show's episodes leaves the rest of the queue interleaved as it was.
+// Ids that are no longer queued are skipped; the number reordered is returned.
+func (j *Jobs) ApplyQueueOrder(ctx context.Context, ids []int64) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	tx, err := j.w.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	slots, err := queuedSlotsTx(ctx, tx, ids)
+	if err != nil {
+		return 0, err
+	}
+	if len(slots) == 0 {
+		return 0, nil
+	}
+	orderOf := make(map[int64]int64, len(slots))
+	orders := make([]int64, len(slots))
+	for i, sl := range slots {
+		orderOf[sl.id] = sl.order
+		orders[i] = sl.order
+	}
+	ordered := make([]int64, 0, len(slots))
+	for _, id := range ids {
+		if _, ok := orderOf[id]; ok {
+			ordered = append(ordered, id)
+			delete(orderOf, id)
+		}
+	}
+	if err := setQueueOrdersTx(ctx, tx, ordered, orders); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return len(ordered), nil
+}
+
+type queueSlot struct {
+	id, order int64
+}
+
+// queuedSlotsTx returns which of ids are still queued, with their current
+// queue_order, in queue order.
+func queuedSlotsTx(ctx context.Context, tx *sql.Tx, ids []int64) ([]queueSlot, error) {
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := tx.QueryContext(ctx,
+		`SELECT j.id, j.queue_order FROM transcode_jobs j WHERE j.status = 'queued' AND j.id IN (`+
+			placeholders(len(ids))+`) ORDER BY `+queueOrderSQL, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []queueSlot
+	for rows.Next() {
+		var sl queueSlot
+		if err := rows.Scan(&sl.id, &sl.order); err != nil {
+			return nil, err
+		}
+		out = append(out, sl)
+	}
+	return out, rows.Err()
+}
+
+// setQueueOrdersTx writes orders[i] to ids[i].
+func setQueueOrdersTx(ctx context.Context, tx *sql.Tx, ids, orders []int64) error {
+	stmt, err := tx.PrepareContext(ctx, `UPDATE transcode_jobs SET queue_order = ? WHERE id = ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for i, id := range ids {
+		if _, err := stmt.ExecContext(ctx, orders[i], id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ClaimNextForcedQueued is like ClaimNextQueued but only considers jobs with
 // forced = 1. Used by the worker to drain forced jobs outside the encode window.
 func (j *Jobs) ClaimNextForcedQueued(ctx context.Context, startedAt int64) (*TranscodeJob, error) {
@@ -592,7 +876,7 @@ func (j *Jobs) ClaimNextForcedQueued(ctx context.Context, startedAt int64) (*Tra
 	defer tx.Rollback()
 
 	job, err := scanJob(tx.QueryRowContext(ctx,
-		jobQ+" WHERE status = 'queued' AND forced = 1 ORDER BY queued_at, id LIMIT 1"))
+		jobQ+" j WHERE status = 'queued' AND forced = 1 ORDER BY "+queueOrderSQL+" LIMIT 1"))
 	if err != nil {
 		return nil, err
 	}

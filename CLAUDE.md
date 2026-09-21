@@ -105,7 +105,7 @@ Swap `-c:v libx264` for `-c:v mpeg4` on some files to get non-H.264 entries that
 3. `store.Open()` — opens SQLite (WAL mode, two pools: 1 writer / 25 readers), runs goose migrations, bootstraps defaults
 4. `config.NewLive(cfg)` — creates the runtime-mutable settings holder (encode window, scan interval, probe concurrency); read by the scanner and worker on every use so PUT `/api/settings` takes effect without a restart
 5. `scanner.New()` + `sc.Start(ctx)` — runs startup scan, starts fsnotify watcher, schedules periodic rescans; `notify.New()` + `nt.Run(ctx)` batches the new candidates it finds
-6. `api.New()` — wires routes on Echo v5; full route list: `/healthz`, `/api/{setup,login,logout,session}`, `/api/{stats,files,candidates}{,/grouped,/grouped/seasons,/grouped/episodes}`, `/api/stats/savings`, `/api/files/:id`, `/api/scan{,/full}`, `/api/profiles{,/:id}`, `/api/jobs{,/:id/cancel,/:id/force,/:id}`, `/api/events{,/:id}`, `/api/settings{,/credentials,/prune-missing,/notify-test}`, `/api/metadata{,/search,/refresh}`, `/api/releases{,/seen}`, `/api/ws`
+6. `api.New()` — wires routes on Echo v5; full route list: `/healthz`, `/api/{setup,login,logout,session}`, `/api/{stats,files,candidates}{,/grouped,/grouped/seasons,/grouped/episodes}`, `/api/stats/savings`, `/api/files/:id`, `/api/scan{,/full}`, `/api/profiles{,/:id}`, `/api/jobs{,/reorder,/sort,/cancel,/:id/cancel,/:id/force,/:id}`, `/api/events{,/:id}`, `/api/settings{,/credentials,/prune-missing,/notify-test}`, `/api/metadata{,/search,/refresh}`, `/api/releases{,/seen}`, `/api/ws`
 7. `worker.New()` + `wk.Run(ctx)` — encode loop; polls for queued jobs inside the window
 
 ### Package map
@@ -346,7 +346,7 @@ The frontend uses the **Next.js App Router** (`web/app/`). **Important:** `web/A
 
 ### WebSocket events
 
-The hub broadcasts: `job_started`, `job_progress` (with `percent`), `job_completed`, `job_failed`, `job_cancelled`, `jobs_queued`, `event_created`. The scanner broadcasts `scan_started`, `scan_completed`, and `scan_failed` during scans, and `event_created` for its `file_superseded` / `file_replaced` reconciliations. The notifier broadcasts `event_created` for its `candidates_added` batches.
+The hub broadcasts: `job_started`, `job_progress` (with `percent`), `job_completed`, `job_failed`, `job_cancelled`, `jobs_queued`, `jobs_reordered`, `event_created`. The scanner broadcasts `scan_started`, `scan_completed`, and `scan_failed` during scans, and `event_created` for its `file_superseded` / `file_replaced` reconciliations. The notifier broadcasts `event_created` for its `candidates_added` batches.
 
 ### Queue page
 
@@ -358,6 +358,25 @@ middle of a long pager but always keeps the first and last page one click away).
 Tab and page are written through a single `useQueryParams().set` call —
 `useQueryParam` reads the live URL from a ref that only refreshes after a render,
 so two successive single-key writes in one handler would drop the first.
+
+Queue order is `transcode_jobs.queue_order` (migration `00021`), not
+`queued_at`: new jobs take `MAX+1`, and `Jobs.MoveQueued` (behind
+`POST /api/jobs/reorder`) rewrites it past either end to send jobs to the top or
+bottom, `Jobs.StepQueued` swaps each with its neighbour for up/down, and
+`Jobs.ApplyQueueOrder` (behind `POST /api/jobs/sort`) deals a
+sorted subset back into the slots it already holds, so sorting one show leaves
+the rest of the queue in place. Listing, `QueuedPositions`, and both worker
+claims order on the shared `queueOrderSQL`, so a position shown is the order
+jobs run in.
+
+`store.JobFilter` (path search, library type, source codec, profile, forced) is
+shared by `GET /api/jobs` and the bulk endpoints' `filter` body, so a bulk move,
+sort, or cancel (`Store.CancelQueuedJobs`, one event per batch) acts on exactly
+what the list shows. It narrows the page and `total_count` only — positions and
+the `queue_*` totals stay queue-wide — and a filtered request gets its own
+`filtered_queue` totals. The queued tab keeps it in the URL (`q`, `library`,
+`codec`, `profile`, `forced`); the history tab uses `q` only, since a finished
+job's media row already carries the target codec.
 
 The running job is pinned above the tabs. The queued tab's totals come from the
 shell's own `["jobs", "queued-count"]` query (`GET /api/jobs?status=queued&limit=1`),

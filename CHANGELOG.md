@@ -5,6 +5,22 @@ source of truth: `scripts/release.sh` writes each entry here, commits it, tags t
 commit, and publishes the same text as the GitHub Release. The running binary embeds
 this file, so the in-app release notes always match the build you are on.
 
+## v0.0.46 — 2026-09-23
+
+A new Insights chart showing how many encodes complete each day.
+
+### What's Changed
+
+#### Features
+
+- **Encodes per day chart on Insights** — a bar chart of completed encodes across your selected range (30, 90, or 365 days), with totals for encodes run, average per active day, and your busiest day. Hover any day for its exact count and the bytes reclaimed that day.
+
+### Docker
+
+```
+docker pull ghcr.io/ReeceRose/reclaim:0.0.46
+```
+
 ## v0.0.45 — 2026-09-21
 
 The queue can now be searched, filtered and reordered, and it's easier to see when it will finish.

@@ -32,6 +32,7 @@ const RANGES = [30, 90, 365] as const;
 
 type Point = {
   day: string;
+  encodes: number;
   encoded: number;
   replaced: number;
   delta: number;
@@ -69,6 +70,7 @@ function buildSeries(
     running += encoded + replaced;
     out.push({
       day: key,
+      encodes: row?.files_encoded ?? 0,
       encoded,
       replaced,
       delta: encoded + replaced,
@@ -234,6 +236,170 @@ function SavingsChart({ series }: { series: Point[] }) {
         ) : (
           <div className="text-xs text-muted-dim">
             Hover the chart for a daily breakdown.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EncodesChart({ series }: { series: Point[] }) {
+  const [hover, setHover] = useState<number | null>(null);
+
+  const W = 760;
+  const H = 160;
+  const padBottom = 24;
+  const padTop = 10;
+  const plotH = H - padBottom - padTop;
+
+  const peak = Math.max(...series.map((p) => p.encodes), 0);
+  const max = Math.max(4, Math.ceil(peak / 4) * 4);
+  const slot = series.length > 0 ? W / series.length : W;
+  const barW = Math.max(1, slot * 0.7);
+  const x = (i: number) => i * slot + (slot - barW) / 2;
+  const y = (v: number) => padTop + plotH - (v / max) * plotH;
+
+  const total = series.reduce((a, p) => a + p.encodes, 0);
+  const activeDays = series.filter((p) => p.encodes > 0).length;
+  const best = series.reduce<Point | null>(
+    (b, p) => (p.encodes > (b?.encodes ?? 0) ? p : b),
+    null,
+  );
+
+  const gridValues = [0, 0.25, 0.5, 0.75, 1].map((f) => f * max);
+  const labelStep = Math.max(1, Math.floor(series.length / 6));
+  const active = hover != null ? series[hover] : null;
+
+  return (
+    <div
+      className="border border-line rounded-lg p-5 mb-5"
+      style={{ background: "var(--surface)" }}
+    >
+      <div className="flex items-baseline justify-between gap-3 flex-wrap mb-4">
+        <div className="text-xs uppercase tracking-widest text-muted-fg font-bold">
+          Encodes per day
+        </div>
+        <div className="text-2xs text-muted-dim">last {series.length} days</div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4 mb-5">
+        <StatTile
+          label="Encodes"
+          value={formatInt(total)}
+          sub={`on ${plural(activeDays, "day", "days")}`}
+          tone="text-brand"
+        />
+        <StatTile
+          label="Daily avg"
+          value={activeDays > 0 ? (total / activeDays).toFixed(1) : "—"}
+          sub="per active day"
+        />
+        <StatTile
+          label="Best day"
+          value={best ? formatInt(best.encodes) : "—"}
+          sub={best ? formatDayFull(best.day) : undefined}
+          tone="text-green"
+        />
+      </div>
+
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full h-auto block overflow-visible"
+        role="img"
+        aria-label="Encodes completed per day"
+        onMouseLeave={() => setHover(null)}
+        onMouseMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          if (rect.width <= 0 || series.length === 0) return;
+          const rel = (e.clientX - rect.left) / rect.width;
+          const idx = Math.floor(rel * series.length);
+          setHover(Math.min(series.length - 1, Math.max(0, idx)));
+        }}
+      >
+        {gridValues.map((v) => (
+          <g key={v}>
+            <line
+              x1="0"
+              x2={W}
+              y1={y(v).toFixed(2)}
+              y2={y(v).toFixed(2)}
+              stroke="var(--line-soft)"
+              strokeWidth="1"
+            />
+            <text
+              x="4"
+              y={(y(v) - 4).toFixed(2)}
+              fill="var(--muted-dim)"
+              fontSize="10"
+            >
+              {formatInt(v)}
+            </text>
+          </g>
+        ))}
+
+        {series.map((p, i) =>
+          p.encodes > 0 ? (
+            <rect
+              key={p.day}
+              x={x(i).toFixed(2)}
+              y={y(p.encodes).toFixed(2)}
+              width={barW.toFixed(2)}
+              height={(padTop + plotH - y(p.encodes)).toFixed(2)}
+              rx={Math.min(2, barW / 2)}
+              fill="var(--brand)"
+              opacity={hover == null || hover === i ? 1 : 0.45}
+            />
+          ) : null,
+        )}
+
+        {series.map((p, i) =>
+          i % labelStep === 0 || i === series.length - 1 ? (
+            <text
+              key={p.day}
+              x={(x(i) + barW / 2).toFixed(2)}
+              y={H - 6}
+              fill="var(--muted-dim)"
+              fontSize="10"
+              textAnchor={
+                i === 0 ? "start" : i === series.length - 1 ? "end" : "middle"
+              }
+            >
+              {formatDayLabel(p.day)}
+            </text>
+          ) : null,
+        )}
+
+        {active && hover != null && active.encodes === 0 && (
+          <line
+            x1={(x(hover) + barW / 2).toFixed(2)}
+            x2={(x(hover) + barW / 2).toFixed(2)}
+            y1={padTop}
+            y2={padTop + plotH}
+            stroke="var(--brand)"
+            strokeWidth="1"
+            strokeDasharray="3 3"
+            opacity="0.7"
+          />
+        )}
+      </svg>
+
+      <div className="h-5 mt-1">
+        {active ? (
+          <div className="text-xs text-muted-fg tnum">
+            <b className="text-text font-semibold">
+              {formatDayFull(active.day)}
+            </b>{" "}
+            · {plural(active.encodes, "encode", "encodes")}
+            {active.encoded > 0 && (
+              <span className="text-brand">
+                {" "}
+                · {formatBytes(active.encoded)} reclaimed
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="text-xs text-muted-dim">
+            Hover the chart for a daily count.
           </div>
         )}
       </div>
@@ -719,6 +885,8 @@ function InsightsContent() {
           />
         </div>
       </div>
+
+      {series.length > 0 && <EncodesChart series={series} />}
 
       <div className="grid grid-cols-2 gap-5 mb-5 max-sm:grid-cols-1">
         <div

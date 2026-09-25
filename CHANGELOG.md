@@ -5,6 +5,26 @@ source of truth: `scripts/release.sh` writes each entry here, commits it, tags t
 commit, and publishes the same text as the GitHub Release. The running binary embeds
 this file, so the in-app release notes always match the build you are on.
 
+## v0.0.47 — 2026-09-25
+
+Settings you change in the web UI now stay in place after a restart.
+
+### What's Changed
+
+#### Features
+- **Settings survive restarts.** Before this release, a restart reset every setting to its environment variable. That included the encode window, timezone, scan interval and anchor time, probe concurrency, oversize threshold, missing-file retention, and replacement lookback. Reclaim now saves these to the database whenever you change them on the Settings page and restores them on boot.
+
+#### Improvements
+- **Environment variables are now defaults.** A setting you've never changed in the UI still follows its env var. Once you save it from the Settings page, the saved value takes priority on every later boot.
+- **Bad saved values no longer block startup.** Each saved setting is checked on its own at boot. If one is no longer valid (for example, a timezone the host no longer recognises), Reclaim logs it, uses the env var for that setting, and keeps the rest.
+- Updated the README and API docs to explain how saved settings and env vars interact.
+
+### Docker
+
+```
+docker pull ghcr.io/ReeceRose/reclaim:0.0.47
+```
+
 ## v0.0.46 — 2026-09-23
 
 A new Insights chart showing how many encodes complete each day.

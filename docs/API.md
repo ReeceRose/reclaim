@@ -845,9 +845,11 @@ Removes one event. `204 No Content` · `404` if not found.
 ## Settings
 
 Runtime-mutable knobs, applied without a restart (the scanner/worker read them
-live). Mount paths are read-only (env-set). Overrides are in-memory: a restart
-re-seeds from env. The exceptions are `clock_format` and the `notify_*` fields,
-which are persisted to the `settings` row and therefore survive restarts.
+live). Mount paths are read-only (env-set). Every value set here is persisted to
+the `settings` row and survives restarts. The env vars behind the live knobs
+(`ENCODE_WINDOW_*`, `TIMEZONE`, `SCAN_*`, `PROBE_CONCURRENCY`, …) are defaults
+only: once a field has been set through this endpoint, the saved value wins over
+its env var on every later boot.
 
 ### `GET /api/settings`
 ```json

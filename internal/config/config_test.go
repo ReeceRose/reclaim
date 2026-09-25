@@ -115,7 +115,7 @@ func TestLive_updateMissingRetention(t *testing.T) {
 	}
 
 	month := "720h"
-	if err := live.Update(nil, nil, nil, nil, nil, nil, &month, nil, nil); err != nil {
+	if err := live.Update(LiveOverrides{MissingRetention: &month}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	if live.MissingRetention() != 720*time.Hour {
@@ -124,7 +124,7 @@ func TestLive_updateMissingRetention(t *testing.T) {
 
 	// A rejected value must leave the holder untouched.
 	bad := "-1h"
-	if err := live.Update(nil, nil, nil, nil, nil, nil, &bad, nil, nil); err == nil {
+	if err := live.Update(LiveOverrides{MissingRetention: &bad}); err == nil {
 		t.Fatal("expected error for negative retention")
 	}
 	if live.MissingRetention() != 720*time.Hour {
@@ -132,7 +132,7 @@ func TestLive_updateMissingRetention(t *testing.T) {
 	}
 
 	off := "0"
-	if err := live.Update(nil, nil, nil, nil, nil, nil, &off, nil, nil); err != nil {
+	if err := live.Update(LiveOverrides{MissingRetention: &off}); err != nil {
 		t.Fatalf("update to off: %v", err)
 	}
 	if live.MissingRetention() != 0 {
@@ -200,7 +200,7 @@ func TestLiveUpdate_timezone(t *testing.T) {
 	live := NewLive(&Config{Timezone: "UTC", Location: time.UTC})
 
 	tz := "America/New_York"
-	if err := live.Update(nil, nil, nil, nil, nil, nil, nil, nil, &tz); err != nil {
+	if err := live.Update(LiveOverrides{Timezone: &tz}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 	if live.Timezone() != tz || live.Location().String() != tz {
@@ -208,7 +208,7 @@ func TestLiveUpdate_timezone(t *testing.T) {
 	}
 
 	bad := "Mars/Olympus"
-	if err := live.Update(nil, nil, nil, nil, nil, nil, nil, nil, &bad); err == nil {
+	if err := live.Update(LiveOverrides{Timezone: &bad}); err == nil {
 		t.Fatal("expected error for unknown zone")
 	}
 	if live.Timezone() != tz {
@@ -288,5 +288,33 @@ func TestProjectQueueFinish(t *testing.T) {
 				t.Errorf("finish = %v, want %v", got, c.want)
 			}
 		})
+	}
+}
+
+// A stored override that no longer validates falls back to its env seed
+// without taking the valid ones down with it.
+func TestLiveRestore_skipsInvalidFieldsOnly(t *testing.T) {
+	live := NewLive(&Config{EncodeWindowEnd: 6 * time.Hour, Timezone: "UTC", Location: time.UTC})
+	end, tz := "08:00", "Mars/Olympus_Mons"
+
+	if err := live.Restore(LiveOverrides{EncodeWindowEnd: &end, Timezone: &tz}); err == nil {
+		t.Fatal("expected an error naming the invalid timezone")
+	}
+	if got := live.EncodeWindowEnd(); got != 8*time.Hour {
+		t.Errorf("window end = %v, want 8h", got)
+	}
+	if got := live.Timezone(); got != "UTC" {
+		t.Errorf("timezone = %q, want env seed UTC", got)
+	}
+}
+
+func TestLiveOverridesMerge(t *testing.T) {
+	a, b, c := "00:00", "06:00", "08:00"
+	got := LiveOverrides{EncodeWindowStart: &a, EncodeWindowEnd: &b}.Merge(LiveOverrides{EncodeWindowEnd: &c})
+	if got.EncodeWindowStart == nil || *got.EncodeWindowStart != a {
+		t.Errorf("start = %v, want kept %q", got.EncodeWindowStart, a)
+	}
+	if got.EncodeWindowEnd == nil || *got.EncodeWindowEnd != c {
+		t.Errorf("end = %v, want replaced %q", got.EncodeWindowEnd, c)
 	}
 }

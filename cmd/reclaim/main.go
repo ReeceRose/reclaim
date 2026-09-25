@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -92,6 +93,7 @@ func main() {
 	slog.Info("startup checks passed")
 
 	live := config.NewLive(cfg)
+	restoreLiveOverrides(context.Background(), db, live)
 
 	now := time.Now().In(live.Location())
 	open, until := config.WindowState(now, live.EncodeWindowStart(), live.EncodeWindowEnd())
@@ -204,4 +206,27 @@ func main() {
 	case <-time.After(shutdownTimeout):
 		slog.Warn("shutdown timeout waiting for background workers", "timeout", shutdownTimeout)
 	}
+}
+
+// restoreLiveOverrides applies the settings saved from the UI over the env
+// seed. A value that no longer validates keeps its env default and is logged,
+// rather than failing boot over a preference.
+func restoreLiveOverrides(ctx context.Context, db *store.Store, live *config.Live) {
+	raw, err := db.Settings.LiveOverrides(ctx)
+	if err != nil {
+		slog.Warn("could not load saved settings; using env values", "err", err)
+		return
+	}
+	var o config.LiveOverrides
+	if err := json.Unmarshal([]byte(raw), &o); err != nil {
+		slog.Warn("saved settings are unreadable; using env values", "err", err)
+		return
+	}
+	if o.Empty() {
+		return
+	}
+	if err := live.Restore(o); err != nil {
+		slog.Warn("some saved settings were invalid and fell back to env", "err", err)
+	}
+	slog.Info("restored saved settings", "overrides", raw)
 }

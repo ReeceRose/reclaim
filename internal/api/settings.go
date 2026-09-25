@@ -1,6 +1,9 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -73,16 +76,8 @@ func formatRetention(d time.Duration) string {
 }
 
 type settingsRequest struct {
-	Timezone          *string  `json:"timezone"`
-	ClockFormat       *string  `json:"clock_format"`
-	EncodeWindowStart *string  `json:"encode_window_start"`
-	EncodeWindowEnd   *string  `json:"encode_window_end"`
-	ScanInterval      *string  `json:"scan_interval"`
-	ScanAnchor        *string  `json:"scan_anchor"`
-	ProbeConcurrency  *int     `json:"probe_concurrency"`
-	OversizeThreshold *float64 `json:"oversize_threshold"`
-	MissingRetention  *string  `json:"missing_retention"`
-	ReplaceLookback   *string  `json:"replace_lookback"`
+	config.LiveOverrides
+	ClockFormat *string `json:"clock_format"`
 
 	NotifyEnabled       *bool   `json:"notify_enabled"`
 	NotifyDelaySeconds  *int    `json:"notify_delay_seconds"`
@@ -107,12 +102,13 @@ func (s *Server) handlePutSettings(c *echo.Context) error {
 	if req.ClockFormat != nil && !store.ValidClockFormat(*req.ClockFormat) {
 		return badRequest(c, "clock_format must be \"12h\" or \"24h\"")
 	}
-	if err := s.live.Update(
-		req.EncodeWindowStart, req.EncodeWindowEnd, req.ScanInterval, req.ScanAnchor,
-		req.ProbeConcurrency, req.OversizeThreshold, req.MissingRetention,
-		req.ReplaceLookback, req.Timezone,
-	); err != nil {
+	if err := s.live.Update(req.LiveOverrides); err != nil {
 		return badRequest(c, err.Error())
+	}
+	if !req.LiveOverrides.Empty() && s.store != nil {
+		if err := s.persistLiveOverrides(c.Request().Context(), req.LiveOverrides); err != nil {
+			return serverError(c, err)
+		}
 	}
 	if req.ClockFormat != nil && s.store != nil {
 		if err := s.store.Settings.SetClockFormat(c.Request().Context(), *req.ClockFormat); err != nil {
@@ -141,6 +137,24 @@ func (s *Server) handlePutSettings(c *echo.Context) error {
 		}
 	}
 	return s.handleGetSettings(c)
+}
+
+// persistLiveOverrides folds o into the stored overrides, so the next boot
+// restores it over the env seed rather than silently reverting it.
+func (s *Server) persistLiveOverrides(ctx context.Context, o config.LiveOverrides) error {
+	raw, err := s.store.Settings.LiveOverrides(ctx)
+	if err != nil {
+		return err
+	}
+	var stored config.LiveOverrides
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+		return fmt.Errorf("decode stored settings: %w", err)
+	}
+	merged, err := json.Marshal(stored.Merge(o))
+	if err != nil {
+		return err
+	}
+	return s.store.Settings.SetLiveOverrides(ctx, string(merged))
 }
 
 type notifyTestRequest struct {

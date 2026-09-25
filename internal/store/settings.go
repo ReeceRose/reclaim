@@ -113,6 +113,29 @@ func (s *Settings) SetClockFormat(ctx context.Context, format string) error {
 	return err
 }
 
+// LiveOverrides returns the persisted runtime-settings overrides as the raw
+// JSON object PUT /api/settings wrote, "{}" when none have been made.
+func (s *Settings) LiveOverrides(ctx context.Context) (string, error) {
+	var v sql.NullString
+	if err := s.r.QueryRowContext(ctx,
+		"SELECT live_overrides FROM settings WHERE id = 1",
+	).Scan(&v); err != nil {
+		return "", err
+	}
+	if !v.Valid || v.String == "" {
+		return "{}", nil
+	}
+	return v.String, nil
+}
+
+// SetLiveOverrides replaces the persisted runtime-settings overrides.
+func (s *Settings) SetLiveOverrides(ctx context.Context, raw string) error {
+	_, err := s.w.ExecContext(ctx,
+		"UPDATE settings SET live_overrides = ? WHERE id = 1", raw,
+	)
+	return err
+}
+
 // LastSeenVersion returns the build version the user has already been shown
 // release notes for. Empty means never acknowledged.
 func (s *Settings) LastSeenVersion(ctx context.Context) string {

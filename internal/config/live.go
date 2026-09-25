@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -11,8 +12,9 @@ import (
 // without a restart: the encode window, probe concurrency, and scan interval.
 // It is seeded from the env-loaded Config at boot and then owned in memory —
 // the scanner and worker read it on each use, so a PUT /api/settings takes
-// effect immediately. Overrides are intentionally not persisted to the DB: the
-// settings table stays auth-only, and a restart re-seeds from env.
+// effect immediately. The API also persists each override (LiveOverrides) to
+// the settings row, and main.go restores them over the env seed at boot, so a
+// value set in the UI survives a restart; env only supplies the defaults.
 type Live struct {
 	mu                sync.RWMutex
 	timezone          string
@@ -121,10 +123,108 @@ func (l *Live) ReplaceLookback() time.Duration {
 	return l.replaceLookback
 }
 
+// LiveOverrides is a partial update to Live, in the API's wire format. A nil
+// field is unchanged. It doubles as the persisted form: the settings row stores
+// the merged set of every override the operator has made, as JSON.
+type LiveOverrides struct {
+	Timezone          *string  `json:"timezone,omitempty"`
+	EncodeWindowStart *string  `json:"encode_window_start,omitempty"`
+	EncodeWindowEnd   *string  `json:"encode_window_end,omitempty"`
+	ScanInterval      *string  `json:"scan_interval,omitempty"`
+	ScanAnchor        *string  `json:"scan_anchor,omitempty"`
+	ProbeConcurrency  *int     `json:"probe_concurrency,omitempty"`
+	OversizeThreshold *float64 `json:"oversize_threshold,omitempty"`
+	MissingRetention  *string  `json:"missing_retention,omitempty"`
+	ReplaceLookback   *string  `json:"replace_lookback,omitempty"`
+}
+
+// Empty reports whether o changes nothing.
+func (o LiveOverrides) Empty() bool {
+	return o == LiveOverrides{}
+}
+
+// Merge returns o with every field set in next taking next's value.
+func (o LiveOverrides) Merge(next LiveOverrides) LiveOverrides {
+	if next.Timezone != nil {
+		o.Timezone = next.Timezone
+	}
+	if next.EncodeWindowStart != nil {
+		o.EncodeWindowStart = next.EncodeWindowStart
+	}
+	if next.EncodeWindowEnd != nil {
+		o.EncodeWindowEnd = next.EncodeWindowEnd
+	}
+	if next.ScanInterval != nil {
+		o.ScanInterval = next.ScanInterval
+	}
+	if next.ScanAnchor != nil {
+		o.ScanAnchor = next.ScanAnchor
+	}
+	if next.ProbeConcurrency != nil {
+		o.ProbeConcurrency = next.ProbeConcurrency
+	}
+	if next.OversizeThreshold != nil {
+		o.OversizeThreshold = next.OversizeThreshold
+	}
+	if next.MissingRetention != nil {
+		o.MissingRetention = next.MissingRetention
+	}
+	if next.ReplaceLookback != nil {
+		o.ReplaceLookback = next.ReplaceLookback
+	}
+	return o
+}
+
+// split breaks o into one single-field override per set field, so Restore can
+// apply each independently.
+func (o LiveOverrides) split() []LiveOverrides {
+	var out []LiveOverrides
+	add := func(set bool, one LiveOverrides) {
+		if set {
+			out = append(out, one)
+		}
+	}
+	add(o.Timezone != nil, LiveOverrides{Timezone: o.Timezone})
+	add(o.EncodeWindowStart != nil, LiveOverrides{EncodeWindowStart: o.EncodeWindowStart})
+	add(o.EncodeWindowEnd != nil, LiveOverrides{EncodeWindowEnd: o.EncodeWindowEnd})
+	add(o.ScanInterval != nil, LiveOverrides{ScanInterval: o.ScanInterval})
+	add(o.ScanAnchor != nil, LiveOverrides{ScanAnchor: o.ScanAnchor})
+	add(o.ProbeConcurrency != nil, LiveOverrides{ProbeConcurrency: o.ProbeConcurrency})
+	add(o.OversizeThreshold != nil, LiveOverrides{OversizeThreshold: o.OversizeThreshold})
+	add(o.MissingRetention != nil, LiveOverrides{MissingRetention: o.MissingRetention})
+	add(o.ReplaceLookback != nil, LiveOverrides{ReplaceLookback: o.ReplaceLookback})
+	return out
+}
+
+// Restore applies persisted overrides at boot. Unlike Update it is per-field:
+// a stored value that no longer validates (a timezone the host's tzdata has
+// dropped) falls back to its env seed without discarding the rest. The
+// returned error joins every field that was skipped.
+func (l *Live) Restore(o LiveOverrides) error {
+	var errs []error
+	for _, one := range o.split() {
+		if err := l.Update(one); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // Update applies validated settings. Any field left nil is unchanged. It
 // validates the whole set before mutating, so a bad value never leaves the
 // holder half-updated.
-func (l *Live) Update(encodeStart, encodeEnd, scanInterval, scanAnchor *string, probeConcurrency *int, oversizeThreshold *float64, missingRetention, replaceLookback, timezone *string) error {
+func (l *Live) Update(o LiveOverrides) error {
+	var (
+		timezone          = o.Timezone
+		encodeStart       = o.EncodeWindowStart
+		encodeEnd         = o.EncodeWindowEnd
+		scanInterval      = o.ScanInterval
+		scanAnchor        = o.ScanAnchor
+		probeConcurrency  = o.ProbeConcurrency
+		oversizeThreshold = o.OversizeThreshold
+		missingRetention  = o.MissingRetention
+		replaceLookback   = o.ReplaceLookback
+	)
 	var (
 		start     = l.EncodeWindowStart()
 		end       = l.EncodeWindowEnd()

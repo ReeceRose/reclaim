@@ -87,6 +87,8 @@ export DB_PATH=/var/lib/reclaim/reclaim.db
 | `DISABLE_AUTH` | no | `false` | Bypass login entirely — **trusted LAN use only** |
 | `RESET_AUTH` | no | `false` | Clear stored credentials on boot, re-triggering first-run setup |
 
+The encode window, timezone, scan schedule, probe concurrency, oversize threshold, `MISSING_RETENTION`, and `REPLACE_LOOKBACK` can also be changed on the Settings page. A value saved there is stored in the database and takes precedence over its env var from then on; the env var is only the default.
+
 See [`.env.example`](.env.example) for a copy-paste template.
 
 ---

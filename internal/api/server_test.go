@@ -448,6 +448,57 @@ func TestSettingsLiveUpdate(t *testing.T) {
 	}
 }
 
+// A value set in the UI must survive a restart: each PUT folds into the stored
+// overrides, and a Live freshly seeded from env picks them back up.
+func TestSettingsLiveUpdate_persistsAcrossRestart(t *testing.T) {
+	_, h, st, _ := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+	ctx := context.Background()
+
+	w := doReq(h, http.MethodPut, "/api/settings", map[string]any{
+		"encode_window_start": "00:00",
+		"encode_window_end":   "08:00",
+	}, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("put window: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	w = doReq(h, http.MethodPut, "/api/settings", map[string]any{
+		"scan_interval": "12h",
+	}, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("put interval: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	w = doReq(h, http.MethodPut, "/api/settings", map[string]any{
+		"encode_window_end": "09:00",
+		"scan_anchor":       "not-a-time",
+	}, cookie)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid put: want 400, got %d", w.Code)
+	}
+
+	raw, err := st.Settings.LiveOverrides(ctx)
+	if err != nil {
+		t.Fatalf("load overrides: %v", err)
+	}
+	var o config.LiveOverrides
+	if err := json.Unmarshal([]byte(raw), &o); err != nil {
+		t.Fatalf("decode overrides %q: %v", raw, err)
+	}
+	restarted := config.NewLive(testConfig())
+	if err := restarted.Restore(o); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if got := config.FormatHHMM(restarted.EncodeWindowEnd()); got != "08:00" {
+		t.Errorf("window end after restart = %s, want 08:00 (overrides %s)", got, raw)
+	}
+	if got := restarted.ScanInterval(); got != 12*time.Hour {
+		t.Errorf("scan interval after restart = %v, want 12h (earlier override kept)", got)
+	}
+	if o.ProbeConcurrency != nil {
+		t.Errorf("probe_concurrency persisted without being set: %d", *o.ProbeConcurrency)
+	}
+}
+
 func TestSettingsMissingRetention(t *testing.T) {
 	srv, h, st, _ := newTestServer(t, false)
 	cookie := completeSetup(t, st)

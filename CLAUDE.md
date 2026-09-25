@@ -250,7 +250,7 @@ survivor is: it is half of a swap, not an arrival.
 
 ### Live settings
 
-`config.Live` is a `sync.RWMutex`-guarded struct seeded from env at boot. The scanner and worker read it on each tick, so PUT `/api/settings` takes effect immediately. Settings overrides are in-memory only — a restart re-seeds from env (this includes `missing_retention` and `replace_lookback`, so a value set in the UI reverts to `MISSING_RETENTION` / `REPLACE_LOOKBACK` on restart).
+`config.Live` is a `sync.RWMutex`-guarded struct seeded from env at boot. The scanner and worker read it on each tick, so PUT `/api/settings` takes effect immediately. Env only supplies defaults: every live field a PUT sets is folded (`LiveOverrides.Merge`) into the `settings.live_overrides` JSON column (migration `00022`), and `main.go`'s `restoreLiveOverrides` applies it over the env seed at boot via `Live.Restore`, which is per-field so a stored value that no longer validates falls back to its env value and is logged rather than failing boot. A field never set in the UI keeps following its env var; one that has been set wins over it from then on.
 
 `clock_format` is the exception: it has no env var and is persisted to the `settings` row (`clock_format` column, migration `00013`, `"12h"` default). It is display-only — the API always speaks 24-hour `HH:MM` — and instance-wide, since sessions are single-user. The frontend reads it off the cached settings query via `web/hooks/use-clock-format.ts`, so `formatClock`, `formatZoneClock`, and `windowInfo` all render on the chosen clock.
 

@@ -392,7 +392,7 @@ score that snapshot against what actually landed.
 
 ### Candidate pagination & filtering
 
-`GET /api/candidates` supports 10 sort options via `?sort=`: `savings_desc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`, `release_desc`, `release_asc`. Filters: `library_type` (`movies`|`tv`), `video_codec`, `height` (`uhd8k`|`uhd`|`qhd`|`fhd`|`hd`|`sd`|`unknown`, or legacy numeric heights), `search` (path substring).
+`GET /api/candidates` supports 12 sort options via `?sort=`: `savings_desc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`, `release_desc`, `release_asc`, `encode_time_asc`, `encode_time_desc`. The encode-time sorts order on `encodeWorkSQL` (duration × `media.PixelFactor`), which is the estimate without its rate — every candidate is priced on the default profile, so the rate is a common factor; the handler multiplies it back in to return `estimated_encode_seconds`. Filters: `library_type` (`movies`|`tv`), `video_codec`, `height` (`uhd8k`|`uhd`|`qhd`|`fhd`|`hd`|`sd`|`unknown`, or legacy numeric heights), `search` (path substring).
 
 `GET /api/files` is the Library view — same filters plus `status` (`active`|`missing`) and `candidate_state` (`candidate`|`already_efficient`|`probe_failed`|`unknown_codec`|`queued`|`completed`|`missing`; `already_hevc` is a legacy alias). Sort options: `path_asc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`, `oversize_desc`, `release_desc`, `release_asc`.
 

@@ -17,6 +17,7 @@ export const CANDIDATE_COLUMNS = mediaColumns<MediaFile, CandidateSortColumn>([
   "audio",
   "container",
   { id: "size", sort: "size", breakpoint: "sm", width: "w-18 shrink-0" },
+  { id: "encode", sort: "encode" },
   {
     id: "savings",
     sort: "savings",

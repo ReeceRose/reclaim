@@ -8,6 +8,8 @@ export type CandidateSortKey =
   | "mtime_asc"
   | "release_desc"
   | "release_asc"
+  | "encode_time_asc"
+  | "encode_time_desc"
   | "codec";
 
 export const CANDIDATE_SORT_OPTIONS: {
@@ -21,6 +23,8 @@ export const CANDIDATE_SORT_OPTIONS: {
   { value: "mtime_asc", label: "Oldest file" },
   { value: "release_desc", label: "Newest release" },
   { value: "release_asc", label: "Oldest release" },
+  { value: "encode_time_asc", label: "Shortest encode" },
+  { value: "encode_time_desc", label: "Longest encode" },
   { value: "codec", label: "Source codec" },
 ];
 
@@ -29,6 +33,7 @@ export type CandidateSortColumn =
   | "released"
   | "codec"
   | "size"
+  | "encode"
   | "savings";
 
 const SORT_COLUMN: Record<CandidateSortKey, CandidateSortColumn> = {
@@ -39,6 +44,8 @@ const SORT_COLUMN: Record<CandidateSortKey, CandidateSortColumn> = {
   mtime_asc: "added",
   release_desc: "released",
   release_asc: "released",
+  encode_time_asc: "encode",
+  encode_time_desc: "encode",
   codec: "codec",
 };
 
@@ -47,6 +54,7 @@ const COLUMN_DEFAULT_SORT: Record<CandidateSortColumn, CandidateSortKey> = {
   released: "release_desc",
   codec: "codec",
   size: "size_desc",
+  encode: "encode_time_asc",
   savings: "savings_desc",
 };
 
@@ -56,6 +64,7 @@ const COLUMN_TOGGLE: Partial<
   added: ["mtime_desc", "mtime_asc"],
   released: ["release_desc", "release_asc"],
   size: ["size_desc", "size_asc"],
+  encode: ["encode_time_asc", "encode_time_desc"],
 };
 
 export function candidateSortColumn(

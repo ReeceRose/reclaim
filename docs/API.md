@@ -344,7 +344,7 @@ queued/completed. Ranked by `predicted_savings_bytes`, priced against
 
 | Param | Notes |
 |---|---|
-| `sort` | `savings_desc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`, `release_desc`, `release_asc` (by `release_date`; undated files last in both directions) |
+| `sort` | `savings_desc` (default), `size_desc`, `size_asc`, `codec`, `resolution`, `mtime_desc`, `mtime_asc`, `library_type`, `release_desc`, `release_asc` (by `release_date`; undated files last in both directions), `encode_time_asc`, `encode_time_desc` (by `estimated_encode_seconds`; files with no known duration last in both directions) |
 | `library_type` | filter: `movies` or `tv` |
 | `video_codec` | filter, exact source codec, e.g. `h264` |
 | `height` | resolution filter: `uhd8k`, `uhd`, `qhd`, `fhd`, `hd`, `sd`, `unknown`; exact numeric heights like `1080` are still accepted for compatibility |
@@ -368,6 +368,11 @@ any country or a TV episode's original air date (`YYYY-MM-DD`, from TMDB), or,
 for a movie TMDB has no date for, the release year in its folder or file name
 (`YYYY`). `null` when nothing is known. A bare year sorts below every full date
 in that year.
+
+Candidate items also carry `estimated_encode_seconds`: the wall-clock time a job
+queued on the default profile would be estimated to take, from the same learned
+rate cascade as `GET /api/jobs`. Omitted when the file's duration is unknown or
+no default profile exists.
 
 `total_count` is included on the first page of the default `savings_desc` sort
 (no cursor, no offset). `next_cursor` is present only for the default sort when

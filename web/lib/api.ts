@@ -272,6 +272,8 @@ export interface MediaFile {
   container_format: string | null;
   is_efficient_codec: boolean;
   predicted_savings_bytes: number;
+  /** Default-profile encode time estimate; candidates list only. */
+  estimated_encode_seconds?: number;
   oversize_ratio: number;
   is_oversized: boolean;
   last_probed_at: number | null;

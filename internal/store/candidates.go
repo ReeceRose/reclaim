@@ -25,27 +25,42 @@ const (
 	SortLibraryType CandidateSort = "library_type"
 	SortReleaseDesc CandidateSort = "release_desc"
 	SortReleaseAsc  CandidateSort = "release_asc"
+	// SortEncodeTimeAsc/Desc order on the estimated encode time. Every
+	// candidate is priced against the same default profile, so the learned
+	// rate is a common factor and the order is that of encodeWorkSQL alone.
+	SortEncodeTimeAsc  CandidateSort = "encode_time_asc"
+	SortEncodeTimeDesc CandidateSort = "encode_time_desc"
 )
 
 const (
 	releaseDescOrder = "release_date DESC NULLS LAST, path ASC, id ASC"
 	releaseAscOrder  = "release_date ASC NULLS LAST, path ASC, id ASC"
+
+	// encodeWorkSQL is media.PredictedEncodeSeconds without the rate: source
+	// seconds scaled by media.PixelFactor. NULL when the duration is unknown,
+	// which is when the estimate is too.
+	encodeWorkSQL = `(CASE WHEN duration_seconds > 0 THEN duration_seconds * MIN(MAX(
+		(CASE WHEN width > 0 THEN width ELSE 1920 END) *
+		(CASE WHEN height > 0 THEN height ELSE 1080 END) / 2073600.0,
+		0.25), 16.0) END)`
 )
 
 // orderClauses maps each sort to its ORDER BY. id is always the final tiebreak
 // so paging is deterministic. The map is the whitelist that keeps user-supplied
 // sort values out of the SQL string.
 var orderClauses = map[CandidateSort]string{
-	SortSavingsDesc: "predicted_savings_bytes DESC, id ASC",
-	SortSizeDesc:    "size_bytes DESC, id ASC",
-	SortSizeAsc:     "size_bytes ASC, id ASC",
-	SortCodec:       "video_codec ASC, predicted_savings_bytes DESC, id ASC",
-	SortResolution:  "height DESC, predicted_savings_bytes DESC, id ASC",
-	SortMtimeDesc:   "mtime DESC, id ASC",
-	SortMtimeAsc:    "mtime ASC, id ASC",
-	SortLibraryType: "library_type ASC, predicted_savings_bytes DESC, id ASC",
-	SortReleaseDesc: releaseDescOrder,
-	SortReleaseAsc:  releaseAscOrder,
+	SortSavingsDesc:    "predicted_savings_bytes DESC, id ASC",
+	SortSizeDesc:       "size_bytes DESC, id ASC",
+	SortSizeAsc:        "size_bytes ASC, id ASC",
+	SortCodec:          "video_codec ASC, predicted_savings_bytes DESC, id ASC",
+	SortResolution:     "height DESC, predicted_savings_bytes DESC, id ASC",
+	SortMtimeDesc:      "mtime DESC, id ASC",
+	SortMtimeAsc:       "mtime ASC, id ASC",
+	SortLibraryType:    "library_type ASC, predicted_savings_bytes DESC, id ASC",
+	SortReleaseDesc:    releaseDescOrder,
+	SortReleaseAsc:     releaseAscOrder,
+	SortEncodeTimeAsc:  encodeWorkSQL + " ASC NULLS LAST, id ASC",
+	SortEncodeTimeDesc: encodeWorkSQL + " DESC NULLS LAST, id ASC",
 }
 
 // CandidateFilter narrows the candidate list. Zero values mean "no filter".

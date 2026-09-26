@@ -22,6 +22,7 @@ import {
   formatDayLabel,
   formatDuration,
   formatDurationCompact,
+  formatDurationLong,
   formatInt,
   formatPct,
   relativeTime,
@@ -496,6 +497,36 @@ function plural(n: number, one: string, many: string): string {
   return `${formatInt(n)} ${n === 1 ? one : many}`;
 }
 
+const DAY_SECONDS = 86_400;
+
+const OUTCOME_ORDER = ["completed", "failed", "cancelled"];
+
+const OUTCOME_DOT: Record<string, string> = {
+  completed: "bg-green",
+  failed: "bg-red",
+  cancelled: "bg-muted-dim",
+};
+
+function outcomeRank(k: string): number {
+  const i = OUTCOME_ORDER.indexOf(k);
+  return i < 0 ? OUTCOME_ORDER.length : i;
+}
+
+function clockSeconds(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return (h || 0) * 3600 + (m || 0) * 60;
+}
+
+function encodeWindowSeconds(start: string, end: string): number {
+  const span = clockSeconds(end) - clockSeconds(start);
+  return span > 0 ? span : span + DAY_SECONDS;
+}
+
+function formatWindowHours(seconds: number): string {
+  const h = Math.round((seconds / 3600) * 10) / 10;
+  return `${h}h`;
+}
+
 function signedBytes(n: number): string {
   if (n === 0) return "0 B";
   return `${n > 0 ? "−" : "+"}${formatBytes(Math.abs(n))}`;
@@ -752,7 +783,24 @@ function InsightsContent() {
     staleTime: 30_000,
   });
 
+  const { data: settings } = useSuspenseQuery({
+    queryKey: ["settings"],
+    queryFn: api.settings,
+  });
+
   const summary = report.summary;
+  const remainingSeconds = summary.projected_remaining_encode_seconds;
+  const windowSeconds = encodeWindowSeconds(
+    settings.encode_window_start,
+    settings.encode_window_end,
+  );
+  const windowCalendarSeconds =
+    remainingSeconds != null && windowSeconds < DAY_SECONDS
+      ? (remainingSeconds / windowSeconds) * DAY_SECONDS
+      : null;
+  const outcomes = Object.entries(report.job_outcomes)
+    .filter(([, v]) => v > 0)
+    .sort(([a], [b]) => outcomeRank(a) - outcomeRank(b) || a.localeCompare(b));
   const replacements = report.replacements.summary;
 
   // The headline is bytes reclaimed by any means. Replacements are netted in
@@ -953,35 +1001,40 @@ function InsightsContent() {
           <div className="text-xs uppercase tracking-widest text-muted-fg font-bold mb-4">
             Still on the table
           </div>
-          <div className="flex items-end gap-6 flex-wrap">
-            <div>
-              <div className="text-stat font-bold tracking-tight text-brand tnum">
-                {formatBytes(stats.total_recoverable_bytes)}
-              </div>
-              <div className="text-xs text-muted-dim mt-0.5">
-                estimated across {formatInt(summary.remaining_candidates)}{" "}
-                remaining candidates
-              </div>
-            </div>
+          <div className="grid grid-cols-2 gap-6 max-sm:grid-cols-1">
+            <StatTile
+              label="Recoverable"
+              value={formatBytes(stats.total_recoverable_bytes)}
+              sub={`across ${formatInt(summary.remaining_candidates)} ${plural(summary.remaining_candidates, "candidate", "candidates")}`}
+              tone="text-brand"
+            />
+            {remainingSeconds != null && (
+              <StatTile
+                label="Encoding left"
+                value={`~${formatDurationLong(remainingSeconds)}`}
+                sub={
+                  windowCalendarSeconds != null
+                    ? `≈ ${formatDurationLong(windowCalendarSeconds)} at ${formatWindowHours(windowSeconds)} a night`
+                    : "at your observed pace, running nonstop"
+                }
+              />
+            )}
           </div>
-          {summary.projected_remaining_encode_seconds != null && (
-            <div className="text-sm text-muted-fg mt-4 pt-4 border-t border-line-soft">
-              At your observed pace that is roughly{" "}
-              <b className="text-text font-semibold">
-                {formatDurationCompact(
-                  summary.projected_remaining_encode_seconds,
-                )}
-              </b>{" "}
-              of encoding left.
+          {outcomes.length > 0 && (
+            <div className="flex flex-wrap gap-x-5 gap-y-2 mt-5 pt-4 border-t border-line-soft text-xs text-muted-fg tnum">
+              {outcomes.map(([k, v]) => (
+                <span key={k} className="inline-flex items-center gap-1.5">
+                  <span
+                    className={`size-1.5 rounded-full ${OUTCOME_DOT[k] ?? "bg-muted-dim"}`}
+                  />
+                  <span className="text-text font-semibold">
+                    {formatInt(v)}
+                  </span>
+                  {k}
+                </span>
+              ))}
             </div>
           )}
-          <div className="flex gap-4 mt-4 text-xs text-muted-dim tnum">
-            {Object.entries(report.job_outcomes).map(([k, v]) => (
-              <span key={k}>
-                {formatInt(v)} {k}
-              </span>
-            ))}
-          </div>
         </div>
       </div>
 

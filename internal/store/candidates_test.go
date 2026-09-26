@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"testing"
+
+	"reclaim/internal/media"
 )
 
 func TestCandidates_excludesHEVCMissingProbeErrorAndQueued(t *testing.T) {
@@ -266,5 +268,50 @@ func TestCandidates_libraryTypeSort(t *testing.T) {
 	}
 	if got[2].LibraryType != "tv" || got[2].PredictedSavingsBytes != 100 {
 		t.Fatalf("third = %+v, want tv/100", got[2])
+	}
+}
+
+func TestCandidates_encodeTimeSortMatchesEstimate(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	dur := func(v float64) *float64 { return &v }
+	for _, c := range []struct {
+		path          string
+		width, height int
+		duration      *float64
+	}{
+		{"/m/long-1080.mkv", 1920, 1080, dur(7200)},
+		{"/m/short-2160.mkv", 3840, 2160, dur(1500)},
+		{"/m/mid-sd.mkv", 640, 360, dur(5400)},
+		{"/m/no-res.mkv", 0, 0, dur(3000)},
+		{"/m/tiny.mkv", 160, 90, dur(9000)},
+		{"/m/unknown.mkv", 1920, 1080, nil},
+	} {
+		f := testFile{path: c.path, size: 1000, codec: "h264", width: c.width, height: c.height, savings: 100}.toMedia()
+		f.DurationSeconds = c.duration
+		if _, err := s.Media.Insert(ctx, f); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, sort := range []CandidateSort{SortEncodeTimeAsc, SortEncodeTimeDesc} {
+		got, err := s.Media.Candidates(ctx, CandidateQuery{Sort: sort})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 6 {
+			t.Fatalf("%s: want 6, got %d", sort, len(got))
+		}
+		if got[5].Path != "/m/unknown.mkv" {
+			t.Fatalf("%s: unknown duration should sort last, got %s", sort, got[5].Path)
+		}
+		for i := 1; i < 5; i++ {
+			prev := media.PredictedEncodeSeconds(1, got[i-1].DurationSeconds, got[i-1].Width, got[i-1].Height)
+			cur := media.PredictedEncodeSeconds(1, got[i].DurationSeconds, got[i].Width, got[i].Height)
+			if (sort == SortEncodeTimeAsc && prev > cur) || (sort == SortEncodeTimeDesc && prev < cur) {
+				t.Fatalf("%s: %s (%d) before %s (%d)", sort, got[i-1].Path, prev, got[i].Path, cur)
+			}
+		}
 	}
 }

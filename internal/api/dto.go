@@ -39,15 +39,18 @@ type mediaFileDTO struct {
 	ContainerFormat       *string  `json:"container_format"`
 	IsEfficientCodec      bool     `json:"is_efficient_codec"`
 	PredictedSavingsBytes int64    `json:"predicted_savings_bytes"`
-	OversizeRatio         float64  `json:"oversize_ratio"`
-	IsOversized           bool     `json:"is_oversized"`
-	LastProbedAt          *int64   `json:"last_probed_at"`
-	ProbeError            *string  `json:"probe_error"`
-	Status                string   `json:"status"`
-	CandidateState        string   `json:"candidate_state"`
-	ReleaseDate           *string  `json:"release_date"`
-	PosterPath            *string  `json:"poster_path"`
-	BackdropPath          *string  `json:"backdrop_path"`
+	// EstimatedEncodeSeconds is the default profile's predicted encode time.
+	// Only the candidates list populates it.
+	EstimatedEncodeSeconds *int64  `json:"estimated_encode_seconds,omitempty"`
+	OversizeRatio          float64 `json:"oversize_ratio"`
+	IsOversized            bool    `json:"is_oversized"`
+	LastProbedAt           *int64  `json:"last_probed_at"`
+	ProbeError             *string `json:"probe_error"`
+	Status                 string  `json:"status"`
+	CandidateState         string  `json:"candidate_state"`
+	ReleaseDate            *string `json:"release_date"`
+	PosterPath             *string `json:"poster_path"`
+	BackdropPath           *string `json:"backdrop_path"`
 	// TMDB metadata fields — only populated by handleFileDetail
 	Overview    *string  `json:"overview,omitempty"`
 	Tagline     *string  `json:"tagline,omitempty"`

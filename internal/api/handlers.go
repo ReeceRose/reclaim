@@ -128,10 +128,18 @@ func (s *Server) handleCandidates(c *echo.Context) error {
 		return badRequest(c, err.Error())
 	}
 
+	rate, err := s.defaultEncodeRate(c.Request().Context())
+	if err != nil {
+		return serverError(c, err)
+	}
 	threshold := s.live.OversizeThreshold()
 	items := make([]mediaFileDTO, 0, len(files))
 	for i := range files {
-		items = append(items, toMediaFileDTOWithState(&files[i], string(store.CandidateStateCandidate), threshold))
+		dto := toMediaFileDTOWithState(&files[i], string(store.CandidateStateCandidate), threshold)
+		if est := media.PredictedEncodeSeconds(rate, files[i].DurationSeconds, files[i].Width, files[i].Height); est > 0 {
+			dto.EstimatedEncodeSeconds = &est
+		}
+		items = append(items, dto)
 	}
 
 	resp := map[string]any{"items": items}
@@ -151,6 +159,24 @@ func (s *Server) handleCandidates(c *echo.Context) error {
 		}
 	}
 	return c.JSON(http.StatusOK, resp)
+}
+
+// defaultEncodeRate resolves the encode rate a job queued on the default
+// profile would be estimated with; 0 when there is no default profile.
+func (s *Server) defaultEncodeRate(ctx context.Context) (float64, error) {
+	profile, err := s.store.Profiles.GetDefault(ctx)
+	if errors.Is(err, store.ErrNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	lookup, err := s.store.Jobs.LearnedEncodeRates(ctx)
+	if err != nil {
+		return 0, err
+	}
+	rate, _, _ := media.ResolveEncodeRate(profile.ID, media.NormalizeTargetCodec(profile.Codec), profile.Preset, profile.CRF, lookup)
+	return rate, nil
 }
 
 func (s *Server) handleFileDetail(c *echo.Context) error {

@@ -237,6 +237,25 @@ export function formatDurationCompact(
   return `${s}s`;
 }
 
+/**
+ * formatDurationLong renders a long span in the largest unit that still reads
+ * naturally: hours under two days, then days, weeks, months, and years.
+ */
+export function formatDurationLong(seconds: number | null | undefined): string {
+  if (seconds == null || seconds <= 0) return "—";
+  const hours = seconds / 3600;
+  if (hours < 48) return formatDurationCompact(seconds);
+  const days = hours / 24;
+  const unit = (n: number, one: string) => {
+    const r = n < 10 ? Math.round(n * 10) / 10 : Math.round(n);
+    return `${r} ${r === 1 ? one : `${one}s`}`;
+  };
+  if (days < 14) return unit(Math.round(days), "day");
+  if (days < 60) return unit(Math.round(days / 7), "week");
+  if (days < 365) return unit(Math.round(days / 30.44), "month");
+  return unit(days / 365.25, "year");
+}
+
 /** formatDuration renders seconds as h/m/s. */
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || seconds <= 0) return "—";

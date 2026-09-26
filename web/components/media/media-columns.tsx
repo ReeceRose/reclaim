@@ -42,6 +42,7 @@ export type MediaColumnId =
   | "audio"
   | "container"
   | "size"
+  | "encode"
   | "savings";
 
 type BaseColumn = Omit<ColumnDef<MediaFile, never>, "sort">;
@@ -240,6 +241,20 @@ const BASE: Record<MediaColumnId, BaseColumn> = {
     cell: (item) => formatBytes(item.size_bytes),
     title: (item) => `${formatInt(item.size_bytes)} bytes`,
     description: "File size on disk",
+  },
+  encode: {
+    id: "encode",
+    label: "Encode",
+    width: "w-16 shrink-0",
+    breakpoint: "md",
+    align: "right",
+    cellClassName: "font-mono text-xs text-muted-fg",
+    cell: (item) => formatDurationCompact(item.estimated_encode_seconds),
+    title: (item) =>
+      item.estimated_encode_seconds
+        ? `About ${formatDuration(item.estimated_encode_seconds)} with the default profile`
+        : "No estimate — the file's duration is unknown",
+    description: "Estimated encode time with the default profile",
   },
   savings: {
     id: "savings",

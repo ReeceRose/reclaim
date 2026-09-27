@@ -5,6 +5,28 @@ source of truth: `scripts/release.sh` writes each entry here, commits it, tags t
 commit, and publishes the same text as the GitHub Release. The running binary embeds
 this file, so the in-app release notes always match the build you are on.
 
+## v0.0.48 — 2026-09-27
+
+This release shows how long each candidate would take to encode and how much encoding work is left in your library.
+
+### What's Changed
+
+#### Features
+- **Encode-time estimates on Candidates**: each candidate now shows an estimated encode time. The estimate uses the pace of your past encodes on your default profile.
+- **Sort by encode time**: new "Shortest encode" and "Longest encode" sort options, also available by clicking the encode-time column header. Quick wins are easy to queue first.
+- **Encoding left on Insights**: the "Still on the table" card shows the remaining encode time next to recoverable space. It also estimates how many real days that is at your encode window's hours per night, e.g. "≈ 3 weeks at 6h a night".
+
+#### Improvements
+- Long durations read naturally, switching to days, weeks, months or years as they grow.
+- Job outcomes on Insights are now tidy colour-coded counts in a fixed order (completed, failed, cancelled). Outcomes with a zero count are hidden.
+- Updated Next.js (16.3.6), React Query, Lucide icons and the SQLite driver's C library to their latest patch releases.
+
+### Docker
+
+```
+docker pull ghcr.io/ReeceRose/reclaim:0.0.48
+```
+
 ## v0.0.47 — 2026-09-25
 
 Settings you change in the web UI now stay in place after a restart.

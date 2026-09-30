@@ -656,15 +656,18 @@ func (m *Media) ReplaceWithEncoded(ctx context.Context, id, newSize int64, newFi
 		return err
 	}
 	defer tx.Rollback()
-	if err := m.ReplaceWithEncodedTx(ctx, tx, id, newSize, newFingerprint, codec, now); err != nil {
+	if err := m.ReplaceWithEncodedTx(ctx, tx, id, "", newSize, newFingerprint, codec, now); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
 // ReplaceWithEncodedTx is like ReplaceWithEncoded but runs inside the caller's
-// transaction so it can be bundled with job completion in one commit.
-func (m *Media) ReplaceWithEncodedTx(ctx context.Context, tx *sql.Tx, id, newSize int64, newFingerprint, codec string, now int64) error {
+// transaction so it can be bundled with job completion in one commit. A
+// non-empty newPath moves the row to where an encode that changed container
+// landed; the worker only ever moves a file to media.RemuxExt, so the row's
+// container becomes media.RemuxFormatName.
+func (m *Media) ReplaceWithEncodedTx(ctx context.Context, tx *sql.Tx, id int64, newPath string, newSize int64, newFingerprint, codec string, now int64) error {
 	old, err := loadStatRow(ctx, tx, id)
 	if err != nil {
 		return err
@@ -688,11 +691,14 @@ func (m *Media) ReplaceWithEncodedTx(ctx context.Context, tx *sql.Tx, id, newSiz
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE media_files SET
+			container_format = CASE WHEN ? IN ('', path) THEN container_format ELSE ? END,
+			path = COALESCE(NULLIF(?, ''), path),
 			size_bytes = ?, fingerprint = ?, video_codec = ?,
 			is_efficient_codec = ?, predicted_savings_bytes = 0, oversize_ratio = ?,
 			mtime = ?, last_probed_at = ?, probe_error = NULL, status = ?,
 			missing_since = NULL
 		WHERE id = ?`,
+		newPath, media.RemuxFormatName, newPath,
 		newSize, newFingerprint, codec, btoi(media.IsEfficientCodec(&codec)), oversize,
 		now, now, MediaStatusActive, id,
 	); err != nil {

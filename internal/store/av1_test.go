@@ -19,7 +19,7 @@ func TestCommitEncodeSwap_av1Target(t *testing.T) {
 	if err := st.Jobs.SetEncodeSettings(ctx, jobID, "av1", "6", 30, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, 300, "fp-new", 1_700_003_600, "done", ""); err != nil {
+	if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, "", 300, "fp-new", 1_700_003_600, "done", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -66,7 +66,7 @@ func TestLearnedRatios_splitByTarget(t *testing.T) {
 	for i := range 3 {
 		path := fmt.Sprintf("/movies/hevc-%d.mkv", i)
 		fileID, jobID := seedEncodedFile(t, st, path, "h264", 1000, 600, 1920, 1080)
-		if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, 600, "fp-"+path, 1_700_003_600, "done", ""); err != nil {
+		if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, "", 600, "fp-"+path, 1_700_003_600, "done", ""); err != nil {
 			t.Fatal(err)
 		}
 
@@ -75,7 +75,7 @@ func TestLearnedRatios_splitByTarget(t *testing.T) {
 		if err := st.Jobs.SetEncodeSettings(ctx, jobID, "av1", "6", 30, nil); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, 400, "fp-"+path, 1_700_003_600, "done", ""); err != nil {
+		if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, "", 400, "fp-"+path, 1_700_003_600, "done", ""); err != nil {
 			t.Fatal(err)
 		}
 	}

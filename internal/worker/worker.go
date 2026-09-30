@@ -27,8 +27,8 @@ import (
 )
 
 const (
-	tmpSuffix    = ".reclaim-tmp"
-	backupSuffix = ".reclaim-backup"
+	tmpSuffix    = media.TempSuffix
+	backupSuffix = media.BackupSuffix
 
 	// durationToleranceSeconds is the ±window for the duration match.
 	durationToleranceSeconds = 1.0
@@ -234,7 +234,16 @@ func (w *Worker) processJob(ctx context.Context, job *store.TranscodeJob) {
 		slog.Warn("worker: stamp encode settings", "job", job.ID, "err", err)
 	}
 
-	tmpPath := tempPathFor(file.Path)
+	ext, muxer := media.OutputContainer(file.Path, codec)
+	outPath := media.WithExt(file.Path, ext)
+	if outPath != file.Path {
+		if msg := w.remuxConflict(ctx, outPath); msg != "" {
+			w.failJob(ctx, job.ID, msg, nil)
+			return
+		}
+	}
+
+	tmpPath := tempPathFor(file.Path, ext)
 	if err := w.store.Jobs.SetOutputPath(ctx, job.ID, tmpPath); err != nil {
 		slog.Error("worker: set output path", "job", job.ID, "err", err)
 	}
@@ -270,6 +279,7 @@ func (w *Worker) processJob(ctx context.Context, job *store.TranscodeJob) {
 		CRF:             profile.CRF,
 		Preset:          profile.Preset,
 		ExtraArgs:       extra,
+		Format:          muxer,
 		DurationSeconds: duration,
 	}, func(pct float64) {
 		// One decimal place is plenty for a progress bar and keeps the WS payload
@@ -313,13 +323,29 @@ func (w *Worker) processJob(ctx context.Context, job *store.TranscodeJob) {
 	if err := w.store.Jobs.Transition(ctx, job.ID, string(jobs.StatusRunning), string(jobs.StatusVerifying)); err != nil {
 		slog.Error("worker: transition to verifying", "job", job.ID, "err", err)
 	}
-	w.verifyAndReplace(ctx, job, file, tmpPath, codec)
+	w.verifyAndReplace(ctx, job, file, tmpPath, outPath, codec)
+}
+
+// remuxConflict explains why an encode cannot move to outPath, or returns ""
+// when it can. A file already there would be overwritten by the swap, and a
+// row already holding the path — a missing file's — would collide with this
+// one's when the swap moves it there.
+func (w *Worker) remuxConflict(ctx context.Context, outPath string) string {
+	if _, err := os.Stat(outPath); err == nil {
+		return "cannot change container: " + filepath.Base(outPath) + " already exists"
+	}
+	if _, err := w.store.Media.GetByPath(ctx, outPath); err == nil {
+		return "cannot change container: the library already has a row for " + filepath.Base(outPath)
+	}
+	return ""
 }
 
 // verifyAndReplace runs the verification checks and, only on a full pass,
-// performs the atomic swap. Any failure keeps the temp, leaves the original
-// untouched, and marks the job failed with the verification detail attached.
-func (w *Worker) verifyAndReplace(ctx context.Context, job *store.TranscodeJob, file *store.MediaFile, tmpPath string, codec media.TargetCodec) {
+// performs the atomic swap. A failed check deletes the temp — it sits in the
+// library beside the original, where Plex would list it as a duplicate — leaves
+// the original untouched, and marks the job failed with the verification detail
+// attached.
+func (w *Worker) verifyAndReplace(ctx context.Context, job *store.TranscodeJob, file *store.MediaFile, tmpPath, outPath string, codec media.TargetCodec) {
 	result, ok := w.verify(ctx, file, tmpPath, codec)
 	blob, _ := json.Marshal(result)
 	if err := w.store.Jobs.SetVerificationResult(ctx, job.ID, string(blob)); err != nil {
@@ -327,12 +353,15 @@ func (w *Worker) verifyAndReplace(ctx context.Context, job *store.TranscodeJob, 
 	}
 
 	if !ok {
-		// Keep the temp for inspection; original untouched.
+		removeIfExists(tmpPath)
+		if err := w.store.Jobs.ClearOutputPath(ctx, job.ID); err != nil {
+			slog.Error("worker: clear output path", "job", job.ID, "err", err)
+		}
 		w.failJob(ctx, job.ID, "verification failed", strptr(string(blob)))
 		return
 	}
 
-	if err := w.replace(ctx, job, file, tmpPath); err != nil {
+	if err := w.replace(ctx, job, file, tmpPath, outPath); err != nil {
 		if errors.Is(err, errPostSwapCommit) {
 			slog.Error("worker: CRITICAL swap ok but db commit failed; job left verifying for reconcile",
 				"job", job.ID, "path", file.Path, "err", err)
@@ -397,16 +426,52 @@ func (w *Worker) verify(ctx context.Context, file *store.MediaFile, tmpPath stri
 // replace performs the atomic swap: original → .reclaim-backup, temp →
 // original, delete backup, then update the row + stats. The backup window means
 // a failure mid-swap is recoverable rather than leaving no original.
-func (w *Worker) replace(ctx context.Context, job *store.TranscodeJob, file *store.MediaFile, tmpPath string) error {
-	backupPath := file.Path + backupSuffix
+//
+// An encode that changed container lands at outPath instead, beside the
+// original rather than over it, so it needs no backup: the temp is renamed into
+// place, then the original deleted. A crash between the two leaves both, which
+// tryCompletePostSwap resolves on the next boot.
+func (w *Worker) replace(ctx context.Context, job *store.TranscodeJob, file *store.MediaFile, tmpPath, outPath string) error {
+	if outPath != file.Path {
+		if err := moveEncoded(file.Path, tmpPath, outPath); err != nil {
+			return err
+		}
+	} else if err := swapEncoded(file.Path, tmpPath); err != nil {
+		return err
+	}
+	return w.commitSwap(ctx, job, file, outPath)
+}
 
-	if err := os.Rename(file.Path, backupPath); err != nil {
+// moveEncoded renames a verified temp to outPath and deletes the original it
+// replaces. Failing to delete the original undoes the move, so the library is
+// never left holding both.
+func moveEncoded(origPath, tmpPath, outPath string) error {
+	if _, err := os.Stat(outPath); err == nil {
+		return fmt.Errorf("%s already exists", filepath.Base(outPath))
+	}
+	if err := os.Rename(tmpPath, outPath); err != nil {
 		return err // original untouched, temp kept
 	}
-	if err := os.Rename(tmpPath, file.Path); err != nil {
+	if err := os.Remove(origPath); err != nil {
+		if rerr := os.Rename(outPath, tmpPath); rerr != nil {
+			slog.Error("worker: undo move", "path", outPath, "err", rerr)
+		}
+		return err
+	}
+	return nil
+}
+
+// swapEncoded replaces the original with a verified temp at the same path.
+func swapEncoded(origPath, tmpPath string) error {
+	backupPath := origPath + backupSuffix
+
+	if err := os.Rename(origPath, backupPath); err != nil {
+		return err // original untouched, temp kept
+	}
+	if err := os.Rename(tmpPath, origPath); err != nil {
 		// Step 2 failed: restore the original from backup so we never lose it.
-		if rerr := os.Rename(backupPath, file.Path); rerr != nil {
-			slog.Error("worker: CRITICAL restore failed", "path", file.Path, "backup", backupPath, "err", rerr)
+		if rerr := os.Rename(backupPath, origPath); rerr != nil {
+			slog.Error("worker: CRITICAL restore failed", "path", origPath, "backup", backupPath, "err", rerr)
 		}
 		return err
 	}
@@ -414,26 +479,30 @@ func (w *Worker) replace(ctx context.Context, job *store.TranscodeJob, file *sto
 		// Non-fatal: the swap is done; the orphan sweep will delete the backup.
 		slog.Warn("worker: remove backup", "path", backupPath, "err", err)
 	}
+	return nil
+}
 
-	info, err := os.Stat(file.Path)
+// commitSwap records an encode that is now on disk at outPath.
+func (w *Worker) commitSwap(ctx context.Context, job *store.TranscodeJob, file *store.MediaFile, outPath string) error {
+	info, err := os.Stat(outPath)
 	if err != nil {
 		return err
 	}
 	newSize := info.Size()
-	fp, err := media.Fingerprint(file.Path)
+	fp, err := media.Fingerprint(outPath)
 	if err != nil {
-		slog.Warn("worker: fingerprint after swap", "path", file.Path, "err", err)
+		slog.Warn("worker: fingerprint after swap", "path", outPath, "err", err)
 	}
 
 	now := w.clock().Unix()
-	completedMsg := "Encoded " + filepath.Base(file.Path)
+	completedMsg := "Encoded " + filepath.Base(outPath)
 	completedMeta := jsonMeta(map[string]any{
 		"job_id":              job.ID,
 		"file_id":             file.ID,
 		"output_size_bytes":   newSize,
 		"original_size_bytes": file.SizeBytes,
 	})
-	eventID, err := w.store.CommitEncodeSwap(ctx, file.ID, job.ID, newSize, fp, now, completedMsg, completedMeta)
+	eventID, err := w.store.CommitEncodeSwap(ctx, file.ID, job.ID, movedTo(file.Path, outPath), newSize, fp, now, completedMsg, completedMeta)
 	if err != nil {
 		return fmt.Errorf("%w: %v", errPostSwapCommit, err)
 	}
@@ -486,7 +555,7 @@ func (w *Worker) failJob(ctx context.Context, jobID int64, msg string, verificat
 	now := w.clock().Unix()
 	metaData := map[string]any{"job_id": jobID, "error": msg}
 	if verification != nil {
-		metaData["verification_result"] = *verification
+		metaData["verification_result"] = json.RawMessage(*verification)
 	}
 	meta := jsonMeta(metaData)
 	eventID, err := w.store.FailJob(bg, jobID, msg, now, meta)
@@ -544,28 +613,37 @@ func (w *Worker) tryCompletePostSwap(ctx context.Context, job *store.TranscodeJo
 		return false
 	}
 	target := w.jobTargetCodec(ctx, job)
-	res, err := w.probe(ctx, file.Path)
+	ext, _ := media.OutputContainer(file.Path, target)
+	outPath := media.WithExt(file.Path, ext)
+	res, err := w.probe(ctx, outPath)
 	if err != nil || res.VideoCodec == nil || media.NormalizeTargetCodec(*res.VideoCodec) != target {
 		return false
 	}
-	info, err := os.Stat(file.Path)
+	info, err := os.Stat(outPath)
 	if err != nil {
 		return false
 	}
 	newSize := info.Size()
-	fp, err := media.Fingerprint(file.Path)
+	fp, err := media.Fingerprint(outPath)
 	if err != nil {
-		slog.Warn("worker: reconcile fingerprint", "path", file.Path, "err", err)
+		slog.Warn("worker: reconcile fingerprint", "path", outPath, "err", err)
+	}
+	if outPath != file.Path {
+		// The move landed but the original may not have been deleted.
+		if err := os.Remove(file.Path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			slog.Warn("worker: reconcile remove original", "path", file.Path, "err", err)
+			return false
+		}
 	}
 	now := w.clock().Unix()
-	completedMsg := "Encoded " + filepath.Base(file.Path)
+	completedMsg := "Encoded " + filepath.Base(outPath)
 	completedMeta := jsonMeta(map[string]any{
 		"job_id":              job.ID,
 		"file_id":             file.ID,
 		"output_size_bytes":   newSize,
 		"original_size_bytes": file.SizeBytes,
 	})
-	eventID, err := w.store.CommitEncodeSwap(ctx, file.ID, job.ID, newSize, fp, now, completedMsg, completedMeta)
+	eventID, err := w.store.CommitEncodeSwap(ctx, file.ID, job.ID, movedTo(file.Path, outPath), newSize, fp, now, completedMsg, completedMeta)
 	if err != nil {
 		slog.Warn("worker: reconcile post-swap commit", "job", job.ID, "err", err)
 		return false
@@ -577,7 +655,7 @@ func (w *Worker) tryCompletePostSwap(ctx context.Context, job *store.TranscodeJo
 		"media_file_id":     file.ID,
 		"output_size_bytes": newSize,
 	})
-	slog.Info("worker: reconciled post-swap db commit", "job", job.ID, "path", file.Path)
+	slog.Info("worker: reconciled post-swap db commit", "job", job.ID, "path", outPath)
 	return true
 }
 
@@ -678,7 +756,8 @@ func (w *Worker) reclaimArtifactPaths(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	for _, p := range mediaPaths {
-		seen[tempPathFor(p)] = struct{}{}
+		seen[tempPathFor(p, filepath.Ext(p))] = struct{}{}
+		seen[tempPathFor(p, media.RemuxExt)] = struct{}{}
 		seen[p+backupSuffix] = struct{}{}
 	}
 
@@ -699,10 +778,20 @@ func (w *Worker) activeTempPaths() map[string]struct{} {
 	return out
 }
 
-// tempPathFor returns the temp output path for an original, preserving the
-// extension so ffmpeg muxes the same container (e.g. a.mkv → a.mkv.reclaim-tmp.mkv).
-func tempPathFor(orig string) string {
-	return orig + tmpSuffix + filepath.Ext(orig)
+// tempPathFor returns the temp output path for an original encoding to a
+// container with extension ext, which ffmpeg infers the muxer from
+// (a.mkv → a.mkv.reclaim-tmp.mkv, a.avi → a.avi.reclaim-tmp.mkv).
+func tempPathFor(orig, ext string) string {
+	return orig + tmpSuffix + ext
+}
+
+// movedTo is the new path CommitEncodeSwap records: outPath when the encode
+// changed container, "" when it replaced the original in place.
+func movedTo(origPath, outPath string) string {
+	if outPath == origPath {
+		return ""
+	}
+	return outPath
 }
 
 func removeIfExists(path string) {

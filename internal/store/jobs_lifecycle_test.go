@@ -331,7 +331,7 @@ func TestCommitEncodeSwapAtomic(t *testing.T) {
 		t.Fatalf("transition to verifying: %v", err)
 	}
 
-	eventID, err := st.CommitEncodeSwap(ctx, mid, jid, 2000, "newfp", 12345, "Encoded x.mkv", `{"job_id":1}`)
+	eventID, err := st.CommitEncodeSwap(ctx, mid, jid, "", 2000, "newfp", 12345, "Encoded x.mkv", `{"job_id":1}`)
 	if err != nil {
 		t.Fatalf("commit: %v", err)
 	}
@@ -350,7 +350,7 @@ func TestCommitEncodeSwapAtomic(t *testing.T) {
 
 	// Job not in verifying — commit must fail without mutating media.
 	mid2, jid2 := seedJobFixture(t, st)
-	_, err = st.CommitEncodeSwap(ctx, mid2, jid2, 2000, "fp2", 12345, "msg", "{}")
+	_, err = st.CommitEncodeSwap(ctx, mid2, jid2, "", 2000, "fp2", 12345, "msg", "{}")
 	if err == nil {
 		t.Fatal("want error when job is not verifying")
 	}

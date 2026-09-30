@@ -475,6 +475,12 @@ var queueSortKeys = map[string]func(a, b jobDTO) bool{
 		}
 		return a.ID < b.ID
 	},
+	"queued_at_desc": func(a, b jobDTO) bool {
+		if a.QueuedAt != b.QueuedAt {
+			return a.QueuedAt > b.QueuedAt
+		}
+		return a.ID > b.ID
+	},
 }
 
 func savingsPerSecond(j jobDTO) *float64 {

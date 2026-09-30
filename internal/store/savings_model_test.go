@@ -34,7 +34,7 @@ func TestSavingsModel_refreshRepricesLibraryAndNewProbes(t *testing.T) {
 	for i := range LearnedRatioMinSamples {
 		path := fmt.Sprintf("/movies/done-%d.mkv", i)
 		fileID, jobID := seedEncodedFile(t, st, path, "h264", 1000, 350, 1920, 1080)
-		if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, 350, "fp-"+path, 1_700_003_600, "done", ""); err != nil {
+		if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, "", 350, "fp-"+path, 1_700_003_600, "done", ""); err != nil {
 			t.Fatalf("commit %d: %v", i, err)
 		}
 	}
@@ -90,7 +90,7 @@ func TestLearnedRatios_byteWeighted(t *testing.T) {
 			size, out = 91_000, 18_200
 		}
 		fileID, jobID := seedEncodedFile(t, st, path, "h264", size, out, 1920, 1080)
-		if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, out, "fp-"+path, 1_700_003_600, "done", ""); err != nil {
+		if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, "", out, "fp-"+path, 1_700_003_600, "done", ""); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -115,8 +115,10 @@ func (s *Store) Version() (int64, error) {
 // CommitEncodeSwap atomically updates the media row after a verified filesystem
 // swap, marks the job completed, and inserts a job_completed event. The swap
 // must already have succeeded — a DB failure here leaves the file encoded on
-// disk with the job still in verifying for reconcile to retry.
-func (s *Store) CommitEncodeSwap(ctx context.Context, fileID, jobID, newSize int64, newFingerprint string, completedAt int64, message, meta string) (int64, error) {
+// disk with the job still in verifying for reconcile to retry. newPath is where
+// the encode landed when it moved to another container, "" when it replaced
+// the original in place.
+func (s *Store) CommitEncodeSwap(ctx context.Context, fileID, jobID int64, newPath string, newSize int64, newFingerprint string, completedAt int64, message, meta string) (int64, error) {
 	tx, err := s.w.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -129,7 +131,7 @@ func (s *Store) CommitEncodeSwap(ctx context.Context, fileID, jobID, newSize int
 	if err := s.Savings.RecordTx(ctx, tx, jobID, newSize, completedAt); err != nil {
 		return 0, err
 	}
-	if err := s.Media.ReplaceWithEncodedTx(ctx, tx, fileID, newSize, newFingerprint, codec, completedAt); err != nil {
+	if err := s.Media.ReplaceWithEncodedTx(ctx, tx, fileID, newPath, newSize, newFingerprint, codec, completedAt); err != nil {
 		return 0, err
 	}
 	if err := s.Jobs.MarkCompletedTx(ctx, tx, jobID, newSize, completedAt); err != nil {

@@ -121,7 +121,9 @@ For HTTPS reverse proxies, forward `X-Forwarded-Proto: https` so cookies get the
 5. **Encode** — queued jobs run inside the encode window unless forced. Reclaim writes a `.reclaim-tmp` file, then:
    - Verifies the output (duration ±1 s, stream counts, resolution match, and that the video really is in the profile's codec)
    - On pass: atomically swaps original → `.reclaim-backup`, temp → original, deletes backup
-   - On fail: marks the job failed, keeps the temp for inspection, leaves the original untouched
+   - On fail: marks the job failed, deletes the temp, leaves the original untouched
+
+   A file whose container can't hold the target codec is remuxed to `.mkv`: `Episode.avi` becomes `Episode.mkv` and the original is deleted once the new file is in place. That covers AVI, WMV, MPEG-PS (`.mpg`/`.mpeg`), and FLV for both codecs, WebM for HEVC, and MOV and MPEG-TS for AV1. The job fails rather than overwrite an existing file at the new name.
 
 6. **Recover** — on boot, temp files are cleaned up, interrupted backups are restored, and stuck jobs are marked failed. Job and scan events are logged to a persistent audit trail (bell icon in the UI).
 

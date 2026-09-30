@@ -45,7 +45,7 @@ func seedCompletedEncode(t *testing.T, st *store.Store, path, codec string, size
 	if err := st.Jobs.Transition(ctx, jobID, "running", "verifying"); err != nil {
 		t.Fatalf("to verifying: %v", err)
 	}
-	if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, output, "fp-new-"+path, completedAt, "done", ""); err != nil {
+	if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, "", output, "fp-new-"+path, completedAt, "done", ""); err != nil {
 		t.Fatalf("commit: %v", err)
 	}
 }

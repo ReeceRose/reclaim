@@ -55,6 +55,11 @@ export const QUEUE_SORT_OPTIONS: {
     label: "Order queued",
     hint: "The order jobs were added in, undoing any manual moves.",
   },
+  {
+    value: "queued_at_desc",
+    label: "Newest queued first",
+    hint: "Most recently added jobs run first.",
+  },
 ];
 
 export type QueueFilterOption = { value: string; label: string };

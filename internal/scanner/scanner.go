@@ -74,6 +74,9 @@ var mediaExtensions = map[string]struct{}{
 }
 
 func isMediaFile(path string) bool {
+	if media.IsReclaimArtifact(path) {
+		return false
+	}
 	ext := strings.ToLower(filepath.Ext(path))
 	_, ok := mediaExtensions[ext]
 	return ok

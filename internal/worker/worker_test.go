@@ -187,7 +187,7 @@ func TestProcessJobHappyPath(t *testing.T) {
 		t.Errorf("source content = %q, want swapped to %q", b, "hevc")
 	}
 	// Temp and backup are gone.
-	if _, err := os.Stat(tempPathFor(src)); !os.IsNotExist(err) {
+	if _, err := os.Stat(tempPathFor(src, filepath.Ext(src))); !os.IsNotExist(err) {
 		t.Error("temp file should be removed after swap")
 	}
 	if _, err := os.Stat(src + backupSuffix); !os.IsNotExist(err) {
@@ -203,7 +203,7 @@ func TestProcessJobHappyPath(t *testing.T) {
 	}
 }
 
-func TestProcessJobVerificationFailureKeepsTemp(t *testing.T) {
+func TestProcessJobVerificationFailureDeletesTemp(t *testing.T) {
 	st := newStore(t)
 	hub := &fakeHub{}
 	dir := t.TempDir()
@@ -232,9 +232,11 @@ func TestProcessJobVerificationFailureKeepsTemp(t *testing.T) {
 	if got.VerificationResult == nil {
 		t.Error("verification_result should be stored on failure")
 	}
-	// Temp kept for inspection; original untouched.
-	if _, err := os.Stat(tempPathFor(src)); err != nil {
-		t.Errorf("temp should be kept on verification failure: %v", err)
+	if _, err := os.Stat(tempPathFor(src, filepath.Ext(src))); !os.IsNotExist(err) {
+		t.Errorf("temp should be deleted on verification failure: %v", err)
+	}
+	if got.OutputPath != nil {
+		t.Errorf("output_path = %q, want cleared", *got.OutputPath)
 	}
 	b, _ := os.ReadFile(src)
 	if string(b) != "original" {
@@ -265,7 +267,7 @@ func TestProcessJobEncodeFailureDeletesTemp(t *testing.T) {
 	if got.Status != "failed" {
 		t.Fatalf("status = %q, want failed", got.Status)
 	}
-	if _, err := os.Stat(tempPathFor(src)); !os.IsNotExist(err) {
+	if _, err := os.Stat(tempPathFor(src, filepath.Ext(src))); !os.IsNotExist(err) {
 		t.Error("partial temp should be deleted on encode failure")
 	}
 	b, _ := os.ReadFile(src)
@@ -308,7 +310,7 @@ func TestCancelRunningJob(t *testing.T) {
 	if got.Status != "cancelled" {
 		t.Fatalf("status = %q, want cancelled", got.Status)
 	}
-	if _, err := os.Stat(tempPathFor(src)); !os.IsNotExist(err) {
+	if _, err := os.Stat(tempPathFor(src, filepath.Ext(src))); !os.IsNotExist(err) {
 		t.Error("temp should be removed on cancel")
 	}
 	b, _ := os.ReadFile(src)
@@ -329,7 +331,7 @@ func TestSweepOrphans(t *testing.T) {
 	pathC := filepath.Join(dir, "c.mkv")
 
 	// A stale temp → deleted.
-	staleTmp := tempPathFor(pathA)
+	staleTmp := tempPathFor(pathA, filepath.Ext(pathA))
 	mustWrite(t, staleTmp, "junk")
 
 	// A backup whose original exists → backup deleted.
@@ -398,7 +400,7 @@ func TestReconcileInterrupted(t *testing.T) {
 	src := filepath.Join(dir, "movie.mkv")
 	job := seedRunningJob(t, st, src, "original") // status running
 
-	tmp := tempPathFor(src)
+	tmp := tempPathFor(src, filepath.Ext(src))
 	mustWrite(t, tmp, "partial")
 	if err := st.Jobs.SetOutputPath(ctx, job.ID, tmp); err != nil {
 		t.Fatalf("set output path: %v", err)
@@ -460,6 +462,125 @@ func TestReconcilePostSwapCommit(t *testing.T) {
 	}
 }
 
+func TestProcessJobRemuxesIncompatibleContainer(t *testing.T) {
+	st := newStore(t)
+	hub := &fakeHub{}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "episode.avi")
+	job := seedRunningJob(t, st, src, "original-bytes")
+	want := filepath.Join(dir, "episode.mkv")
+
+	var gotOpts ffmpeg.Options
+	encode := func(_ context.Context, opts ffmpeg.Options, _ ffmpeg.ProgressFunc) error {
+		gotOpts = opts
+		return os.WriteFile(opts.OutputPath, []byte("hevc"), 0o644)
+	}
+	w := New(st, fakeWindow{start: 0, end: 0}, hub, []string{dir},
+		WithEncodeFunc(encode), WithInspectFunc(matchingInspect(nil)))
+	w.processJob(context.Background(), job)
+
+	got, _ := st.Jobs.GetByID(context.Background(), job.ID)
+	if got.Status != "completed" {
+		t.Fatalf("status = %q, want completed (err=%v)", got.Status, deref(got.ErrorMessage))
+	}
+	if gotOpts.OutputPath != tempPathFor(src, ".mkv") {
+		t.Errorf("encoded to %q, want %q", gotOpts.OutputPath, tempPathFor(src, ".mkv"))
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Error("original .avi should be deleted")
+	}
+	if b, _ := os.ReadFile(want); string(b) != "hevc" {
+		t.Errorf("%s content = %q, want encoded output", want, b)
+	}
+	f, _ := st.Media.GetByID(context.Background(), job.MediaFileID)
+	if f.Path != want {
+		t.Errorf("row path = %q, want %q", f.Path, want)
+	}
+	if f.ContainerFormat == nil || *f.ContainerFormat != "matroska,webm" {
+		t.Errorf("container_format = %v, want matroska,webm", f.ContainerFormat)
+	}
+}
+
+func TestProcessJobRemuxRefusesToOverwrite(t *testing.T) {
+	st := newStore(t)
+	hub := &fakeHub{}
+	dir := t.TempDir()
+	src := filepath.Join(dir, "episode.avi")
+	job := seedRunningJob(t, st, src, "original-bytes")
+	existing := filepath.Join(dir, "episode.mkv")
+	mustWrite(t, existing, "someone else's file")
+
+	encoded := false
+	encode := func(context.Context, ffmpeg.Options, ffmpeg.ProgressFunc) error {
+		encoded = true
+		return nil
+	}
+	w := New(st, fakeWindow{start: 0, end: 0}, hub, []string{dir},
+		WithEncodeFunc(encode), WithInspectFunc(matchingInspect(nil)))
+	w.processJob(context.Background(), job)
+
+	got, _ := st.Jobs.GetByID(context.Background(), job.ID)
+	if got.Status != "failed" {
+		t.Fatalf("status = %q, want failed", got.Status)
+	}
+	if encoded {
+		t.Error("encode should not run when the remux target exists")
+	}
+	if b, _ := os.ReadFile(existing); string(b) != "someone else's file" {
+		t.Errorf("existing file modified: %q", b)
+	}
+}
+
+// A crash after the encode moved into place but before the original was
+// deleted and the row committed leaves both files; reconcile finishes the job.
+func TestReconcilePostSwapCommitRemuxed(t *testing.T) {
+	st := newStore(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	src := filepath.Join(dir, "episode.avi")
+	out := filepath.Join(dir, "episode.mkv")
+	mustWrite(t, src, "original-bytes")
+	mustWrite(t, out, "encoded")
+
+	codec := "mpeg4"
+	id, err := st.Media.Insert(ctx, &store.MediaFile{
+		Path: src, LibraryType: "movie", SizeBytes: int64(len("original-bytes")),
+		Mtime: 1, Fingerprint: "fp", VideoCodec: &codec, Status: "active",
+	})
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	started := int64(100)
+	jid, err := st.Jobs.Create(ctx, &store.TranscodeJob{
+		MediaFileID: id, ProfileID: 1, Status: "verifying",
+		QueuedAt: 1, StartedAt: &started, OriginalSizeBytes: 100,
+	})
+	if err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	hevc := "hevc"
+	w := New(st, fakeWindow{start: 0, end: 0}, &fakeHub{}, []string{dir}, WithProbeFunc(func(_ context.Context, path string) (*ffprobe.Result, error) {
+		if path != out {
+			return &ffprobe.Result{VideoCodec: &codec}, nil
+		}
+		return &ffprobe.Result{VideoCodec: &hevc, IsEfficientCodec: true}, nil
+	}))
+	w.reconcileInterrupted(ctx)
+
+	got, _ := st.Jobs.GetByID(ctx, jid)
+	if got.Status != "completed" {
+		t.Fatalf("status = %q, want completed", got.Status)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Error("original should be deleted by reconcile")
+	}
+	f, _ := st.Media.GetByID(ctx, id)
+	if f.Path != out {
+		t.Errorf("row path = %q, want %q", f.Path, out)
+	}
+}
+
 // --- real ffmpeg integration ----------------------------------------------
 
 func TestEncodeVerifyReplaceReal(t *testing.T) {
@@ -470,73 +591,95 @@ func TestEncodeVerifyReplaceReal(t *testing.T) {
 		t.Skip("ffprobe not available")
 	}
 
-	st := newStore(t)
-	ctx := context.Background()
-	hub := &fakeHub{}
-	dir := t.TempDir()
-	src := filepath.Join(dir, "sample.mkv")
+	// An AVI cannot carry HEVC — ffmpeg writes it with no fourcc and it probes
+	// back as rawvideo — so it lands as .mkv. An .m4v keeps its name but must be
+	// muxed as MP4, since ffmpeg reads the extension as a raw MPEG-4 stream.
+	cases := []struct {
+		src, vcodec, acodec, want string
+	}{
+		{"sample.mkv", "libx264", "aac", "sample.mkv"},
+		{"sample.avi", "mpeg4", "pcm_s16le", "sample.mkv"},
+		{"sample.m4v", "libx264", "aac", "sample.m4v"},
+	}
+	for _, c := range cases {
+		t.Run(c.src, func(t *testing.T) {
+			st := newStore(t)
+			ctx := context.Background()
+			hub := &fakeHub{}
+			dir := t.TempDir()
+			src := filepath.Join(dir, c.src)
+			want := filepath.Join(dir, c.want)
 
-	// Generate a tiny real source: 1 video + 1 audio stream, ~1s, 128x96.
-	gen := exec.Command("ffmpeg", "-y",
-		"-f", "lavfi", "-i", "testsrc=duration=1:size=128x96:rate=10",
-		"-f", "lavfi", "-i", "sine=frequency=1000:duration=1",
-		"-c:v", "libx264", "-c:a", "aac", "-shortest", src)
-	if out, err := gen.CombinedOutput(); err != nil {
-		t.Skipf("could not generate fixture (%v): %s", err, out)
-	}
+			// Generate a tiny real source: 1 video + 1 audio stream, ~1s, 128x96.
+			gen := exec.Command("ffmpeg", "-y",
+				"-f", "lavfi", "-i", "testsrc=duration=1:size=128x96:rate=10",
+				"-f", "lavfi", "-i", "sine=frequency=1000:duration=1",
+				"-c:v", c.vcodec, "-c:a", c.acodec, "-shortest", src)
+			if out, err := gen.CombinedOutput(); err != nil {
+				t.Skipf("could not generate fixture (%v): %s", err, out)
+			}
 
-	// Probe + index it the way the scanner would.
-	insp, err := ffprobe.Inspect(ctx, src)
-	if err != nil {
-		t.Fatalf("inspect source: %v", err)
-	}
-	codec := "h264"
-	id, err := st.Media.Insert(ctx, &store.MediaFile{
-		Path: src, LibraryType: "movie", SizeBytes: fileSize(t, src), Mtime: 1,
-		Fingerprint: "fp", VideoCodec: &codec,
-		Width: &insp.Width, Height: &insp.Height, DurationSeconds: &insp.DurationSeconds,
-		Status: "active",
-	})
-	if err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-	if _, err := st.Jobs.Create(ctx, &store.TranscodeJob{
-		MediaFileID: id, ProfileID: 1, Status: "queued", QueuedAt: 1, OriginalSizeBytes: 1,
-	}); err != nil {
-		t.Fatalf("create job: %v", err)
-	}
-	job, err := st.Jobs.ClaimNextQueued(ctx, 100)
-	if err != nil {
-		t.Fatalf("claim: %v", err)
-	}
+			// Probe + index it the way the scanner would.
+			insp, err := ffprobe.Inspect(ctx, src)
+			if err != nil {
+				t.Fatalf("inspect source: %v", err)
+			}
+			codec := insp.VideoCodec
+			id, err := st.Media.Insert(ctx, &store.MediaFile{
+				Path: src, LibraryType: "movie", SizeBytes: fileSize(t, src), Mtime: 1,
+				Fingerprint: "fp", VideoCodec: &codec,
+				Width: &insp.Width, Height: &insp.Height, DurationSeconds: &insp.DurationSeconds,
+				Status: "active",
+			})
+			if err != nil {
+				t.Fatalf("insert: %v", err)
+			}
+			if _, err := st.Jobs.Create(ctx, &store.TranscodeJob{
+				MediaFileID: id, ProfileID: 1, Status: "queued", QueuedAt: 1, OriginalSizeBytes: 1,
+			}); err != nil {
+				t.Fatalf("create job: %v", err)
+			}
+			job, err := st.Jobs.ClaimNextQueued(ctx, 100)
+			if err != nil {
+				t.Fatalf("claim: %v", err)
+			}
 
-	// Real encode + verify + replace, with a fast preset to keep the test quick.
-	fastProfile := "ultrafast"
-	if err := st.Profiles.Update(ctx, &store.TranscodeProfile{
-		ID: 1, Name: "Test", CRF: 30, Preset: fastProfile, IsDefault: true,
-	}); err != nil {
-		t.Fatalf("update profile: %v", err)
-	}
+			// Real encode + verify + replace, with a fast preset to keep the test quick.
+			if err := st.Profiles.Update(ctx, &store.TranscodeProfile{
+				ID: 1, Name: "Test", CRF: 30, Preset: "ultrafast", IsDefault: true,
+			}); err != nil {
+				t.Fatalf("update profile: %v", err)
+			}
 
-	w := New(st, fakeWindow{start: 0, end: 0}, hub, []string{dir})
-	w.processJob(ctx, job)
+			w := New(st, fakeWindow{start: 0, end: 0}, hub, []string{dir})
+			w.processJob(ctx, job)
 
-	got, _ := st.Jobs.GetByID(ctx, job.ID)
-	if got.Status != "completed" {
-		t.Fatalf("status = %q, want completed (err=%v verification=%v)", got.Status, deref(got.ErrorMessage), deref(got.VerificationResult))
-	}
+			got, _ := st.Jobs.GetByID(ctx, job.ID)
+			if got.Status != "completed" {
+				t.Fatalf("status = %q, want completed (err=%v verification=%v)", got.Status, deref(got.ErrorMessage), deref(got.VerificationResult))
+			}
 
-	// The swapped-in file is real HEVC now.
-	res, err := ffprobe.Probe(ctx, src)
-	if err != nil {
-		t.Fatalf("probe result: %v", err)
-	}
-	if !res.IsEfficientCodec {
-		t.Errorf("swapped file is not HEVC: codec=%v", deref(res.VideoCodec))
-	}
-	f, _ := st.Media.GetByID(ctx, id)
-	if !f.IsEfficientCodec {
-		t.Error("media row not marked HEVC after real encode")
+			// The swapped-in file is real HEVC now.
+			res, err := ffprobe.Probe(ctx, want)
+			if err != nil {
+				t.Fatalf("probe result: %v", err)
+			}
+			if !res.IsEfficientCodec {
+				t.Errorf("swapped file is not HEVC: codec=%v", deref(res.VideoCodec))
+			}
+			if want != src {
+				if _, err := os.Stat(src); !os.IsNotExist(err) {
+					t.Errorf("original %s should be deleted", c.src)
+				}
+			}
+			f, _ := st.Media.GetByID(ctx, id)
+			if !f.IsEfficientCodec {
+				t.Error("media row not marked HEVC after real encode")
+			}
+			if f.Path != want {
+				t.Errorf("row path = %q, want %q", f.Path, want)
+			}
+		})
 	}
 }
 

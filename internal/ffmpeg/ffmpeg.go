@@ -28,6 +28,9 @@ type Options struct {
 	CRF       int
 	Preset    string
 	ExtraArgs []string
+	// Format forces the output muxer (-f) where the output's extension would
+	// otherwise pick the wrong one. Empty lets ffmpeg infer it.
+	Format string
 	// DurationSeconds is the known source duration from the probe, used to turn
 	// ffmpeg's out_time into a percent. Zero means "unknown" → no percent emitted.
 	DurationSeconds float64
@@ -64,6 +67,9 @@ func encodeArgs(opts Options) []string {
 		"-c:s", "copy",
 	}
 	args = append(args, opts.ExtraArgs...)
+	if opts.Format != "" {
+		args = append(args, "-f", opts.Format)
+	}
 	args = append(args, "-progress", "pipe:1", "-nostats", opts.OutputPath)
 	return args
 }

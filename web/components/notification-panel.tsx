@@ -29,6 +29,20 @@ const SEVERITY_DOT: Record<string, string> = {
   error: "bg-(--red)",
 };
 
+function parseVerification(raw: unknown): Record<string, unknown> | null {
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  return null;
+}
+
 function ExpandableMetadata({
   metadata,
 }: {
@@ -36,9 +50,7 @@ function ExpandableMetadata({
 }) {
   const [open, setOpen] = useState(false);
   if (!metadata) return null;
-  const vr = metadata.verification_result as
-    | Record<string, unknown>
-    | undefined;
+  const vr = parseVerification(metadata.verification_result);
   if (!vr) return null;
   return (
     <div className="mt-1.5">

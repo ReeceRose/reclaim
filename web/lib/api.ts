@@ -505,7 +505,8 @@ export type QueueSortKey =
   | "duration_asc"
   | "size_desc"
   | "path_asc"
-  | "queued_at_asc";
+  | "queued_at_asc"
+  | "queued_at_desc";
 
 export interface MissingFilesSummary {
   count: number;

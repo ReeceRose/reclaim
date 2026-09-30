@@ -47,7 +47,7 @@ func TestCommitEncodeSwapRecordsSourceCodecInLedger(t *testing.T) {
 	fileID, jobID := seedEncodedFile(t, st, "/movies/a.mkv", "h264", 1000, 400, 1920, 1080)
 	completedAt := int64(1_700_003_600)
 
-	if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, 400, "fp-new", completedAt, "done", ""); err != nil {
+	if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, "", 400, "fp-new", completedAt, "done", ""); err != nil {
 		t.Fatalf("commit: %v", err)
 	}
 
@@ -96,7 +96,7 @@ func TestSavingsSummaryAggregates(t *testing.T) {
 		{"/movies/b.mkv", 2000, 1000, 3840, 2160, "mpeg4"},
 	} {
 		fileID, jobID := seedEncodedFile(t, st, tc.path, tc.codec, tc.size, tc.output, tc.width, tc.height)
-		if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, tc.output, "fp-new-"+tc.path, now-int64(i), "done", ""); err != nil {
+		if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, "", tc.output, "fp-new-"+tc.path, now-int64(i), "done", ""); err != nil {
 			t.Fatalf("commit %d: %v", i, err)
 		}
 	}
@@ -158,7 +158,7 @@ func TestLearnedRatiosUsesPreEncodeSourceCodec(t *testing.T) {
 	for i := 0; i < LearnedRatioMinSamples; i++ {
 		path := "/movies/h264-" + string(rune('a'+i)) + ".mkv"
 		fileID, jobID := seedEncodedFile(t, st, path, "h264", 1000, 500, 1920, 1080)
-		if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, 500, "fp-"+path, 1_700_003_600, "done", ""); err != nil {
+		if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, "", 500, "fp-"+path, 1_700_003_600, "done", ""); err != nil {
 			t.Fatalf("commit %d: %v", i, err)
 		}
 	}
@@ -189,7 +189,7 @@ func TestSavingsLedgerSurvivesPrune(t *testing.T) {
 	ctx := context.Background()
 
 	fileID, jobID := seedEncodedFile(t, st, "/movies/gone.mkv", "h264", 1000, 400, 1920, 1080)
-	if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, 400, "fp-new", 1_700_003_600, "done", ""); err != nil {
+	if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, "", 400, "fp-new", 1_700_003_600, "done", ""); err != nil {
 		t.Fatalf("commit: %v", err)
 	}
 	if err := st.Media.MarkMissing(ctx, fileID, ""); err != nil {
@@ -225,11 +225,11 @@ func TestSavingsByCodecBucketsUnknownAndReconciles(t *testing.T) {
 	now := int64(1_700_003_600)
 
 	fileID, jobID := seedEncodedFile(t, st, "/movies/known.mkv", "h264", 1000, 400, 1920, 1080)
-	if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, 400, "fp-known", now, "done", ""); err != nil {
+	if _, err := st.CommitEncodeSwap(ctx, fileID, jobID, "", 400, "fp-known", now, "done", ""); err != nil {
 		t.Fatalf("commit known: %v", err)
 	}
 	fileID2, jobID2 := seedEncodedFile(t, st, "/movies/nocodec.mkv", "", 3000, 1000, 1920, 1080)
-	if _, err := st.CommitEncodeSwap(ctx, fileID2, jobID2, 1000, "fp-nocodec", now, "done", ""); err != nil {
+	if _, err := st.CommitEncodeSwap(ctx, fileID2, jobID2, "", 1000, "fp-nocodec", now, "done", ""); err != nil {
 		t.Fatalf("commit unknown: %v", err)
 	}
 

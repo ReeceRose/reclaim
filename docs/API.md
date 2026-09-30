@@ -774,6 +774,7 @@ current order, and jobs missing the figure a key needs sort last.
 | `size_desc` | source size, largest first |
 | `path_asc` | source path, case-insensitive — keeps a show's episodes in order |
 | `queued_at_asc` | when the job was queued — undoes manual moves |
+| `queued_at_desc` | when the job was queued, newest first |
 
 **Body** — `{ "by": "savings_per_hour_desc", "filter": { "library_type": "tv" } }`
 - `200` → `{ "sorted": 519, "by": "savings_per_hour_desc" }`

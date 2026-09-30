@@ -330,6 +330,15 @@ func TestJobsSortQueue(t *testing.T) {
 		t.Fatalf("size_desc: want %v, got %v", want, files)
 	}
 
+	w = doReq(h, http.MethodPost, "/api/jobs/sort", map[string]any{"by": "queued_at_desc"}, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("sort newest: want 200, got %d", w.Code)
+	}
+	files, _ = queuedFileOrder(t, h, cookie, "")
+	if want := []int64{ids[3], ids[2], ids[1], ids[0]}; !slices.Equal(files, want) {
+		t.Fatalf("queued_at_desc: want %v, got %v", want, files)
+	}
+
 	w = doReq(h, http.MethodPost, "/api/jobs/sort", map[string]any{
 		"by": "queued_at_asc", "filter": map[string]any{"search": "seed"},
 	}, cookie)

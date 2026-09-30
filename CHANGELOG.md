@@ -5,6 +5,32 @@ source of truth: `scripts/release.sh` writes each entry here, commits it, tags t
 commit, and publishes the same text as the GitHub Release. The running binary embeds
 this file, so the in-app release notes always match the build you are on.
 
+## v0.0.49 — 2026-09-30
+
+This release makes re-encodes safe for files in containers that can't carry HEVC or AV1, and stops Reclaim's own temporary files from showing up in your library.
+
+### What's Changed
+
+#### Features
+- **Automatic remux for incompatible containers.** If a file's container can't hold the target codec (AVI, WMV, MPEG-PS, or MOV when encoding to AV1), Reclaim now encodes it into `.mkv` and removes the original only after the new file checks out. Before, these encodes could fail verification or produce a file that played back wrong.
+- **"Newest queued first" sort** on the Queue page, which moves the most recently added jobs to the front.
+
+#### Fixes
+- `.m4v` files are now written as proper MP4. Before, ffmpeg treated them as a raw MPEG-4 stream.
+- The scanner ignores Reclaim's own encode temp and backup files. A migration removes any that were already indexed, so Plex-style libraries no longer show duplicate entries.
+- If an encode fails verification, its temp file is deleted instead of being left in the library next to the original.
+- Verification details in the notification panel now expand correctly again.
+
+#### Improvements
+- If Reclaim crashes partway through a container-changing encode, it finishes the job on the next boot.
+- A job whose `.mkv` destination already exists fails before encoding starts, so no work is wasted.
+
+### Docker
+
+```
+docker pull ghcr.io/ReeceRose/reclaim:0.0.49
+```
+
 ## v0.0.48 — 2026-09-27
 
 This release shows how long each candidate would take to encode and how much encoding work is left in your library.

@@ -93,7 +93,7 @@ function EventRow({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <p className="text-sm leading-snug text-text wrap-break-word">
+          <p className="min-w-0 text-sm leading-snug text-text wrap-anywhere">
             {event.message}
           </p>
           <div className="flex items-center gap-1 shrink-0">
@@ -270,7 +270,7 @@ export function NotificationPanel({ open, onOpenChange }: Props) {
             )}
           </SheetHeader>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden">
             {isLoading ? (
               <EventListSkeleton />
             ) : events.length === 0 ? (

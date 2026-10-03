@@ -5,6 +5,21 @@ source of truth: `scripts/release.sh` writes each entry here, commits it, tags t
 commit, and publishes the same text as the GitHub Release. The running binary embeds
 this file, so the in-app release notes always match the build you are on.
 
+## v0.0.50 — 2026-10-03
+
+A small polish release that fixes the layout of the notification panel.
+
+### What's Changed
+
+#### Fixes
+- Long notification messages no longer overflow the notification panel. File paths and other long text without spaces now wrap inside the panel, so the panel no longer scrolls sideways.
+
+### Docker
+
+```
+docker pull ghcr.io/ReeceRose/reclaim:0.0.50
+```
+
 ## v0.0.49 — 2026-09-30
 
 This release makes re-encodes safe for files in containers that can't carry HEVC or AV1, and stops Reclaim's own temporary files from showing up in your library.

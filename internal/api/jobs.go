@@ -600,6 +600,28 @@ func (s *Server) handleBulkCancel(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"cancelled": n})
 }
 
+// handleBulkForce marks every queued job in the selection as forced, so the
+// worker runs them ahead of the rest, outside the encode window.
+func (s *Server) handleBulkForce(c *echo.Context) error {
+	ctx := c.Request().Context()
+	var req queueSelection
+	if err := c.Bind(&req); err != nil {
+		return badRequest(c, "invalid JSON body")
+	}
+	ids, msg, err := req.resolve(ctx, s.store)
+	if err != nil {
+		return serverError(c, err)
+	}
+	if msg != "" {
+		return badRequest(c, msg)
+	}
+	n, err := s.store.Jobs.ForceQueued(ctx, ids)
+	if err != nil {
+		return serverError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"forced": n})
+}
+
 // handleCancelJob cancels a queued/running/verifying job. The worker performs
 // the process kill + temp cleanup for a running job; here we flip the state so
 // it stops being pulled / gets reconciled.

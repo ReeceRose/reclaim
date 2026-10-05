@@ -789,6 +789,15 @@ one per job.
 - `200` → `{ "cancelled": 18 }`
 - `400` → neither or both of `job_ids`/`filter`
 
+### `POST /api/jobs/force`
+Marks the selected queued jobs as forced, so the worker runs them outside the
+encode window. `forced` counts the jobs newly forced; ones already forced are
+skipped.
+
+**Body** — `{ "job_ids": [10, 12] }` or `{ "filter": { "search": "Oz" } }`
+- `200` → `{ "forced": 2 }`
+- `400` → neither or both of `job_ids`/`filter`
+
 ### `POST /api/jobs/:id/cancel`
 Cancels a `queued`/`running`/`verifying` job. The worker kills the ffmpeg process
 and cleans up temp files for running jobs.

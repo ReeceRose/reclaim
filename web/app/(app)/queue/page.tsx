@@ -8,9 +8,7 @@ import {
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import {
-  ArrowDownIcon,
   ArrowDownToLineIcon,
-  ArrowUpIcon,
   ArrowUpToLineIcon,
   InfoIcon,
   SearchIcon,
@@ -31,6 +29,10 @@ import {
   QUEUE_TAB,
 } from "@/app/(app)/queue/queue";
 import {
+  JobSelectionBar,
+  QUEUE_MOVES,
+} from "@/components/queue/job-selection-bar";
+import {
   ConfirmQueueAction,
   QUEUE_SORT_OPTIONS,
   QueueSearch,
@@ -38,6 +40,7 @@ import {
 } from "@/components/queue/queue-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
@@ -48,6 +51,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useClockFormat } from "@/hooks/use-clock-format";
+import { type IdToggleHandler, useIdSelection } from "@/hooks/use-id-selection";
 import { useNow } from "@/hooks/use-now";
 import { parseQueryEnum, useQueryParams } from "@/hooks/use-query-params";
 import {
@@ -457,19 +461,6 @@ function RunningCard({
   );
 }
 
-type QueueMove = QueuePosition;
-
-const QUEUE_MOVES: {
-  to: QueueMove;
-  label: string;
-  icon: ReactNode;
-}[] = [
-  { to: "top", label: "Move to top", icon: <ArrowUpToLineIcon /> },
-  { to: "up", label: "Move up one", icon: <ArrowUpIcon /> },
-  { to: "down", label: "Move down one", icon: <ArrowDownIcon /> },
-  { to: "bottom", label: "Move to bottom", icon: <ArrowDownToLineIcon /> },
-];
-
 function NoMatches({ description }: { description: string }) {
   return (
     <EmptyState
@@ -526,6 +517,9 @@ function QueuedList({
   filtered,
   queuedCount,
   profileByID,
+  selectedIds,
+  onToggle,
+  onTogglePage,
   onForce,
   onCancel,
   onMove,
@@ -541,10 +535,13 @@ function QueuedList({
   filtered: boolean;
   queuedCount: number;
   profileByID: Map<number, Profile>;
+  selectedIds: ReadonlySet<number>;
+  onToggle: IdToggleHandler;
+  onTogglePage: (ids: number[]) => void;
   onForce: (id: number) => void;
   onCancel: (id: number) => void;
-  onMove: (id: number, to: QueueMove) => void;
-  onMoveMatches: (to: QueueMove) => void;
+  onMove: (id: number, to: QueuePosition) => void;
+  onMoveMatches: (to: QueuePosition) => void;
   onCancelMatches: (count: number) => void;
   forcePending: boolean;
   cancelPending: boolean;
@@ -609,49 +606,82 @@ function QueuedList({
     );
   }
 
+  const pageIds = jobs.map((j) => j.id);
+  const pageSelected = pageIds.filter((id) => selectedIds.has(id)).length;
+
   return (
     <div className={cn(isPlaceholderData && "opacity-60 transition-opacity")}>
-      {filtered && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-3 text-xs text-muted-fg">
-          <MatchSummary total={total} summary={data.filtered_queue} />
-          <div className="flex flex-wrap gap-2 ml-auto">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onMoveMatches("top")}
-              disabled={movePending}
-              className="rounded-xl text-xs"
-            >
-              <ArrowUpToLineIcon />
-              Move all to top
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onMoveMatches("bottom")}
-              disabled={movePending}
-              className="rounded-xl text-xs"
-            >
-              <ArrowDownToLineIcon />
-              Move all to bottom
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onCancelMatches(total)}
-              disabled={cancelPending}
-              className="rounded-xl text-xs text-red border-red/30 hover:bg-red-soft hover:text-red"
-            >
-              Cancel all
-            </Button>
-          </div>
-        </div>
-      )}
-      {jobs.map((job) => (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-3 min-h-8 text-xs text-muted-fg">
+        <label
+          htmlFor="queue-select-page"
+          className="flex items-center gap-2.5 pl-4 cursor-pointer select-none"
+        >
+          <Checkbox
+            id="queue-select-page"
+            checked={
+              pageSelected === 0
+                ? false
+                : pageSelected === pageIds.length
+                  ? true
+                  : "indeterminate"
+            }
+            onCheckedChange={() => onTogglePage(pageIds)}
+            aria-label="Select every job on this page"
+            className="size-4 rounded-md"
+          />
+          {!filtered && "Select page"}
+        </label>
+        {filtered && (
+          <>
+            <MatchSummary total={total} summary={data.filtered_queue} />
+            <div className="flex flex-wrap gap-2 ml-auto">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onMoveMatches("top")}
+                disabled={movePending}
+                className="rounded-xl text-xs"
+              >
+                <ArrowUpToLineIcon />
+                Move all to top
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onMoveMatches("bottom")}
+                disabled={movePending}
+                className="rounded-xl text-xs"
+              >
+                <ArrowDownToLineIcon />
+                Move all to bottom
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onCancelMatches(total)}
+                disabled={cancelPending}
+                className="rounded-xl text-xs text-red border-red/30 hover:bg-red-soft hover:text-red"
+              >
+                Cancel all
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+      {jobs.map((job, index) => (
         <div
           key={job.id}
-          className="flex flex-wrap items-center gap-x-3 gap-y-2.5 px-4 py-3.5 border border-line rounded-xl bg-surface mb-2.5"
+          className={cn(
+            "flex flex-wrap items-center gap-x-3 gap-y-2.5 px-4 py-3.5 border rounded-xl bg-surface mb-2.5",
+            selectedIds.has(job.id) ? "border-brand-line" : "border-line",
+          )}
         >
+          <Checkbox
+            checked={selectedIds.has(job.id)}
+            onClick={(e) => onToggle(job.id, index, e.shiftKey, pageIds)}
+            aria-label={`Select ${jobName(job)}`}
+            className="size-4 rounded-md shrink-0"
+          />
           <div className="w-7 h-7 rounded-lg bg-surface-3 text-muted-fg grid place-items-center font-bold text-sm shrink-0 tnum">
             {job.queue_position}
           </div>
@@ -1054,6 +1084,30 @@ function QueueContent() {
   };
   const filtered = Object.values(filter).some((v) => v !== undefined);
 
+  const {
+    selectedIds,
+    setSelectedIds,
+    toggle: toggleSelected,
+    clear: clearSelection,
+  } = useIdSelection();
+  const selectionScope = JSON.stringify([tab, filter]);
+  const [selectionScopeSeen, setSelectionScopeSeen] = useState(selectionScope);
+  if (selectionScopeSeen !== selectionScope) {
+    setSelectionScopeSeen(selectionScope);
+    setSelectedIds(new Set());
+  }
+  const togglePage = (ids: number[]) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      const all = ids.every((id) => next.has(id));
+      for (const id of ids) {
+        if (all) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  const selection: QueueSelection = { job_ids: [...selectedIds] };
+
   const { data: stats } = useQuery({
     queryKey: ["stats"],
     queryFn: api.stats,
@@ -1062,7 +1116,7 @@ function QueueContent() {
 
   const [confirm, setConfirm] = useState<
     | { kind: "sort"; by: QueueSortKey }
-    | { kind: "cancel"; count: number }
+    | { kind: "cancel"; count: number; selection: QueueSelection }
     | null
   >(null);
 
@@ -1101,8 +1155,14 @@ function QueueContent() {
 
   const cancelMutation = useMutation({
     mutationFn: (id: number) => api.cancelJob(id),
-    onSuccess: () => {
+    onSuccess: (_, id) => {
       toast.success("Job cancelled");
+      setSelectedIds((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       qc.invalidateQueries({ queryKey: ["jobs"] });
     },
     onError: () => toast.error("Cancel failed"),
@@ -1118,8 +1178,13 @@ function QueueContent() {
   });
 
   const moveMutation = useMutation({
-    mutationFn: ({ target, to }: { target: QueueSelection; to: QueueMove }) =>
-      api.reorderJobs(target, to),
+    mutationFn: ({
+      target,
+      to,
+    }: {
+      target: QueueSelection;
+      to: QueuePosition;
+    }) => api.reorderJobs(target, to),
     onSuccess: ({ moved, position }) => {
       if (position === "top" || position === "bottom")
         toast.success(
@@ -1144,13 +1209,27 @@ function QueueContent() {
     onError: () => toast.error("Sort failed"),
   });
 
+  const bulkForceMutation = useMutation({
+    mutationFn: (target: QueueSelection) => api.forceJobs(target),
+    onSuccess: ({ forced }) => {
+      toast.success(
+        forced > 0
+          ? `${formatInt(forced)} ${forced === 1 ? "job" : "jobs"} queued to run outside the encode window`
+          : "Every selected job was already set to run now",
+      );
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: () => toast.error("Force failed"),
+  });
+
   const bulkCancelMutation = useMutation({
-    mutationFn: () => api.cancelJobs({ filter }),
+    mutationFn: (target: QueueSelection) => api.cancelJobs(target),
     onSuccess: ({ cancelled }) => {
       toast.success(
         `Cancelled ${formatInt(cancelled)} ${cancelled === 1 ? "job" : "jobs"}`,
       );
       setConfirm(null);
+      clearSelection();
       qc.invalidateQueries({ queryKey: ["jobs"] });
     },
     onError: () => toast.error("Cancel failed"),
@@ -1325,6 +1404,9 @@ function QueueContent() {
               filtered={filtered}
               queuedCount={queuedCount}
               profileByID={profileByID}
+              selectedIds={selectedIds}
+              onToggle={toggleSelected}
+              onTogglePage={togglePage}
               onForce={(id) => forceMutation.mutate(id)}
               onCancel={(id) => cancelMutation.mutate(id)}
               onMove={(id, to) =>
@@ -1333,13 +1415,35 @@ function QueueContent() {
               onMoveMatches={(to) =>
                 moveMutation.mutate({ target: { filter }, to })
               }
-              onCancelMatches={(count) => setConfirm({ kind: "cancel", count })}
+              onCancelMatches={(count) =>
+                setConfirm({ kind: "cancel", count, selection: { filter } })
+              }
               forcePending={forceMutation.isPending}
               cancelPending={
                 cancelMutation.isPending || bulkCancelMutation.isPending
               }
               movePending={moveMutation.isPending}
             />
+            {selectedIds.size > 0 && (
+              <JobSelectionBar
+                count={selectedIds.size}
+                onClear={clearSelection}
+                onMove={(to) => moveMutation.mutate({ target: selection, to })}
+                onForce={() => bulkForceMutation.mutate(selection)}
+                onCancel={() =>
+                  setConfirm({
+                    kind: "cancel",
+                    count: selectedIds.size,
+                    selection,
+                  })
+                }
+                movePending={moveMutation.isPending}
+                forcePending={bulkForceMutation.isPending}
+                cancelPending={
+                  cancelMutation.isPending || bulkCancelMutation.isPending
+                }
+              />
+            )}
             <ConfirmQueueAction
               open={confirm !== null}
               onOpenChange={(open) => !open && setConfirm(null)}
@@ -1350,14 +1454,15 @@ function QueueContent() {
               }
               description={
                 confirm?.kind === "cancel"
-                  ? "Every queued job matching the current filters is cancelled. The running job is left alone, and cancelled files can be queued again from Candidates."
+                  ? `${"job_ids" in confirm.selection ? "The selected jobs are cancelled." : "Every queued job matching the current filters is cancelled."} The running job is left alone, and cancelled files can be queued again from Candidates.`
                   : `${sortLabel?.hint ?? ""} ${filtered ? "Only the matching jobs move, within the places they already hold." : "This replaces the current order, including any jobs you moved by hand."}`
               }
               confirmLabel={confirm?.kind === "cancel" ? "Cancel jobs" : "Sort"}
               destructive={confirm?.kind === "cancel"}
               pending={sortMutation.isPending || bulkCancelMutation.isPending}
               onConfirm={() => {
-                if (confirm?.kind === "cancel") bulkCancelMutation.mutate();
+                if (confirm?.kind === "cancel")
+                  bulkCancelMutation.mutate(confirm.selection);
                 else if (confirm?.kind === "sort")
                   sortMutation.mutate(confirm.by);
               }}

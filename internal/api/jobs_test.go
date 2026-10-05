@@ -389,3 +389,36 @@ func TestJobsBulkCancel(t *testing.T) {
 		t.Errorf("empty selection: want 400, got %d", w.Code)
 	}
 }
+
+func TestJobsBulkForce(t *testing.T) {
+	_, h, st, _ := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+	seedQueuedJobs(t, h, st, cookie, 1000, 2000, 3000)
+
+	queued := decodeBody(t, doReq(h, http.MethodGet, "/api/jobs?status=queued&order=queue", nil, cookie))
+	items := queued["items"].([]any)
+	first := int64(items[0].(map[string]any)["id"].(float64))
+	second := int64(items[1].(map[string]any)["id"].(float64))
+
+	w := doReq(h, http.MethodPost, "/api/jobs/force", map[string]any{"job_ids": []int64{first, second}}, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("bulk force: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	if got := num(t, decodeBody(t, w), "forced"); got != 2 {
+		t.Errorf("forced: want 2, got %v", got)
+	}
+
+	w = doReq(h, http.MethodPost, "/api/jobs/force", map[string]any{"job_ids": []int64{first}}, cookie)
+	if got := num(t, decodeBody(t, w), "forced"); got != 0 {
+		t.Errorf("re-force: want 0, got %v", got)
+	}
+
+	body := decodeBody(t, doReq(h, http.MethodGet, "/api/jobs?status=queued&forced=true", nil, cookie))
+	if got := num(t, body, "total_count"); got != 2 {
+		t.Errorf("forced jobs listed: want 2, got %v", got)
+	}
+
+	if w := doReq(h, http.MethodPost, "/api/jobs/force", map[string]any{}, cookie); w.Code != http.StatusBadRequest {
+		t.Errorf("empty selection: want 400, got %d", w.Code)
+	}
+}

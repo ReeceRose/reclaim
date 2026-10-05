@@ -795,6 +795,8 @@ export const api = {
     }),
   cancelJobs: (selection: QueueSelection) =>
     request<{ cancelled: number }>("POST", "/api/jobs/cancel", selection),
+  forceJobs: (selection: QueueSelection) =>
+    request<{ forced: number }>("POST", "/api/jobs/force", selection),
   cancelJob: (id: number) =>
     request<{ job_id: number; status: string }>(
       "POST",

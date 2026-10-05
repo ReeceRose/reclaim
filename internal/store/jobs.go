@@ -627,6 +627,26 @@ func (j *Jobs) Force(ctx context.Context, id int64) error {
 	return nil
 }
 
+// ForceQueued marks the given queued jobs as forced, returning how many were
+// newly forced. Ids that are not queued, or already forced, are skipped.
+func (j *Jobs) ForceQueued(ctx context.Context, ids []int64) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	res, err := j.w.ExecContext(ctx,
+		`UPDATE transcode_jobs SET forced = 1 WHERE status = 'queued' AND forced = 0 AND id IN (`+
+			placeholders(len(ids))+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
+}
+
 // QueuedIDs returns the ids of every queued job matching f, in queue order. A
 // zero filter matches the whole queue.
 func (j *Jobs) QueuedIDs(ctx context.Context, f JobFilter) ([]int64, error) {

@@ -202,6 +202,7 @@ func (s *Server) Handler() http.Handler {
 	api.POST("/jobs/reorder", s.handleReorderJobs)
 	api.POST("/jobs/sort", s.handleSortQueue)
 	api.POST("/jobs/cancel", s.handleBulkCancel)
+	api.POST("/jobs/force", s.handleBulkForce)
 	api.POST("/jobs/:id/cancel", s.handleCancelJob)
 	api.POST("/jobs/:id/force", s.handleForceJob)
 	api.DELETE("/jobs/:id", s.handleDeleteJob)

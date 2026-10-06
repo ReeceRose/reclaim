@@ -5,6 +5,27 @@ source of truth: `scripts/release.sh` writes each entry here, commits it, tags t
 commit, and publishes the same text as the GitHub Release. The running binary embeds
 this file, so the in-app release notes always match the build you are on.
 
+## v0.0.51 — 2026-10-06
+
+This release adds multi-select to the Queue page, so you can act on many queued jobs at once.
+
+### What's Changed
+
+#### Features
+- **Bulk selection on the Queue page:** Tick queued jobs to select them, and a selection bar appears with actions for all of them at once.
+- **Bulk reorder:** Move the selected jobs to the top or bottom of the queue, or one step up or down.
+- **Bulk force and cancel:** Force the selected jobs to run outside the encode window, or cancel them all in one action.
+- **New `POST /api/jobs/force` endpoint:** Forces many queued jobs in one call. It takes either a list of `job_ids` or the same `filter` the other bulk endpoints use. Jobs that are already forced are skipped.
+
+#### Improvements
+- Updated dependencies: Next.js 16.3.8, TanStack Query 5.104, Echo 5.4, and the pure-Go SQLite driver 1.60.
+
+### Docker
+
+```
+docker pull ghcr.io/ReeceRose/reclaim:0.0.51
+```
+
 ## v0.0.50 — 2026-10-03
 
 A small polish release that fixes the layout of the notification panel.

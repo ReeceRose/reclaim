@@ -642,7 +642,9 @@ One page of jobs, optionally filtered by status and path.
 **Query:**
 - `status` — optional, comma-separated (e.g. `queued`, `completed,failed`). Omit for all statuses.
 - `search` — optional, case-insensitive substring match on the source file path.
-- `library_type`, `video_codec` — optional, exact match on the media file. For a job that has not run yet, `video_codec` is the source codec.
+- `library_type` — optional, exact match on the media file.
+- `video_codec` — optional, exact match on the source codec. A completed job's media row already carries the target codec, so its source is read from the savings ledger; history backfilled before the ledger recorded a source codec matches no codec.
+- `encode_codec` — optional, the target codec snapshotted on the job (`hevc`|`av1`).
 - `profile_id` — optional, the queuing profile.
 - `forced=true` — optional, only jobs marked with Run now.
 - `order` — `queue` (default): queue order, matching `queue_position` and the order the worker claims jobs in. New jobs join the back; `POST /api/jobs/reorder` moves them. `recent`: newest-completed-first (falls back to `queued_at` for jobs never started) — use for history views.
@@ -694,9 +696,10 @@ page, and is returned on every page — numbered pagination needs `total_count`
 to size the pager, and the header totals must not vanish when the client steps
 off `offset=0`.
 
-`total_count` reflects the requested `status` and filters. The filters narrow
-nothing else: `queue_position` stays the job's position in the whole queue, and
-the summary blocks keep describing the unfiltered set. Instead, a filtered
+`total_count` and the `history` block reflect the requested `status` and
+filters. The filters narrow nothing else: `queue_position` stays the job's
+position in the whole queue, and the `queue_*` totals keep describing the
+unfiltered queue. Instead, a filtered
 request whose `status` includes `queued` gets a `filtered_queue` block totalling
 the matching queued jobs:
 
@@ -730,8 +733,11 @@ includes (or omits) `queued`, and omitted when the queue is empty:
   overstate what is left to reclaim.
 
 The `history` block is returned only when the request's `status` includes (or
-omits) `completed` or `failed`, and aggregates non-dismissed jobs matching that
-filter. Byte and duration figures cover completed jobs only — a failed job never
+omits) `completed` or `failed`, and aggregates non-dismissed jobs matching the
+status and filters. Alongside it, `history_source_codecs` lists the distinct
+source codecs (as `video_codec` resolves them) across every finished job in the
+requested `status`, ignoring the other filters, so a client can offer a codec
+filter even once no library file of that codec is left. Byte and duration figures cover completed jobs only — a failed job never
 swapped a file, so it has no output size to weigh in. `bytes_saved` is
 `original_size_bytes - output_size_bytes`, and `encode_seconds` sums
 `completed_at - started_at` across completed jobs.
@@ -740,7 +746,7 @@ swapped a file, so it has no output size to weigh in. `bytes_saved` is
 
 The next endpoints act on a set of `queued` jobs, named by `job_ids` or selected
 by `filter` — every queued job matching the same fields `GET /api/jobs` takes
-(`search`, `library_type`, `video_codec`, `profile_id`, `forced`). Give one or
+(`search`, `library_type`, `video_codec`, `encode_codec`, `profile_id`, `forced`). Give one or
 the other. Ids that are not `queued` (running, finished, or unknown) are
 skipped; the running job is never touched.
 

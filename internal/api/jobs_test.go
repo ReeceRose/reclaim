@@ -422,3 +422,68 @@ func TestJobsBulkForce(t *testing.T) {
 		t.Errorf("empty selection: want 400, got %d", w.Code)
 	}
 }
+
+// A completed job's media row carries the target codec after the swap, so the
+// history's source-codec filter must match it through the ledger instead, and
+// the history block must total only what the filter lists.
+func TestJobsHistoryFilterBySourceCodec(t *testing.T) {
+	_, h, st, _ := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+	ctx := context.Background()
+	ids := seedQueuedJobs(t, h, st, cookie, 1000, 5000)
+
+	done, err := st.Jobs.ClaimNextQueued(ctx, 1000)
+	if err != nil {
+		t.Fatalf("claim first: %v", err)
+	}
+	if err := st.Jobs.Transition(ctx, done.ID, "running", "verifying"); err != nil {
+		t.Fatalf("verifying: %v", err)
+	}
+	if _, err := st.CommitEncodeSwap(ctx, ids[0], done.ID, "", 400, "fp-new", 1300, "done", ""); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	bad, err := st.Jobs.ClaimNextQueued(ctx, 2000)
+	if err != nil {
+		t.Fatalf("claim second: %v", err)
+	}
+	if err := st.Jobs.MarkFailed(ctx, bad.ID, "ffmpeg exploded", 2100); err != nil {
+		t.Fatalf("fail: %v", err)
+	}
+
+	for _, tc := range []struct {
+		query     string
+		total     float64
+		completed float64
+		failed    float64
+	}{
+		{"video_codec=h264&status=completed,failed", 2, 1, 1},
+		{"video_codec=hevc&status=completed,failed", 0, 0, 0},
+		{"encode_codec=hevc&status=completed,failed", 2, 1, 1},
+		{"encode_codec=av1&status=completed,failed", 0, 0, 0},
+		{"status=failed&video_codec=h264", 1, 0, 1},
+	} {
+		w := doReq(h, http.MethodGet, "/api/jobs?order=recent&"+tc.query, nil, cookie)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: want 200, got %d (%s)", tc.query, w.Code, w.Body.String())
+		}
+		body := decodeBody(t, w)
+		if got := num(t, body, "total_count"); got != tc.total {
+			t.Errorf("%s: total_count = %v, want %v", tc.query, got, tc.total)
+		}
+		hist, ok := body["history"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s: history block missing", tc.query)
+		}
+		if got := num(t, hist, "completed_count"); got != tc.completed {
+			t.Errorf("%s: completed_count = %v, want %v", tc.query, got, tc.completed)
+		}
+		if got := num(t, hist, "failed_count"); got != tc.failed {
+			t.Errorf("%s: failed_count = %v, want %v", tc.query, got, tc.failed)
+		}
+		codecs, _ := body["history_source_codecs"].([]any)
+		if len(codecs) != 1 || codecs[0] != "h264" {
+			t.Errorf("%s: history_source_codecs = %v, want [h264]", tc.query, codecs)
+		}
+	}
+}

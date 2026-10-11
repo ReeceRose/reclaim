@@ -172,12 +172,13 @@ func includesStatus(statuses []string, target string) bool {
 }
 
 // parseJobFilter reads the JobFilter query params shared by GET /api/jobs:
-// search, library_type, video_codec, profile_id, and forced=true.
+// search, library_type, video_codec, encode_codec, profile_id, and forced=true.
 func parseJobFilter(c *echo.Context) (store.JobFilter, error) {
 	f := store.JobFilter{
 		Search:      strings.TrimSpace(c.QueryParam("search")),
 		LibraryType: c.QueryParam("library_type"),
 		VideoCodec:  c.QueryParam("video_codec"),
+		EncodeCodec: c.QueryParam("encode_codec"),
 		ForcedOnly:  c.QueryParam("forced") == "true",
 	}
 	if raw := c.QueryParam("profile_id"); raw != "" {
@@ -242,9 +243,10 @@ func (s *Server) handleListJobs(c *echo.Context) error {
 	// request's page, and are returned on every page: numbered pagination needs
 	// total_count to know how many pages there are, and the header totals must
 	// not vanish when the user steps off page 1. total_count honours the filter
-	// — it sizes the pager — while the queue and history totals keep describing
-	// the whole queue, as positions do; a filtered queue view gets its own
-	// filtered_queue block instead.
+	// — it sizes the pager — while the queue totals keep describing the whole
+	// queue, as positions do; a filtered queue view gets its own filtered_queue
+	// block instead. The history block honours the filter, so a filtered history
+	// view totals what it lists.
 	resp := map[string]any{"items": out}
 	if total, err := s.store.Jobs.CountJobs(ctx, statuses, filter); err == nil {
 		resp["total_count"] = total
@@ -339,7 +341,7 @@ func (s *Server) handleListJobs(c *echo.Context) error {
 
 	if includesStatus(statuses, string(ijobs.StatusCompleted)) ||
 		includesStatus(statuses, string(ijobs.StatusFailed)) {
-		if h, err := s.store.Jobs.HistorySummary(ctx, statuses); err == nil {
+		if h, err := s.store.Jobs.HistorySummary(ctx, statuses, filter); err == nil {
 			resp["history"] = historySummaryDTO{
 				CompletedCount:    h.CompletedCount,
 				FailedCount:       h.FailedCount,
@@ -349,6 +351,9 @@ func (s *Server) handleListJobs(c *echo.Context) error {
 				BytesSaved:        h.OriginalSizeBytes - h.OutputSizeBytes,
 				EncodeSeconds:     h.EncodeSeconds,
 			}
+		}
+		if codecs, err := s.store.Jobs.SourceCodecs(ctx, statuses); err == nil {
+			resp["history_source_codecs"] = codecs
 		}
 	}
 	return c.JSON(http.StatusOK, resp)
@@ -368,6 +373,7 @@ type jobFilterBody struct {
 	Search      string `json:"search"`
 	LibraryType string `json:"library_type"`
 	VideoCodec  string `json:"video_codec"`
+	EncodeCodec string `json:"encode_codec"`
 	ProfileID   int64  `json:"profile_id"`
 	Forced      bool   `json:"forced"`
 }
@@ -377,6 +383,7 @@ func (b jobFilterBody) toFilter() store.JobFilter {
 		Search:      strings.TrimSpace(b.Search),
 		LibraryType: b.LibraryType,
 		VideoCodec:  b.VideoCodec,
+		EncodeCodec: b.EncodeCodec,
 		ProfileID:   b.ProfileID,
 		ForcedOnly:  b.Forced,
 	}

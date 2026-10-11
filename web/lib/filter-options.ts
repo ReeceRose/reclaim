@@ -70,6 +70,10 @@ export function codecFilterOptions(
     .map((c) => ({ value: c.codec, label: codecLabel(c.codec) }));
 }
 
+export function codecListOptions(codecs: string[]): FilterOption[] {
+  return codecs.map((c) => ({ value: c, label: codecLabel(c) }));
+}
+
 export function resolutionFilterOptions(
   stats: Stats | undefined,
   opts?: { excludeUnknown?: boolean },

@@ -74,12 +74,13 @@ func (j *Jobs) GetByID(ctx context.Context, id int64) (*TranscodeJob, error) {
 }
 
 // JobFilter narrows a job list by properties of the job and its media file.
-// Zero values mean "no filter". Library type and video codec are read off the
-// media row, which for a job that has not run yet still describes the source.
+// Zero values mean "no filter". Library type is read off the media row;
+// VideoCodec is the source codec, resolved by jobSourceCodecSQL.
 type JobFilter struct {
 	Search      string // case-insensitive substring match against the path
 	LibraryType string
 	VideoCodec  string
+	EncodeCodec string // the target codec snapshotted on the job
 	ProfileID   int64
 	ForcedOnly  bool
 }
@@ -87,8 +88,17 @@ type JobFilter struct {
 // Active reports whether any field narrows the list.
 func (f JobFilter) Active() bool {
 	return strings.TrimSpace(f.Search) != "" || f.LibraryType != "" ||
-		f.VideoCodec != "" || f.ProfileID != 0 || f.ForcedOnly
+		f.VideoCodec != "" || f.EncodeCodec != "" || f.ProfileID != 0 || f.ForcedOnly
 }
+
+// jobSourceCodecSQL is the codec a job encoded from. A completed job's media
+// row already carries the target codec, so its source comes from the ledger
+// row the swap wrote; that is NULL for history backfilled before the ledger
+// recorded it, which then matches no codec rather than the wrong one. Any other
+// job has not swapped, so its media row still describes the source.
+const jobSourceCodecSQL = `CASE WHEN j.status = 'completed'
+	THEN (SELECT l.source_codec FROM savings_ledger l WHERE l.job_id = j.id)
+	ELSE m.video_codec END`
 
 // JobListQuery pages the combined queue + history list.
 type JobListQuery struct {
@@ -175,8 +185,12 @@ func jobListWhere(statuses []string, f JobFilter) (string, []any) {
 		args = append(args, f.LibraryType)
 	}
 	if f.VideoCodec != "" {
-		where += " AND m.video_codec = ?"
+		where += " AND " + jobSourceCodecSQL + " = ?"
 		args = append(args, f.VideoCodec)
+	}
+	if f.EncodeCodec != "" {
+		where += " AND j.encode_codec = ?"
+		args = append(args, f.EncodeCodec)
 	}
 	if f.ProfileID != 0 {
 		where += " AND j.profile_id = ?"
@@ -218,25 +232,19 @@ type HistorySummary struct {
 }
 
 // HistorySummary returns those totals over non-dismissed jobs matching an
-// optional status filter.
-func (j *Jobs) HistorySummary(ctx context.Context, statuses []string) (HistorySummary, error) {
+// optional status filter and JobFilter.
+func (j *Jobs) HistorySummary(ctx context.Context, statuses []string, f JobFilter) (HistorySummary, error) {
+	where, args := jobListWhere(statuses, f)
 	query := `
 		SELECT
-			COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN status = 'completed' THEN original_size_bytes ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN status = 'completed' THEN COALESCE(output_size_bytes, original_size_bytes) ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN status = 'completed' AND started_at IS NOT NULL AND completed_at > started_at
-				THEN completed_at - started_at ELSE 0 END), 0)
-		FROM transcode_jobs WHERE dismissed_at IS NULL`
-	var args []any
-	if len(statuses) > 0 {
-		query += " AND status IN (" + placeholders(len(statuses)) + ")"
-		for _, s := range statuses {
-			args = append(args, s)
-		}
-	}
+			COALESCE(SUM(CASE WHEN j.status = 'completed' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN j.status = 'failed' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN j.status = 'cancelled' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN j.status = 'completed' THEN j.original_size_bytes ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN j.status = 'completed' THEN COALESCE(j.output_size_bytes, j.original_size_bytes) ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN j.status = 'completed' AND j.started_at IS NOT NULL AND j.completed_at > j.started_at
+				THEN j.completed_at - j.started_at ELSE 0 END), 0)
+		FROM transcode_jobs j LEFT JOIN media_files m ON m.id = j.media_file_id` + where
 	var h HistorySummary
 	err := j.r.QueryRowContext(ctx, query, args...).Scan(
 		&h.CompletedCount, &h.FailedCount, &h.CancelledCount,
@@ -246,6 +254,32 @@ func (j *Jobs) HistorySummary(ctx context.Context, statuses []string) (HistorySu
 		return HistorySummary{}, err
 	}
 	return h, nil
+}
+
+// SourceCodecs returns the distinct source codecs, per jobSourceCodecSQL, of
+// non-dismissed jobs in the given statuses. The history filter offers these
+// rather than the library's codecs, which lose a codec once every file of it
+// has been re-encoded.
+func (j *Jobs) SourceCodecs(ctx context.Context, statuses []string) ([]string, error) {
+	where, args := jobListWhere(statuses, JobFilter{})
+	rows, err := j.r.QueryContext(ctx, `
+		SELECT DISTINCT codec FROM (
+			SELECT `+jobSourceCodecSQL+` AS codec
+			FROM transcode_jobs j LEFT JOIN media_files m ON m.id = j.media_file_id`+where+`
+		) WHERE codec IS NOT NULL ORDER BY codec`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 // QueuedPositions returns 1-based queue positions for every queued job.

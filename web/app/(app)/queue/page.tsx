@@ -24,6 +24,7 @@ import {
 import { toast } from "sonner";
 import { BROWSE_ROUTES } from "@/app/(app)/browse/browse";
 import {
+  HISTORY_STATUS,
   QUEUE_PAGE_SIZE,
   QUEUE_QUERY_PARAMS,
   QUEUE_TAB,
@@ -34,8 +35,8 @@ import {
 } from "@/components/queue/job-selection-bar";
 import {
   ConfirmQueueAction,
+  HistoryToolbar,
   QUEUE_SORT_OPTIONS,
-  QueueSearch,
   QueueToolbar,
 } from "@/components/queue/queue-toolbar";
 import { Badge } from "@/components/ui/badge";
@@ -66,7 +67,11 @@ import {
   type VerificationResult,
 } from "@/lib/api";
 import { encodeSettingsLabel, targetCodecLabel } from "@/lib/codec";
-import { codecFilterOptions, libraryFilterOptions } from "@/lib/filter-options";
+import {
+  codecFilterOptions,
+  codecListOptions,
+  libraryFilterOptions,
+} from "@/lib/filter-options";
 import {
   baseName,
   dirName,
@@ -767,23 +772,28 @@ function QueuedList({
 function HistoryList({
   page,
   setPage,
-  search,
+  filter,
+  status,
+  filtered,
   onDelete,
   deletePending,
 }: {
   page: number;
   setPage: (page: number) => void;
-  search: string;
+  filter: JobFilter;
+  status: string;
+  filtered: boolean;
   onDelete: (id: number) => void;
   deletePending: boolean;
 }) {
   const { data, isPlaceholderData } = useQuery<JobsListResult>({
-    queryKey: ["jobs", "history", search, page],
+    queryKey: ["jobs", "history", filter, status, page],
     queryFn: () =>
       api.jobs({
-        status: "completed,failed",
+        ...filter,
+        status:
+          status || `${HISTORY_STATUS.COMPLETED},${HISTORY_STATUS.FAILED}`,
         order: "recent",
-        search: search || undefined,
         limit: QUEUE_PAGE_SIZE,
         offset: (page - 1) * QUEUE_PAGE_SIZE,
       }),
@@ -805,9 +815,9 @@ function HistoryList({
   const summary = data.history;
 
   if (jobs.length === 0) {
-    if (search)
+    if (filtered)
       return (
-        <NoMatches description={`Nothing in history matches “${search}”.`} />
+        <NoMatches description="Nothing in history matches these filters." />
       );
     return (
       <EmptyState
@@ -1016,7 +1026,7 @@ function HistoryList({
           pageCount={Math.max(1, Math.ceil(total / QUEUE_PAGE_SIZE))}
           onPageChange={setPage}
           totalItems={total}
-          itemLabel={search ? "matching" : "jobs"}
+          itemLabel={filtered ? "matching" : "jobs"}
         />
       </div>
     </>
@@ -1084,6 +1094,23 @@ function QueueContent() {
   };
   const filtered = Object.values(filter).some((v) => v !== undefined);
 
+  const historyStatus = parseQueryEnum(
+    get(QUEUE_QUERY_PARAMS.STATUS),
+    ["", HISTORY_STATUS.COMPLETED, HISTORY_STATUS.FAILED] as const,
+    "",
+  );
+  const target = get(QUEUE_QUERY_PARAMS.TARGET) ?? "";
+  const historyFilter: JobFilter = {
+    search: searchFromUrl || undefined,
+    library_type: library || undefined,
+    video_codec: codec || undefined,
+    encode_codec: target || undefined,
+    profile_id: profileID,
+  };
+  const historyFiltered =
+    historyStatus !== "" ||
+    Object.values(historyFilter).some((v) => v !== undefined);
+
   const {
     selectedIds,
     setSelectedIds,
@@ -1130,6 +1157,17 @@ function QueueContent() {
   const { data: queueSummary } = useQuery({
     queryKey: ["jobs", "queued-count"],
     queryFn: () => api.jobs({ status: "queued", limit: 1 }),
+  });
+
+  const { data: historyCodecs } = useQuery({
+    queryKey: ["jobs", "history-codecs"],
+    queryFn: () =>
+      api.jobs({
+        status: `${HISTORY_STATUS.COMPLETED},${HISTORY_STATUS.FAILED}`,
+        limit: 1,
+      }),
+    enabled: tab === QUEUE_TAB.HISTORY,
+    select: (d) => d.history_source_codecs ?? [],
   });
 
   const { data: progressMap = {} } = useQuery<Record<number, number>>({
@@ -1271,6 +1309,9 @@ function QueueContent() {
     value: String(p.id),
     label: p.name,
   }));
+  const targetOptions = [
+    ...new Set((profilesData.items ?? []).map((p) => p.codec)),
+  ].map((c) => ({ value: c, label: targetCodecLabel(c) }));
   const sortLabel =
     confirm?.kind === "sort"
       ? QUEUE_SORT_OPTIONS.find((o) => o.value === confirm.by)
@@ -1470,18 +1511,40 @@ function QueueContent() {
           </>
         ) : (
           <>
-            <div className="mb-4">
-              <QueueSearch
-                value={searchInput}
-                onChange={setSearchInput}
-                placeholder="Search history…"
-                label="Search job history"
-              />
-            </div>
+            <HistoryToolbar
+              search={searchInput}
+              onSearchChange={setSearchInput}
+              status={historyStatus}
+              onStatusChange={(v) =>
+                setFilterParam(QUEUE_QUERY_PARAMS.STATUS, v)
+              }
+              library={library}
+              libraryOptions={libraryFilterOptions(stats, {
+                excludeUnknown: true,
+              })}
+              onLibraryChange={(v) =>
+                setFilterParam(QUEUE_QUERY_PARAMS.LIBRARY, v)
+              }
+              codec={codec}
+              codecOptions={codecListOptions(historyCodecs ?? [])}
+              onCodecChange={(v) => setFilterParam(QUEUE_QUERY_PARAMS.CODEC, v)}
+              target={target}
+              targetOptions={targetOptions}
+              onTargetChange={(v) =>
+                setFilterParam(QUEUE_QUERY_PARAMS.TARGET, v)
+              }
+              profile={profileID ? String(profileID) : ""}
+              profileOptions={profileOptions}
+              onProfileChange={(v) =>
+                setFilterParam(QUEUE_QUERY_PARAMS.PROFILE, v)
+              }
+            />
             <HistoryList
               page={page}
               setPage={setPage}
-              search={searchFromUrl}
+              filter={historyFilter}
+              status={historyStatus}
+              filtered={historyFiltered}
               onDelete={(id) => deleteMutation.mutate(id)}
               deletePending={deleteMutation.isPending}
             />

@@ -2,6 +2,7 @@
 
 import { ArrowDownUpIcon, ChevronDownIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
+import { HISTORY_STATUS } from "@/app/(app)/queue/queue";
 import { FilterSelect } from "@/components/filter-select";
 import { Button } from "@/components/ui/button";
 import {
@@ -168,6 +169,101 @@ export function QueueToolbar({
           className="min-w-32"
         />
         <SortMenu onSort={onSort} disabled={sortDisabled} filtered={filtered} />
+      </div>
+    </div>
+  );
+}
+
+export function HistoryToolbar({
+  search,
+  onSearchChange,
+  status,
+  onStatusChange,
+  library,
+  libraryOptions,
+  onLibraryChange,
+  codec,
+  codecOptions,
+  onCodecChange,
+  target,
+  targetOptions,
+  onTargetChange,
+  profile,
+  profileOptions,
+  onProfileChange,
+}: {
+  search: string;
+  onSearchChange: (v: string) => void;
+  status: string;
+  onStatusChange: (v: string) => void;
+  library: string;
+  libraryOptions: QueueFilterOption[];
+  onLibraryChange: (v: string) => void;
+  codec: string;
+  codecOptions: QueueFilterOption[];
+  onCodecChange: (v: string) => void;
+  target: string;
+  targetOptions: QueueFilterOption[];
+  onTargetChange: (v: string) => void;
+  profile: string;
+  profileOptions: QueueFilterOption[];
+  onProfileChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 mb-4">
+      <QueueSearch
+        value={search}
+        onChange={onSearchChange}
+        placeholder="Search history…"
+        label="Search job history"
+      />
+      <div className="flex items-center gap-2 flex-wrap">
+        <FilterSelect
+          label="Status"
+          value={status}
+          options={[
+            { value: HISTORY_STATUS.COMPLETED, label: "Completed" },
+            { value: HISTORY_STATUS.FAILED, label: "Failed" },
+          ]}
+          onChange={onStatusChange}
+          className="min-w-32"
+        />
+        {libraryOptions.length > 1 && (
+          <FilterSelect
+            label="Library"
+            value={library}
+            options={libraryOptions}
+            onChange={onLibraryChange}
+            className="min-w-32"
+          />
+        )}
+        {codecOptions.length > 0 && (
+          <FilterSelect
+            label="Source"
+            value={codec}
+            options={codecOptions}
+            onChange={onCodecChange}
+            className="min-w-32"
+          />
+        )}
+        {targetOptions.length > 1 && (
+          <FilterSelect
+            label="Target"
+            value={target}
+            options={targetOptions}
+            onChange={onTargetChange}
+            className="min-w-32"
+          />
+        )}
+        {profileOptions.length > 1 && (
+          <FilterSelect
+            label="Profile"
+            value={profile}
+            options={profileOptions}
+            onChange={onProfileChange}
+            className="min-w-32"
+          />
+        )}
       </div>
     </div>
   );

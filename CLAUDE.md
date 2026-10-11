@@ -377,8 +377,13 @@ sort, or cancel (`Store.CancelQueuedJobs`, one event per batch) acts on exactly
 what the list shows. It narrows the page and `total_count` only — positions and
 the `queue_*` totals stay queue-wide — and a filtered request gets its own
 `filtered_queue` totals. The queued tab keeps it in the URL (`q`, `library`,
-`codec`, `profile`, `forced`); the history tab uses `q` only, since a finished
-job's media row already carries the target codec.
+`codec`, `profile`, `forced`). The history tab shares `q`, `library`, `codec`,
+and `profile`, and adds `status` (`completed`|`failed`) and `target`
+(`encode_codec`). A finished job's media row already carries the target codec,
+so the source-codec filter resolves a completed job's source from its
+`savings_ledger` row (`jobSourceCodecSQL`), and the history tab's codec options
+come from `history_source_codecs` rather than library stats. Unlike the
+`queue_*` totals, the `history` block honours the filter.
 
 The running job is pinned above the tabs. The queued tab's totals come from the
 shell's own `["jobs", "queued-count"]` query (`GET /api/jobs?status=queued&limit=1`),

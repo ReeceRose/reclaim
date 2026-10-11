@@ -476,6 +476,7 @@ export interface JobsListResult {
   queue_total_original_bytes?: number;
   queue_total_predicted_savings_bytes?: number;
   history?: HistorySummary;
+  history_source_codecs?: string[];
   filtered_queue?: FilteredQueueSummary;
 }
 
@@ -484,6 +485,7 @@ export interface JobFilter {
   search?: string;
   library_type?: string;
   video_codec?: string;
+  encode_codec?: string;
   profile_id?: number;
   forced?: boolean;
 }

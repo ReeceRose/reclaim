@@ -11,6 +11,13 @@ export const QUEUE_QUERY_PARAMS = {
   CODEC: "codec",
   PROFILE: "profile",
   FORCED: "forced",
+  STATUS: "status",
+  TARGET: "target",
+} as const;
+
+export const HISTORY_STATUS = {
+  COMPLETED: "completed",
+  FAILED: "failed",
 } as const;
 
 export const QUEUE_PAGE_SIZE = 25;

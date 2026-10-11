@@ -5,6 +5,27 @@ source of truth: `scripts/release.sh` writes each entry here, commits it, tags t
 commit, and publishes the same text as the GitHub Release. The running binary embeds
 this file, so the in-app release notes always match the build you are on.
 
+## v0.0.52 — 2026-10-11
+
+The Queue page's History tab now has filters, so you can narrow past encodes and see stats for just the jobs you care about.
+
+### What's Changed
+
+#### Features
+- **History filters on the Queue page.** You can filter the History tab by path, library (Movies/TV), source codec, profile, outcome (completed or failed) and output codec (HEVC or AV1).
+- **Filters stay in the URL.** History filters are saved in the page address, so a bookmark or reload keeps your filtered view. The search, library, codec and profile filters carry over when you switch between the Queued and History tabs.
+
+#### Improvements
+- **History totals match your filters.** The summary figures on the History tab now count only the jobs that match the current filters.
+- **Source codec filtering works for finished jobs.** A completed encode's file now shows the new codec, so the filter reads the original codec from the savings record instead. Filtering History by "h264" now finds files that started as H.264.
+- **Codec options come from your actual history.** The source codec dropdown on the History tab lists only codecs that appear in past jobs, not every codec in the library.
+
+### Docker
+
+```
+docker pull ghcr.io/ReeceRose/reclaim:0.0.52
+```
+
 ## v0.0.51 — 2026-10-06
 
 This release adds multi-select to the Queue page, so you can act on many queued jobs at once.

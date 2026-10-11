@@ -5,6 +5,29 @@ source of truth: `scripts/release.sh` writes each entry here, commits it, tags t
 commit, and publishes the same text as the GitHub Release. The running binary embeds
 this file, so the in-app release notes always match the build you are on.
 
+## v0.0.53 — 2026-10-11
+
+This release lets you retry and clear failed encodes in bulk from the Queue history tab, and makes failure messages say what went wrong.
+
+### What's Changed
+
+#### Features
+- **Retry failed jobs from history.** Select jobs one by one, a whole page, or everything matching the current filters, then choose **Retry failed**. Each file goes to the back of the queue on the profile it failed on, or on the default profile if that one was deleted. Completed jobs in the selection are skipped, and so are failures that can't be retried, such as a file that's gone or already queued.
+- **Remove jobs from history in bulk.** The same selection can clear many completed or failed jobs at once.
+
+#### Improvements
+- **Clearer encode failures.** A failed job now shows ffmpeg's last few error lines and how it exited. A process the system killed is reported as such, for example "killed by SIGKILL, likely out of memory", where before you might have seen a single unhelpful line.
+- **Verification failures show the mismatch.** History now shows what failed the check: stream counts (`1v 2a 3s → 1v 1a 0s`), resolution, or the output codec next to the one expected.
+
+#### Fixes
+- A job cut off by a shutdown no longer keeps a stale output path after its temp file has been cleaned up.
+
+### Docker
+
+```
+docker pull ghcr.io/ReeceRose/reclaim:0.0.53
+```
+
 ## v0.0.52 — 2026-10-11
 
 The Queue page's History tab now has filters, so you can narrow past encodes and see stats for just the jobs you care about.

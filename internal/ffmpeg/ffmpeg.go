@@ -6,10 +6,12 @@ package ffmpeg
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -56,8 +58,10 @@ func encodeArgs(opts Options) []string {
 		encoder = DefaultEncoder
 	}
 	args := []string{
+		"-hide_banner",
 		"-nostdin",
 		"-y",
+		"-v", "error",
 		"-i", opts.InputPath,
 		"-map", "0",
 		"-c:v", encoder,
@@ -111,13 +115,7 @@ func Encode(ctx context.Context, opts Options, onProgress ProgressFunc) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		} else {
-			msg = lastLine(msg)
-		}
-		return &EncodeError{Path: opts.InputPath, Msg: msg}
+		return &EncodeError{Path: opts.InputPath, Msg: failureMessage(stderr.String(), err)}
 	}
 	return nil
 }
@@ -192,7 +190,39 @@ func parseFFTime(v string) (float64, error) {
 	return h*3600 + m*60 + s, nil
 }
 
-func lastLine(s string) string {
-	lines := strings.Split(strings.TrimSpace(s), "\n")
-	return strings.TrimSpace(lines[len(lines)-1])
+const maxErrorLines = 4
+
+func failureMessage(stderr string, waitErr error) string {
+	var lines []string
+	for line := range strings.SplitSeq(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || line == "Conversion failed!" {
+			continue
+		}
+		if len(lines) > 0 && lines[len(lines)-1] == line {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) > maxErrorLines {
+		lines = lines[len(lines)-maxErrorLines:]
+	}
+	exit := describeExit(waitErr)
+	if len(lines) == 0 {
+		return exit
+	}
+	return strings.Join(lines, "; ") + " (" + exit + ")"
+}
+
+func describeExit(err error) string {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+			if ws.Signal() == syscall.SIGKILL {
+				return "killed by SIGKILL, likely out of memory"
+			}
+			return "killed by " + ws.Signal().String()
+		}
+	}
+	return err.Error()
 }

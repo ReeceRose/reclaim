@@ -2,6 +2,7 @@ package ffmpeg
 
 import (
 	"math"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -131,5 +132,31 @@ func TestParseProgressMicroseconds(t *testing.T) {
 	parseProgress(strings.NewReader("out_time_us=2500000\n"), 5, func(p float64) { got = p })
 	if math.Abs(got-50) > 0.01 {
 		t.Errorf("out_time_us tick = %v, want 50", got)
+	}
+}
+
+func TestFailureMessage(t *testing.T) {
+	exit := exec.Command("sh", "-c", "exit 234").Run()
+	cases := []struct {
+		name, stderr, want string
+	}{
+		{"no output", "", "exit status 234"},
+		{"drops generic trailer", "[matroska @ 0x1] Invalid data\nConversion failed!\n", "[matroska @ 0x1] Invalid data (exit status 234)"},
+		{"keeps only trailer", "Conversion failed!\n", "exit status 234"},
+		{"collapses repeats", "a\na\nb\n", "a; b (exit status 234)"},
+		{"bounds lines", "1\n2\n3\n4\n5\n6\n", "3; 4; 5; 6 (exit status 234)"},
+	}
+	for _, c := range cases {
+		if got := failureMessage(c.stderr, exit); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestFailureMessageNamesKill(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "kill -9 $$")
+	err := cmd.Run()
+	if got := failureMessage("", err); got != "killed by SIGKILL, likely out of memory" {
+		t.Errorf("got %q", got)
 	}
 }

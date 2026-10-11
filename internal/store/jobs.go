@@ -636,6 +636,26 @@ func (j *Jobs) Dismiss(ctx context.Context, id, dismissedAt int64) error {
 	return nil
 }
 
+func (j *Jobs) DismissMany(ctx context.Context, ids []int64, dismissedAt int64) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, dismissedAt)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	res, err := j.w.ExecContext(ctx,
+		`UPDATE transcode_jobs SET dismissed_at = ?
+		WHERE dismissed_at IS NULL AND status IN ('completed', 'failed', 'cancelled')
+		  AND id IN (`+placeholders(len(ids))+`)`, args...)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
+}
+
 // Force marks a queued job as forced, allowing the worker to run it outside the
 // encode window. Returns ErrNotFound if the job does not exist, ErrIllegalTransition
 // if it is not in the queued state.
@@ -684,7 +704,11 @@ func (j *Jobs) ForceQueued(ctx context.Context, ids []int64) (int, error) {
 // QueuedIDs returns the ids of every queued job matching f, in queue order. A
 // zero filter matches the whole queue.
 func (j *Jobs) QueuedIDs(ctx context.Context, f JobFilter) ([]int64, error) {
-	where, args := jobListWhere([]string{string(jobs.StatusQueued)}, f)
+	return j.MatchingIDs(ctx, []string{string(jobs.StatusQueued)}, f)
+}
+
+func (j *Jobs) MatchingIDs(ctx context.Context, statuses []string, f JobFilter) ([]int64, error) {
+	where, args := jobListWhere(statuses, f)
 	rows, err := j.r.QueryContext(ctx,
 		`SELECT j.id FROM transcode_jobs j LEFT JOIN media_files m ON m.id = j.media_file_id`+
 			where+" ORDER BY "+queueOrderSQL, args...)

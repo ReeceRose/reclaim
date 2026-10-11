@@ -487,3 +487,93 @@ func TestJobsHistoryFilterBySourceCodec(t *testing.T) {
 		}
 	}
 }
+
+func failSeededJobs(t *testing.T, st *store.Store, n int) []int64 {
+	t.Helper()
+	ctx := context.Background()
+	ids := make([]int64, 0, n)
+	for i := range n {
+		job, err := st.Jobs.ClaimNextQueued(ctx, int64(1000+i))
+		if err != nil {
+			t.Fatalf("claim %d: %v", i, err)
+		}
+		if err := st.Jobs.MarkFailed(ctx, job.ID, "ffmpeg exploded", int64(1100+i)); err != nil {
+			t.Fatalf("fail %d: %v", i, err)
+		}
+		ids = append(ids, job.ID)
+	}
+	return ids
+}
+
+func TestJobsRetry(t *testing.T) {
+	_, h, st, _ := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+	seedQueuedJobs(t, h, st, cookie, 1000, 2000, 3000)
+	failed := failSeededJobs(t, st, 3)
+
+	w := doReq(h, http.MethodPost, "/api/jobs/retry", map[string]any{
+		"filter": map[string]any{"search": "seeda"},
+	}, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("retry by filter: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	if got := num(t, decodeBody(t, w), "queued"); got != 1 {
+		t.Errorf("queued: want 1, got %v", got)
+	}
+
+	w = doReq(h, http.MethodPost, "/api/jobs/retry", map[string]any{"job_ids": failed}, cookie)
+	body := decodeBody(t, w)
+	if got := num(t, body, "queued"); got != 2 {
+		t.Errorf("queued: want 2, got %v", got)
+	}
+	if skipped, _ := body["skipped"].([]any); len(skipped) != 1 {
+		t.Errorf("skipped: want the already-retried job, got %v", skipped)
+	}
+
+	queued := decodeBody(t, doReq(h, http.MethodGet, "/api/jobs?status=queued", nil, cookie))
+	if got := num(t, queued, "total_count"); got != 3 {
+		t.Errorf("queued jobs: want 3, got %v", got)
+	}
+	history := decodeBody(t, doReq(h, http.MethodGet, "/api/jobs?status=failed", nil, cookie))
+	if got := num(t, history, "total_count"); got != 0 {
+		t.Errorf("retried failures still in history: %v", got)
+	}
+
+	if w := doReq(h, http.MethodPost, "/api/jobs/retry", map[string]any{}, cookie); w.Code != http.StatusBadRequest {
+		t.Errorf("empty selection: want 400, got %d", w.Code)
+	}
+}
+
+func TestJobsBulkDismiss(t *testing.T) {
+	_, h, st, _ := newTestServer(t, false)
+	cookie := completeSetup(t, st)
+	seedQueuedJobs(t, h, st, cookie, 1000, 2000, 3000)
+	failSeededJobs(t, st, 2)
+
+	w := doReq(h, http.MethodPost, "/api/jobs/dismiss", map[string]any{
+		"filter": map[string]any{}, "status": "completed",
+	}, cookie)
+	if got := num(t, decodeBody(t, w), "dismissed"); got != 0 {
+		t.Errorf("dismiss completed: want 0, got %v", got)
+	}
+
+	w = doReq(h, http.MethodPost, "/api/jobs/dismiss", map[string]any{
+		"filter": map[string]any{}, "status": "failed",
+	}, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("dismiss: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	if got := num(t, decodeBody(t, w), "dismissed"); got != 2 {
+		t.Errorf("dismissed: want 2, got %v", got)
+	}
+	queued := decodeBody(t, doReq(h, http.MethodGet, "/api/jobs?status=queued", nil, cookie))
+	if got := num(t, queued, "total_count"); got != 1 {
+		t.Errorf("queued job touched by dismiss: total %v", got)
+	}
+
+	if w := doReq(h, http.MethodPost, "/api/jobs/dismiss", map[string]any{
+		"filter": map[string]any{}, "status": "queued",
+	}, cookie); w.Code != http.StatusBadRequest {
+		t.Errorf("bad status: want 400, got %d", w.Code)
+	}
+}

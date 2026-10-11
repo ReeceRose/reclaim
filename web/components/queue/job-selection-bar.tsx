@@ -5,6 +5,7 @@ import {
   ArrowDownToLineIcon,
   ArrowUpIcon,
   ArrowUpToLineIcon,
+  RotateCcwIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -94,6 +95,65 @@ export function JobSelectionBar({
           className="rounded-xl text-xs text-red border-red/30 hover:bg-red-soft hover:text-red"
         >
           Cancel selected
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * HistorySelectionBar is the sticky action bar shown while history jobs are
+ * selected: it retries the failed ones or removes them all from history.
+ */
+export function HistorySelectionBar({
+  count,
+  onClear,
+  onRetry,
+  onDismiss,
+  retryPending,
+  dismissPending,
+}: {
+  count: number;
+  onClear: () => void;
+  onRetry: () => void;
+  onDismiss: () => void;
+  retryPending: boolean;
+  dismissPending: boolean;
+}) {
+  return (
+    <div
+      className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl px-4 py-3 border border-brand-line sticky bottom-3 z-10 sm:px-5"
+      style={{
+        background: "var(--surface-2)",
+        boxShadow: "0 10px 30px rgba(0,0,0,.35)",
+      }}
+    >
+      <div className="font-bold">
+        <b className="text-brand">{formatInt(count)}</b> selected
+      </div>
+      <Button variant="ghost" onClick={onClear} className="rounded-xl text-sm">
+        Clear
+      </Button>
+      <div className="ml-auto flex flex-wrap gap-2 items-center">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onRetry}
+          disabled={retryPending}
+          className="rounded-xl text-xs"
+          data-tooltip="Queue the failed files again; completed jobs are left alone"
+        >
+          <RotateCcwIcon />
+          Retry failed
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onDismiss}
+          disabled={dismissPending}
+          className="rounded-xl text-xs text-red border-red/30 hover:bg-red-soft hover:text-red"
+        >
+          Remove from history
         </Button>
       </div>
     </div>

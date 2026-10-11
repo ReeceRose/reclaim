@@ -385,6 +385,20 @@ type verificationResult struct {
 	ResolutionMatch      bool    `json:"resolution_match"`
 	CodecMatch           bool    `json:"codec_match"`
 	Passed               bool    `json:"passed"`
+	ExpectedCodec        string  `json:"expected_codec,omitempty"`
+	OutputCodec          string  `json:"output_codec,omitempty"`
+	SourceStreams        string  `json:"source_streams,omitempty"`
+	OutputStreams        string  `json:"output_streams,omitempty"`
+	SourceResolution     string  `json:"source_resolution,omitempty"`
+	OutputResolution     string  `json:"output_resolution,omitempty"`
+}
+
+func streamSummary(in *ffprobe.Inspection) string {
+	return fmt.Sprintf("%dv %da %ds", in.VideoStreams, in.AudioStreams, in.SubtitleStreams)
+}
+
+func resolution(in *ffprobe.Inspection) string {
+	return fmt.Sprintf("%dx%d", in.Width, in.Height)
 }
 
 // verify runs the verification checks against the temp output, re-probing the
@@ -418,6 +432,11 @@ func (w *Worker) verify(ctx context.Context, file *store.MediaFile, tmpPath stri
 	res.ResolutionMatch = src.Width == out.Width && src.Height == out.Height
 
 	res.CodecMatch = media.NormalizeTargetCodec(out.VideoCodec) == codec
+
+	res.ExpectedCodec = string(codec)
+	res.OutputCodec = out.VideoCodec
+	res.SourceStreams, res.OutputStreams = streamSummary(src), streamSummary(out)
+	res.SourceResolution, res.OutputResolution = resolution(src), resolution(out)
 
 	res.Passed = res.DurationMatch && res.Playable && res.StreamCountMatch && res.ResolutionMatch && res.CodecMatch
 	return res, res.Passed
@@ -585,6 +604,9 @@ func (w *Worker) reconcileInterrupted(ctx context.Context) {
 		}
 		if j.OutputPath != nil {
 			removeIfExists(*j.OutputPath)
+			if err := w.store.Jobs.ClearOutputPath(ctx, j.ID); err != nil {
+				slog.Error("worker: clear output path", "job", j.ID, "err", err)
+			}
 		}
 		const reconcileMsg = "Job interrupted by shutdown"
 		meta := jsonMeta(map[string]any{"job_id": j.ID})

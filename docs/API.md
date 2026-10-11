@@ -609,6 +609,8 @@ estimate_source, estimate_sample_count, predicted_savings_bytes
 | `encode_duration_seconds` | Actual wall-clock encode time (`completed_at − started_at`). Populated for `completed` jobs only |
 | `estimate_source` | Where `estimated_duration_seconds` came from: `seed`, `learned_profile`, `learned_preset_crf`, `learned_preset`, or `learned_global` (every completed encode to the same codec). Every tier is scoped to the job's `encode_codec` — x265 timings never estimate an SVT-AV1 job. Only set for `queued`/`running` jobs |
 | `estimate_sample_count` | Number of completed jobs in the bucket that produced the estimate. Omitted for `seed` |
+| `error_message` | For an encode failure, ffmpeg's last few error lines followed by how it exited, e.g. `(exit status 234)` or `(killed by SIGKILL, likely out of memory)` — a process killed mid-encode writes no error of its own |
+| `verification_result` | JSON: the `duration_match`/`playable`/`stream_count_match`/`resolution_match`/`codec_match`/`passed` checks, plus what they compared — `expected_codec`/`output_codec`, `source_streams`/`output_streams` (`"1v 2a 3s"`), `source_resolution`/`output_resolution` |
 | `predicted_savings_bytes` | Queue-time prediction of bytes reclaimed, snapshotted so history can compare it against the actual outcome even after the source file has since been re-encoded. Priced against the queuing profile's codec, which may differ from `savings_target_codec`. `null` for jobs queued before this snapshot was introduced |
 
 **Encode time estimates** are computed at read time from this instance's completed jobs, bucketed by profile first with fallbacks (preset+CRF → preset → codec-wide → conservative seed rates per codec and preset), every tier scoped to the target codec. See [`docs/ENCODE-TIME-PLAN.md`](ENCODE-TIME-PLAN.md) for the rate model. Estimates require probed `duration_seconds` on the media file; without duration, no estimate is returned.
@@ -803,6 +805,30 @@ skipped.
 **Body** — `{ "job_ids": [10, 12] }` or `{ "filter": { "search": "Oz" } }`
 - `200` → `{ "forced": 2 }`
 - `400` → neither or both of `job_ids`/`filter`
+
+### `POST /api/jobs/retry`
+Queues the files behind the selected `failed` jobs again, each on the profile
+it failed on (the default profile if that one has been deleted), at the back of
+the queue. A retried failure is hidden from history as `DELETE /api/jobs/:id`
+hides one; the `job_failed` event stays in the log. Several failures for the
+same file queue it once. A job that cannot be retried — not failed, the file
+gone or already queued, the profile's encoder unavailable — is left in history
+and listed in `skipped`.
+
+With `filter`, the selection is every failed job the history tab lists for it;
+`status` (`completed`|`failed`|empty) narrows it the same way, so
+`"status": "completed"` selects nothing.
+
+**Body** — `{ "job_ids": [10, 12] }` or `{ "filter": { "library_type": "tv" }, "status": "failed" }`
+- `200` → `{ "queued": 2, "skipped": [{ "job_id": 14, "reason": "file is not active" }] }`
+- `400` → neither or both of `job_ids`/`filter`, unknown `status`
+
+### `POST /api/jobs/dismiss`
+Hides the selected `completed`/`failed` jobs from history, as
+`DELETE /api/jobs/:id` does one. Same selection body as `POST /api/jobs/retry`;
+ids that are not finished are skipped.
+- `200` → `{ "dismissed": 153 }`
+- `400` → neither or both of `job_ids`/`filter`, unknown `status`
 
 ### `POST /api/jobs/:id/cancel`
 Cancels a `queued`/`running`/`verifying` job. The worker kills the ffmpeg process

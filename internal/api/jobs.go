@@ -54,85 +54,28 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 	if err != nil {
 		return serverError(c, err)
 	}
-	target := media.NormalizeTargetCodec(profile.Codec)
-	enc, ok := media.EncoderFor(target)
-	if !ok {
-		return badRequest(c, fmt.Sprintf("profile %q has an unsupported codec %q", profile.Name, profile.Codec))
+	if msg := s.profileUnqueueable(profile); msg != "" {
+		return badRequest(c, msg)
 	}
-	if !s.encoderAvailable(target) {
-		return badRequest(c, encoderUnavailableMsg(enc))
-	}
-	encodeCodec := string(target)
-
-	type queuedItem struct {
-		JobID       int64  `json:"job_id"`
-		MediaFileID int64  `json:"media_file_id"`
-		Path        string `json:"path"`
-	}
-	type skippedItem struct {
-		MediaFileID int64  `json:"media_file_id"`
-		Reason      string `json:"reason"`
-	}
-
-	queued := make([]queuedItem, 0, len(req.FileIDs))
-	skipped := make([]skippedItem, 0)
-	now := time.Now().Unix()
 
 	rateLookup, err := s.store.Jobs.LearnedEncodeRates(ctx)
 	if err != nil {
 		return serverError(c, err)
 	}
 
+	queued := make([]queuedItem, 0, len(req.FileIDs))
+	skipped := make([]skippedItem, 0)
+	now := time.Now().Unix()
 	for _, fid := range dedupeIDs(req.FileIDs) {
-		f, err := s.store.Media.GetByID(ctx, fid)
-		if errors.Is(err, store.ErrNotFound) {
-			skipped = append(skipped, skippedItem{fid, "file not found"})
-			continue
-		}
+		item, reason, err := s.queueFile(ctx, fid, profile, rateLookup, now)
 		if err != nil {
 			return serverError(c, err)
 		}
-		if f.Status != store.MediaStatusActive {
-			skipped = append(skipped, skippedItem{fid, "file is not active"})
+		if reason != "" {
+			skipped = append(skipped, skippedItem{MediaFileID: fid, Reason: reason})
 			continue
 		}
-		if f.IsEfficientCodec {
-			skipped = append(skipped, skippedItem{fid, "file is already in an efficient codec"})
-			continue
-		}
-		blocked, err := s.store.Jobs.HasBlockingJob(ctx, fid)
-		if err != nil {
-			return serverError(c, err)
-		}
-		if blocked {
-			skipped = append(skipped, skippedItem{fid, "file already has an active or completed job"})
-			continue
-		}
-
-		predictedSavings := s.store.SavingsModel.PredictFor(target, f.VideoCodec, f.IsEfficientCodec, f.SizeBytes)
-		rate, _, _ := media.ResolveEncodeRate(profile.ID, target, profile.Preset, profile.CRF, rateLookup)
-		var initialEstimate *int64
-		if est := media.PredictedEncodeSeconds(rate, f.DurationSeconds, f.Width, f.Height); est > 0 {
-			initialEstimate = &est
-		}
-
-		jobID, err := s.store.Jobs.Create(ctx, &store.TranscodeJob{
-			MediaFileID:                     fid,
-			ProfileID:                       profile.ID,
-			Status:                          string(ijobs.StatusQueued),
-			QueuedAt:                        now,
-			OriginalSizeBytes:               f.SizeBytes,
-			EncodeCodec:                     &encodeCodec,
-			EncodePreset:                    &profile.Preset,
-			EncodeCRF:                       &profile.CRF,
-			EncodeExtraArgs:                 profile.ExtraArgs,
-			PredictedSavingsBytes:           &predictedSavings,
-			InitialEstimatedDurationSeconds: initialEstimate,
-		})
-		if err != nil {
-			return serverError(c, err)
-		}
-		queued = append(queued, queuedItem{JobID: jobID, MediaFileID: fid, Path: f.Path})
+		queued = append(queued, item)
 	}
 
 	if len(queued) > 0 {
@@ -147,6 +90,79 @@ func (s *Server) handleCreateJobs(c *echo.Context) error {
 		string(ijobs.StatusQueued): queued,
 		"skipped":                  skipped,
 	})
+}
+
+type queuedItem struct {
+	JobID       int64  `json:"job_id"`
+	MediaFileID int64  `json:"media_file_id"`
+	Path        string `json:"path"`
+}
+
+type skippedItem struct {
+	MediaFileID int64  `json:"media_file_id"`
+	Reason      string `json:"reason"`
+}
+
+func (s *Server) profileUnqueueable(profile *store.TranscodeProfile) string {
+	target := media.NormalizeTargetCodec(profile.Codec)
+	enc, ok := media.EncoderFor(target)
+	if !ok {
+		return fmt.Sprintf("profile %q has an unsupported codec %q", profile.Name, profile.Codec)
+	}
+	if !s.encoderAvailable(target) {
+		return encoderUnavailableMsg(enc)
+	}
+	return ""
+}
+
+func (s *Server) queueFile(ctx context.Context, fid int64, profile *store.TranscodeProfile, rateLookup *media.EncodeRateLookup, now int64) (queuedItem, string, error) {
+	f, err := s.store.Media.GetByID(ctx, fid)
+	if errors.Is(err, store.ErrNotFound) {
+		return queuedItem{}, "file not found", nil
+	}
+	if err != nil {
+		return queuedItem{}, "", err
+	}
+	if f.Status != store.MediaStatusActive {
+		return queuedItem{}, "file is not active", nil
+	}
+	if f.IsEfficientCodec {
+		return queuedItem{}, "file is already in an efficient codec", nil
+	}
+	blocked, err := s.store.Jobs.HasBlockingJob(ctx, fid)
+	if err != nil {
+		return queuedItem{}, "", err
+	}
+	if blocked {
+		return queuedItem{}, "file already has an active or completed job", nil
+	}
+
+	target := media.NormalizeTargetCodec(profile.Codec)
+	encodeCodec := string(target)
+	predictedSavings := s.store.SavingsModel.PredictFor(target, f.VideoCodec, f.IsEfficientCodec, f.SizeBytes)
+	rate, _, _ := media.ResolveEncodeRate(profile.ID, target, profile.Preset, profile.CRF, rateLookup)
+	var initialEstimate *int64
+	if est := media.PredictedEncodeSeconds(rate, f.DurationSeconds, f.Width, f.Height); est > 0 {
+		initialEstimate = &est
+	}
+
+	jobID, err := s.store.Jobs.Create(ctx, &store.TranscodeJob{
+		MediaFileID:                     fid,
+		ProfileID:                       profile.ID,
+		Status:                          string(ijobs.StatusQueued),
+		QueuedAt:                        now,
+		OriginalSizeBytes:               f.SizeBytes,
+		EncodeCodec:                     &encodeCodec,
+		EncodePreset:                    &profile.Preset,
+		EncodeCRF:                       &profile.CRF,
+		EncodeExtraArgs:                 profile.ExtraArgs,
+		PredictedSavingsBytes:           &predictedSavings,
+		InitialEstimatedDurationSeconds: initialEstimate,
+	})
+	if err != nil {
+		return queuedItem{}, "", err
+	}
+	return queuedItem{JobID: jobID, MediaFileID: fid, Path: f.Path}, "", nil
 }
 
 // parseStatusFilter splits a comma-separated status query param (e.g.
@@ -627,6 +643,156 @@ func (s *Server) handleBulkForce(c *echo.Context) error {
 		return serverError(c, err)
 	}
 	return c.JSON(http.StatusOK, map[string]any{"forced": n})
+}
+
+type historySelection struct {
+	JobIDs []int64        `json:"job_ids"`
+	Filter *jobFilterBody `json:"filter"`
+	Status string         `json:"status"`
+}
+
+func (h historySelection) resolve(ctx context.Context, st *store.Store, allowed ...ijobs.Status) ([]int64, string, error) {
+	ids := dedupeIDs(h.JobIDs)
+	switch {
+	case len(ids) > 0 && h.Filter != nil:
+		return nil, "specify job_ids or filter, not both", nil
+	case len(ids) > 0:
+		return ids, "", nil
+	case h.Filter == nil:
+		return nil, "job_ids or filter is required", nil
+	}
+	switch h.Status {
+	case "", string(ijobs.StatusCompleted), string(ijobs.StatusFailed):
+	default:
+		return nil, `status must be "completed", "failed", or empty`, nil
+	}
+	var statuses []string
+	for _, a := range allowed {
+		if h.Status == "" || h.Status == string(a) {
+			statuses = append(statuses, string(a))
+		}
+	}
+	if len(statuses) == 0 {
+		return nil, "", nil
+	}
+	ids, err := st.Jobs.MatchingIDs(ctx, statuses, h.Filter.toFilter())
+	return ids, "", err
+}
+
+type retrySkip struct {
+	JobID  int64  `json:"job_id"`
+	Reason string `json:"reason"`
+}
+
+func (s *Server) handleRetryJobs(c *echo.Context) error {
+	ctx := c.Request().Context()
+	var req historySelection
+	if err := c.Bind(&req); err != nil {
+		return badRequest(c, "invalid JSON body")
+	}
+	ids, msg, err := req.resolve(ctx, s.store, ijobs.StatusFailed)
+	if err != nil {
+		return serverError(c, err)
+	}
+	if msg != "" {
+		return badRequest(c, msg)
+	}
+
+	rateLookup, err := s.store.Jobs.LearnedEncodeRates(ctx)
+	if err != nil {
+		return serverError(c, err)
+	}
+	profiles := map[int64]*store.TranscodeProfile{}
+	profileFor := func(id int64) (*store.TranscodeProfile, error) {
+		if p, ok := profiles[id]; ok {
+			return p, nil
+		}
+		p, err := s.store.Profiles.GetByID(ctx, id)
+		if errors.Is(err, store.ErrNotFound) {
+			p, err = s.store.Profiles.GetDefault(ctx)
+		}
+		if err != nil {
+			return nil, err
+		}
+		profiles[id] = p
+		return p, nil
+	}
+
+	now := time.Now().Unix()
+	queuedFiles := map[int64]bool{}
+	var retried []int64
+	skipped := make([]retrySkip, 0)
+	for _, id := range ids {
+		job, err := s.store.Jobs.GetByID(ctx, id)
+		if errors.Is(err, store.ErrNotFound) {
+			skipped = append(skipped, retrySkip{id, "job not found"})
+			continue
+		}
+		if err != nil {
+			return serverError(c, err)
+		}
+		if job.Status != string(ijobs.StatusFailed) {
+			skipped = append(skipped, retrySkip{id, "job did not fail"})
+			continue
+		}
+		if queuedFiles[job.MediaFileID] {
+			retried = append(retried, id)
+			continue
+		}
+		profile, err := profileFor(job.ProfileID)
+		if errors.Is(err, store.ErrNotFound) {
+			skipped = append(skipped, retrySkip{id, "no profile to queue it on"})
+			continue
+		}
+		if err != nil {
+			return serverError(c, err)
+		}
+		if reason := s.profileUnqueueable(profile); reason != "" {
+			skipped = append(skipped, retrySkip{id, reason})
+			continue
+		}
+		_, reason, err := s.queueFile(ctx, job.MediaFileID, profile, rateLookup, now)
+		if err != nil {
+			return serverError(c, err)
+		}
+		if reason != "" {
+			skipped = append(skipped, retrySkip{id, reason})
+			continue
+		}
+		queuedFiles[job.MediaFileID] = true
+		retried = append(retried, id)
+	}
+
+	if _, err := s.store.Jobs.DismissMany(ctx, retried, now); err != nil {
+		return serverError(c, err)
+	}
+	if len(queuedFiles) > 0 {
+		s.hub.Broadcast("jobs_queued", map[string]any{"count": len(queuedFiles)})
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"queued":  len(queuedFiles),
+		"skipped": skipped,
+	})
+}
+
+func (s *Server) handleDismissJobs(c *echo.Context) error {
+	ctx := c.Request().Context()
+	var req historySelection
+	if err := c.Bind(&req); err != nil {
+		return badRequest(c, "invalid JSON body")
+	}
+	ids, msg, err := req.resolve(ctx, s.store, ijobs.StatusCompleted, ijobs.StatusFailed)
+	if err != nil {
+		return serverError(c, err)
+	}
+	if msg != "" {
+		return badRequest(c, msg)
+	}
+	n, err := s.store.Jobs.DismissMany(ctx, ids, time.Now().Unix())
+	if err != nil {
+		return serverError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"dismissed": n})
 }
 
 // handleCancelJob cancels a queued/running/verifying job. The worker performs

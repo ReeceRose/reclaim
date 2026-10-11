@@ -11,6 +11,7 @@ import {
   ArrowDownToLineIcon,
   ArrowUpToLineIcon,
   InfoIcon,
+  RotateCcwIcon,
   SearchIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -30,6 +31,7 @@ import {
   QUEUE_TAB,
 } from "@/app/(app)/queue/queue";
 import {
+  HistorySelectionBar,
   JobSelectionBar,
   QUEUE_MOVES,
 } from "@/components/queue/job-selection-bar";
@@ -57,6 +59,7 @@ import { useNow } from "@/hooks/use-now";
 import { parseQueryEnum, useQueryParams } from "@/hooks/use-query-params";
 import {
   api,
+  type HistorySelection,
   type Job,
   type JobFilter,
   type JobsListResult,
@@ -224,11 +227,29 @@ function VerifyChecks({ json }: { json: string | null }) {
   if (vr.playable !== undefined)
     checks.push({ label: "playable", pass: vr.playable });
   if (vr.stream_count_match !== undefined)
-    checks.push({ label: "stream count", pass: vr.stream_count_match });
+    checks.push({
+      label:
+        !vr.stream_count_match && vr.source_streams && vr.output_streams
+          ? `streams ${vr.source_streams} → ${vr.output_streams}`
+          : "stream count",
+      pass: vr.stream_count_match,
+    });
   if (vr.resolution_match !== undefined)
-    checks.push({ label: "resolution", pass: vr.resolution_match });
+    checks.push({
+      label:
+        !vr.resolution_match && vr.source_resolution && vr.output_resolution
+          ? `resolution ${vr.source_resolution} → ${vr.output_resolution}`
+          : "resolution",
+      pass: vr.resolution_match,
+    });
   if (vr.codec_match !== undefined)
-    checks.push({ label: "codec", pass: vr.codec_match });
+    checks.push({
+      label:
+        !vr.codec_match && vr.output_codec && vr.expected_codec
+          ? `codec ${vr.output_codec}, want ${vr.expected_codec}`
+          : "codec",
+      pass: vr.codec_match,
+    });
 
   return (
     <div className="flex gap-2 mt-2 flex-wrap">
@@ -775,16 +796,28 @@ function HistoryList({
   filter,
   status,
   filtered,
+  selectedIds,
+  onToggle,
+  onTogglePage,
   onDelete,
+  onRetryMatches,
+  onDismissMatches,
   deletePending,
+  retryPending,
 }: {
   page: number;
   setPage: (page: number) => void;
   filter: JobFilter;
   status: string;
   filtered: boolean;
+  selectedIds: ReadonlySet<number>;
+  onToggle: IdToggleHandler;
+  onTogglePage: (ids: number[]) => void;
   onDelete: (id: number) => void;
+  onRetryMatches: (count: number) => void;
+  onDismissMatches: (count: number) => void;
   deletePending: boolean;
+  retryPending: boolean;
 }) {
   const { data, isPlaceholderData } = useQuery<JobsListResult>({
     queryKey: ["jobs", "history", filter, status, page],
@@ -813,6 +846,10 @@ function HistoryList({
   const jobs = data.items ?? [];
   const total = data.total_count ?? jobs.length;
   const summary = data.history;
+  const failedCount = summary?.failed_count ?? 0;
+
+  const pageIds = jobs.map((j) => j.id);
+  const pageSelected = pageIds.filter((id) => selectedIds.has(id)).length;
 
   if (jobs.length === 0) {
     if (filtered)
@@ -875,7 +912,59 @@ function HistoryList({
         />
       )}
       <div className={cn(isPlaceholderData && "opacity-60 transition-opacity")}>
-        {jobs.map((job) => {
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-3 min-h-8 text-xs text-muted-fg">
+          <label
+            htmlFor="history-select-page"
+            className="flex items-center gap-2.5 pl-4 cursor-pointer select-none"
+          >
+            <Checkbox
+              id="history-select-page"
+              checked={
+                pageSelected === 0
+                  ? false
+                  : pageSelected === pageIds.length
+                    ? true
+                    : "indeterminate"
+              }
+              onCheckedChange={() => onTogglePage(pageIds)}
+              aria-label="Select every job on this page"
+              className="size-4 rounded-md"
+            />
+            {filtered ? (
+              <span className="font-semibold text-text">
+                {formatInt(total)} matching {total === 1 ? "job" : "jobs"}
+              </span>
+            ) : (
+              "Select page"
+            )}
+          </label>
+          <div className="flex flex-wrap gap-2 ml-auto">
+            {failedCount > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onRetryMatches(failedCount)}
+                disabled={retryPending}
+                className="rounded-xl text-xs"
+              >
+                <RotateCcwIcon />
+                Retry {formatInt(failedCount)} failed
+              </Button>
+            )}
+            {filtered && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onDismissMatches(total)}
+                disabled={deletePending}
+                className="rounded-xl text-xs text-red border-red/30 hover:bg-red-soft hover:text-red"
+              >
+                Remove all from history
+              </Button>
+            )}
+          </div>
+        </div>
+        {jobs.map((job, index) => {
           const saved =
             job.original_size_bytes -
             (job.output_size_bytes ?? job.original_size_bytes);
@@ -896,11 +985,19 @@ function HistoryList({
               key={job.id}
               className="group flex flex-wrap items-start gap-3.5 px-4 py-3.5 border rounded-xl bg-surface mb-2.5"
               style={{
-                borderColor: failed
-                  ? "color-mix(in srgb, var(--red) 35%, transparent)"
-                  : "var(--line)",
+                borderColor: selectedIds.has(job.id)
+                  ? "var(--brand-line)"
+                  : failed
+                    ? "color-mix(in srgb, var(--red) 35%, transparent)"
+                    : "var(--line)",
               }}
             >
+              <Checkbox
+                checked={selectedIds.has(job.id)}
+                onClick={(e) => onToggle(job.id, index, e.shiftKey, pageIds)}
+                aria-label={`Select ${jobName(job)}`}
+                className="size-4 rounded-md shrink-0 mt-0.5"
+              />
               <Link
                 href={BROWSE_ROUTES.FILE(job.media_file_id)}
                 className="block flex-1 min-w-3/5 hover:opacity-80 transition-opacity cursor-pointer"
@@ -968,20 +1065,6 @@ function HistoryList({
                         {job.encode_crf != null && <> · CRF {job.encode_crf}</>}
                       </>
                     )}
-                  </div>
-                )}
-                {failed && job.output_path && (
-                  <div
-                    className="text-xs text-red mt-2 rounded-lg px-3 py-2 border"
-                    style={{
-                      background: "var(--red-soft)",
-                      borderColor:
-                        "color-mix(in srgb, var(--red) 28%, transparent)",
-                    }}
-                  >
-                    Temp output kept for inspection:
-                    <br />
-                    <span className="font-mono text-xs">{job.output_path}</span>
                   </div>
                 )}
               </Link>
@@ -1117,7 +1200,12 @@ function QueueContent() {
     toggle: toggleSelected,
     clear: clearSelection,
   } = useIdSelection();
-  const selectionScope = JSON.stringify([tab, filter]);
+  const selectionScope = JSON.stringify([
+    tab,
+    filter,
+    historyFilter,
+    historyStatus,
+  ]);
   const [selectionScopeSeen, setSelectionScopeSeen] = useState(selectionScope);
   if (selectionScopeSeen !== selectionScope) {
     setSelectionScopeSeen(selectionScope);
@@ -1146,6 +1234,15 @@ function QueueContent() {
     | { kind: "cancel"; count: number; selection: QueueSelection }
     | null
   >(null);
+  const [historyConfirm, setHistoryConfirm] = useState<{
+    kind: "retry" | "dismiss";
+    count: number;
+    selection: HistorySelection;
+  } | null>(null);
+  const historyMatches: HistorySelection = {
+    filter: historyFilter,
+    status: historyStatus,
+  };
 
   const { data: runningData } = useSuspenseQuery({
     queryKey: ["jobs", "running"],
@@ -1271,6 +1368,40 @@ function QueueContent() {
       qc.invalidateQueries({ queryKey: ["jobs"] });
     },
     onError: () => toast.error("Cancel failed"),
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: (target: HistorySelection) => api.retryJobs(target),
+    onSuccess: ({ queued, skipped }) => {
+      const reasons = [...new Set(skipped.map((s) => s.reason))];
+      const message =
+        queued > 0
+          ? `Queued ${formatInt(queued)} ${queued === 1 ? "file" : "files"} again`
+          : "Nothing was queued";
+      const description =
+        skipped.length > 0
+          ? `${formatInt(skipped.length)} skipped: ${reasons.join("; ")}`
+          : undefined;
+      if (queued > 0) toast.success(message, { description });
+      else toast.warning(message, { description });
+      setHistoryConfirm(null);
+      clearSelection();
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: () => toast.error("Retry failed"),
+  });
+
+  const dismissMutation = useMutation({
+    mutationFn: (target: HistorySelection) => api.dismissJobs(target),
+    onSuccess: ({ dismissed }) => {
+      toast.success(
+        `Removed ${formatInt(dismissed)} ${dismissed === 1 ? "job" : "jobs"} from history`,
+      );
+      setHistoryConfirm(null);
+      clearSelection();
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: () => toast.error("Remove failed"),
   });
 
   const deleteMutation = useMutation({
@@ -1545,8 +1676,71 @@ function QueueContent() {
               filter={historyFilter}
               status={historyStatus}
               filtered={historyFiltered}
+              selectedIds={selectedIds}
+              onToggle={toggleSelected}
+              onTogglePage={togglePage}
               onDelete={(id) => deleteMutation.mutate(id)}
-              deletePending={deleteMutation.isPending}
+              onRetryMatches={(count) =>
+                setHistoryConfirm({
+                  kind: "retry",
+                  count,
+                  selection: historyMatches,
+                })
+              }
+              onDismissMatches={(count) =>
+                setHistoryConfirm({
+                  kind: "dismiss",
+                  count,
+                  selection: historyMatches,
+                })
+              }
+              deletePending={
+                deleteMutation.isPending || dismissMutation.isPending
+              }
+              retryPending={retryMutation.isPending}
+            />
+            {selectedIds.size > 0 && (
+              <HistorySelectionBar
+                count={selectedIds.size}
+                onClear={clearSelection}
+                onRetry={() =>
+                  retryMutation.mutate({ job_ids: [...selectedIds] })
+                }
+                onDismiss={() =>
+                  setHistoryConfirm({
+                    kind: "dismiss",
+                    count: selectedIds.size,
+                    selection: { job_ids: [...selectedIds] },
+                  })
+                }
+                retryPending={retryMutation.isPending}
+                dismissPending={dismissMutation.isPending}
+              />
+            )}
+            <ConfirmQueueAction
+              open={historyConfirm !== null}
+              onOpenChange={(open) => !open && setHistoryConfirm(null)}
+              title={
+                historyConfirm?.kind === "retry"
+                  ? `Retry ${formatInt(historyConfirm.count)} failed ${historyConfirm.count === 1 ? "job" : "jobs"}?`
+                  : `Remove ${formatInt(historyConfirm?.count ?? 0)} ${historyConfirm?.count === 1 ? "job" : "jobs"} from history?`
+              }
+              description={
+                historyConfirm?.kind === "retry"
+                  ? "Each file is queued again on the profile it failed on, at the back of the queue. The failures leave history; they stay in the event log."
+                  : "They leave this list but still count toward learned savings and encode-time estimates. The files themselves are untouched."
+              }
+              confirmLabel={
+                historyConfirm?.kind === "retry" ? "Retry" : "Remove"
+              }
+              destructive={historyConfirm?.kind === "dismiss"}
+              pending={retryMutation.isPending || dismissMutation.isPending}
+              onConfirm={() => {
+                if (!historyConfirm) return;
+                if (historyConfirm.kind === "retry")
+                  retryMutation.mutate(historyConfirm.selection);
+                else dismissMutation.mutate(historyConfirm.selection);
+              }}
             />
           </>
         )}

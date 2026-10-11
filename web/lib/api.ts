@@ -499,6 +499,15 @@ export interface FilteredQueueSummary {
 
 export type QueueSelection = { job_ids: number[] } | { filter: JobFilter };
 
+export type HistorySelection =
+  | { job_ids: number[] }
+  | { filter: JobFilter; status: "" | "completed" | "failed" };
+
+export interface RetryJobsResult {
+  queued: number;
+  skipped: { job_id: number; reason: string }[];
+}
+
 export type QueuePosition = "top" | "up" | "down" | "bottom";
 
 export type QueueSortKey =
@@ -612,6 +621,12 @@ export interface VerificationResult {
   resolution_match?: boolean;
   codec_match?: boolean;
   passed?: boolean;
+  expected_codec?: string;
+  output_codec?: string;
+  source_streams?: string;
+  output_streams?: string;
+  source_resolution?: string;
+  output_resolution?: string;
   [k: string]: unknown;
 }
 
@@ -799,6 +814,10 @@ export const api = {
     request<{ cancelled: number }>("POST", "/api/jobs/cancel", selection),
   forceJobs: (selection: QueueSelection) =>
     request<{ forced: number }>("POST", "/api/jobs/force", selection),
+  retryJobs: (selection: HistorySelection) =>
+    request<RetryJobsResult>("POST", "/api/jobs/retry", selection),
+  dismissJobs: (selection: HistorySelection) =>
+    request<{ dismissed: number }>("POST", "/api/jobs/dismiss", selection),
   cancelJob: (id: number) =>
     request<{ job_id: number; status: string }>(
       "POST",
